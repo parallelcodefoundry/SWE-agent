@@ -1,0 +1,21 @@
+agent:
+  model:
+    api_base: "http://127.0.0.1:8000/v1"
+    api_key: "dummy-key-ok"
+    name: openai/gpt-oss-120b
+
+  tools:
+    parse_function:
+      type: function_calling
+
+env:
+  deployment:
+    type: docker
+    container_runtime: podman
+    pull: missing
+    docker_args:
+      - --ipc=host
+      - --runtime=crun
+
+  repo:
+    path: /repo
