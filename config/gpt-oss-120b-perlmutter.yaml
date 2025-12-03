@@ -1,0 +1,7 @@
+tensor-parallel-size: 4
+async-scheduling: true
+no-enable-prefix-caching: true
+max-model-len: 131072
+gpu-memory-utilization: 0.95
+max-num-seqs: 1
+max-num-batched-tokens: 1024

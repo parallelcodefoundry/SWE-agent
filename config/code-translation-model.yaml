@@ -2,11 +2,11 @@ agent:
   model:
     api_base: "http://127.0.0.1:8000/v1"
     api_key: "dummy-key-ok"
-    name: openai/gpt-oss-120b
+    name: openai/openai/gpt-oss-120b
 
   tools:
     parse_function:
-      type: function_calling
+      type: thought_action
 
 env:
   deployment:
