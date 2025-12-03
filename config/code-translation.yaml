@@ -48,7 +48,7 @@ agent:
           {{diff}}
           </diff>
     parse_function:
-      type: thought_action
+      type: function_calling
 
   history_processors:
     - type: cache_control
