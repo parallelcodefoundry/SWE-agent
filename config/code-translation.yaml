@@ -51,5 +51,5 @@ agent:
       type: function_calling
 
   history_processors:
-    - type: cache_control
-      last_n_messages: 2
+    - type: last_n_observations
+      n: 5
