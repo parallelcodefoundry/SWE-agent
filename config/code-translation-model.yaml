@@ -1,6 +1,6 @@
 agent:
   model:
-    api_base: "http://127.0.0.1:8000/v1"
+    api_base: "http://127.0.0.1:8008/v1"
     api_key: "dummy-key-ok"
     max_input_tokens: 131072
     max_output_tokens: 131072
