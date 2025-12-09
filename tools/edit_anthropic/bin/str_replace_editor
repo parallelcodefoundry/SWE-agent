@@ -291,6 +291,26 @@ class WindowExpander:
             ):
                 # We include decorators here, because they are always on top of the function/class definition
                 score = 3
+            # C/C++ support: recognize function definitions, class/struct declarations, and scope boundaries
+            if self.suffix in (".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".hxx") and any(
+                re.match(regex, line) for regex in [
+                    # Function definitions (return type + name + parens)
+                    r"^\s*(?:static\s+|inline\s+|virtual\s+|explicit\s+|constexpr\s+)*"
+                    r"(?:void|int|bool|char|float|double|auto|size_t|unsigned|signed|long|short|const\s+\w+\s*[*&]?|\w+(?:::\w+)*(?:\s*[*&])?)\s+"
+                    r"\w+\s*\([^;]*$",
+                    # Class, struct, enum, namespace, template declarations
+                    r"^\s*(?:template\s*<[^>]*>\s*)?(?:class|struct|enum|namespace|union)\s+\w+",
+                    # Access specifiers
+                    r"^\s*(?:public|private|protected)\s*:",
+                    # Opening brace on its own line (common C++ style)
+                    r"^\s*\{\s*$",
+                    # Closing brace (end of function/class/namespace)
+                    r"^\s*\}\s*;?\s*$",
+                    # Preprocessor directives (good breakpoints)
+                    r"^\s*#\s*(?:include|define|ifdef|ifndef|endif|pragma)",
+                ]
+            ):
+                score = 3
             if score > best_score:
                 best_score = score
                 best_breakpoint = i_line
@@ -466,26 +486,38 @@ class EditTool:
             file_lines = file_content.split("\n")
             n_lines_file = len(file_lines)
             init_line, final_line = view_range
-            if init_line < 1 or init_line > n_lines_file:
-                print(
-                    f"Invalid `view_range`: {view_range}. Its first element `{init_line}` should be within the range of lines of the file: {[1, n_lines_file]}"
-                )
-                sys.exit(12)
-            if final_line > n_lines_file:
-                print(
-                    f"Invalid `view_range`: {view_range}. The file only has {n_lines_file} lines, but you requested {final_line}. "
-                    f"To view the entire file, omit the view_range parameter or use [1, -1]."
-                    f"To view specific line, use a range within [1, {n_lines_file}]."
-                )
-                sys.exit(13)
+
+            # Handle out-of-bounds gracefully instead of erroring
+            range_adjusted = False
+            original_init, original_final = init_line, final_line
+
+            if init_line < 1:
+                init_line = 1
+                range_adjusted = True
+
+            if init_line > n_lines_file:
+                # Start line is beyond file - show last portion of file
+                init_line = max(1, n_lines_file - 50)  # Show last 50 lines or whole file
+                final_line = n_lines_file
+                range_adjusted = True
+                print(f"<NOTE>Requested view_range [{original_init}, {original_final}] starts beyond end of file.")
+                print(f"File only has {n_lines_file} lines. Showing lines {init_line}-{final_line} instead.</NOTE>\n")
+
+            if final_line == -1:
+                final_line = n_lines_file
+            elif final_line > n_lines_file:
+                # End line is beyond file - clamp to file end
+                final_line = n_lines_file
+                range_adjusted = True
+                if original_init <= n_lines_file:
+                    print(f"<NOTE>Requested view_range [{original_init}, {original_final}] exceeds file length.")
+                    print(f"File only has {n_lines_file} lines. Showing lines {init_line}-{final_line} instead.</NOTE>\n")
+
             if final_line != -1 and final_line < init_line:
                 print(
                     f"Invalid `view_range`: {view_range}. Its second element `{final_line}` should be larger or equal than its first `{init_line}`"
                 )
                 sys.exit(14)
-
-            if final_line == -1:
-                final_line = n_lines_file
 
             # Expand the viewport to include the whole function or class
             init_line, final_line = WindowExpander(suffix=path.suffix).expand_window(
@@ -519,10 +551,11 @@ class EditTool:
 
     def str_replace(self, path: Path, old_str: str, new_str: Optional[str]):
         """Implement the str_replace command, which replaces old_str with new_str in the file content"""
-        # Read the file content
-        file_content = self.read_file(path).expandtabs()
-        old_str = old_str.expandtabs()
-        new_str = new_str.expandtabs() if new_str is not None else ""
+        # Read the file content - preserve original whitespace (tabs/spaces)
+        # Note: expandtabs() is only used for display in _make_output, not for file modification
+        # This preserves tabs in Makefiles and other tab-sensitive files
+        file_content = self.read_file(path)
+        new_str = new_str if new_str is not None else ""
 
         # Check if old_str is unique in the file
         occurrences = file_content.count(old_str)
@@ -599,8 +632,8 @@ class EditTool:
 
     def insert(self, path: Path, insert_line: int, new_str: str):
         """Implement the insert command, which inserts new_str at the specified line in the file content."""
-        file_text = self.read_file(path).expandtabs()
-        new_str = new_str.expandtabs()
+        # Preserve original whitespace (tabs/spaces) - don't expand tabs
+        file_text = self.read_file(path)
         file_text_lines = file_text.split("\n")
         n_lines_file = len(file_text_lines)
 
