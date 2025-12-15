@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""
+qs_run - Run Quicksilver benchmark and compare against baseline.
+
+Uses the Coral2_P2_1 benchmark (low variance, ~50s runtime) for consistent results.
+Reports only total runtime and speedup/slowdown - detailed timing is abstracted away
+to simulate real-world optimization where profiling tools are needed for deeper analysis.
+
+Runs on GPU 3 only (via CUDA_VISIBLE_DEVICES=3) to allow other GPUs to be used
+for model serving (vLLM on GPUs 0-2).
+"""
+import subprocess
+import os
+import sys
+import json
+import re
+
+# Pristine Quicksilver source (unmodified baseline)
+PRISTINE_QS_ROOT = "/global/u2/k/krydzy/SWE-agent/Quicksilver"
+
+# Fixed benchmark configuration - Coral2_P2_1 (low variance ~1.8%)
+BENCHMARK_INPUT = "Examples/CORAL2_Benchmark/Problem2/Coral2_P2_1.inp"
+
+# Default tolerance for correctness checking
+DEFAULT_TOLERANCE = 1e-6
+
+# OpenMP configuration
+OMP_THREADS = 8
+
+# GPU targeting - run Quicksilver on GPU 3 (GPUs 0-2 reserved for vLLM model serving)
+TARGET_GPU = "3"
+
+
+def get_pristine_executable():
+    """Get path to pristine Quicksilver executable, building if needed."""
+    exe_path = os.path.join(PRISTINE_QS_ROOT, 'src', 'qs')
+
+    if not os.path.isfile(exe_path):
+        print("Building pristine Quicksilver for baseline...")
+        sys.stdout.flush()
+        build_result = subprocess.run(
+            ['make', '-j8'],
+            cwd=os.path.join(PRISTINE_QS_ROOT, 'src'),
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        if build_result.returncode != 0 or not os.path.isfile(exe_path):
+            print(f"Failed to build pristine Quicksilver: {build_result.stderr}")
+            return None
+        print("Pristine build complete.")
+
+    return exe_path
+
+
+def run_quicksilver(exe_path, input_file, label=""):
+    """Run Quicksilver with the benchmark input file.
+
+    Returns: (total_time_seconds, output_text) or (None, None) on failure
+    """
+    env = os.environ.copy()
+    env['OMP_NUM_THREADS'] = str(OMP_THREADS)
+    env['OMP_PROC_BIND'] = 'spread'
+    env['OMP_PLACES'] = 'threads'
+    # Target specific GPU (GPU 3, leaving GPUs 0-2 for vLLM model serving)
+    env['CUDA_VISIBLE_DEVICES'] = TARGET_GPU
+
+    cmd = [exe_path, '-i', input_file]
+
+    try:
+        if label:
+            print(f"Running {label}...")
+            sys.stdout.flush()
+
+        proc = subprocess.run(
+            cmd,
+            cwd=os.path.dirname(exe_path),
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 minute timeout per run
+            env=env
+        )
+
+        if proc.returncode == 0:
+            # Extract total time from 'main' timer
+            # Format: "main  1  min_us  avg_us  max_us  stddev_us  efficiency"
+            timer_pattern = r'^main\s+\d+\s+([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)'
+            for line in proc.stdout.split('\n'):
+                match = re.match(timer_pattern, line)
+                if match:
+                    max_us = float(match.group(3))  # Use max time
+                    total_seconds = max_us / 1e6
+                    return total_seconds, proc.stdout
+
+            print("Warning: Could not parse timing from output")
+            return None, proc.stdout
+        else:
+            print(f"Run failed: {proc.stderr[-500:]}")
+            return None, None
+
+    except subprocess.TimeoutExpired:
+        print("Run timed out (>5 minutes)")
+        return None, None
+    except Exception as e:
+        print(f"Run error: {e}")
+        return None, None
+
+
+def extract_scientific_values(output_text):
+    """Extract scientific values from Quicksilver output for correctness comparison.
+
+    Only extracts physics values (absorb, scatter, fission, etc.) - NOT timing.
+    """
+    values = {}
+
+    # Parse cycle table for scientific values
+    cycle_pattern = r'^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.eE+-]+)'
+
+    for match in re.finditer(cycle_pattern, output_text, re.MULTILINE):
+        cycle_num = int(match.group(1))
+        values[f'cycle_{cycle_num}_absorb'] = int(match.group(6))
+        values[f'cycle_{cycle_num}_scatter'] = int(match.group(7))
+        values[f'cycle_{cycle_num}_fission'] = int(match.group(8))
+        values[f'cycle_{cycle_num}_collisn'] = int(match.group(10))
+        values[f'cycle_{cycle_num}_escape'] = int(match.group(11))
+        values[f'cycle_{cycle_num}_census'] = int(match.group(12))
+        values[f'cycle_{cycle_num}_scalar_flux'] = float(match.group(14))
+
+    return values
+
+
+def check_correctness(baseline_output, modified_output, tolerance=DEFAULT_TOLERANCE):
+    """Compare scientific values between baseline and modified outputs."""
+    baseline_values = extract_scientific_values(baseline_output)
+    modified_values = extract_scientific_values(modified_output)
+
+    if not baseline_values:
+        return {"correct": False, "error": "No scientific values found in baseline output"}
+    if not modified_values:
+        return {"correct": False, "error": "No scientific values found in modified output"}
+
+    differences = []
+    matched = 0
+
+    for key in baseline_values.keys():
+        baseline_val = baseline_values[key]
+        modified_val = modified_values.get(key)
+
+        if modified_val is None:
+            differences.append({"key": key, "issue": "missing_in_modified", "baseline": baseline_val})
+        elif isinstance(baseline_val, float):
+            if baseline_val == 0:
+                rel_error = abs(modified_val) if modified_val != 0 else 0
+            else:
+                rel_error = abs(modified_val - baseline_val) / abs(baseline_val)
+
+            if rel_error > tolerance:
+                differences.append({
+                    "key": key,
+                    "baseline": baseline_val,
+                    "modified": modified_val,
+                    "relative_error": rel_error
+                })
+            else:
+                matched += 1
+        else:
+            if baseline_val != modified_val:
+                differences.append({
+                    "key": key,
+                    "baseline": baseline_val,
+                    "modified": modified_val,
+                    "difference": modified_val - baseline_val
+                })
+            else:
+                matched += 1
+
+    return {
+        "correct": len(differences) == 0,
+        "matched": matched,
+        "total_values": len(baseline_values),
+        "differences": differences[:5] if differences else [],
+        "total_differences": len(differences)
+    }
+
+
+def main():
+    # Find modified Quicksilver executable
+    qs_root = os.environ.get('QUICKSILVER_ROOT')
+    if not qs_root:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate_paths = [
+            os.path.join(script_dir, '..', '..', '..', 'Quicksilver'),
+            '/global/u2/k/krydzy/SWE-agent/Quicksilver_test',
+        ]
+        for path in candidate_paths:
+            if os.path.isdir(path):
+                qs_root = os.path.abspath(path)
+                break
+
+    modified_exe = os.path.join(qs_root, 'src', 'qs') if qs_root else None
+
+    if not modified_exe or not os.path.isfile(modified_exe):
+        print("=" * 60)
+        print("ERROR: Quicksilver executable not found.")
+        print("Run qs_build first to compile the application.")
+        print("=" * 60)
+        sys.exit(1)
+
+    # Get pristine executable for baseline
+    pristine_exe = get_pristine_executable()
+    if not pristine_exe:
+        print("=" * 60)
+        print("ERROR: Could not build baseline Quicksilver.")
+        print("=" * 60)
+        sys.exit(1)
+
+    input_file = os.path.join(PRISTINE_QS_ROOT, BENCHMARK_INPUT)
+
+    print("=" * 60)
+    print("QUICKSILVER BENCHMARK: Coral2_P2_1")
+    print(f"Running on GPU {TARGET_GPU} (CUDA_VISIBLE_DEVICES={TARGET_GPU})")
+    print("=" * 60)
+
+    # Run baseline
+    baseline_time, baseline_output = run_quicksilver(pristine_exe, input_file, "baseline (unmodified)")
+    if baseline_time is None:
+        print("=" * 60)
+        print("ERROR: Baseline run failed.")
+        print("=" * 60)
+        sys.exit(1)
+
+    # Run modified version
+    modified_time, modified_output = run_quicksilver(modified_exe, input_file, "modified version")
+    if modified_time is None:
+        print("=" * 60)
+        print("ERROR: Modified version run failed.")
+        print("=" * 60)
+        sys.exit(1)
+
+    # Check correctness
+    correctness = check_correctness(baseline_output, modified_output)
+
+    # Calculate speedup
+    speedup = baseline_time / modified_time if modified_time > 0 else 0
+
+    # Print results (this is what the model sees)
+    print("=" * 60)
+    print("QUICKSILVER BENCHMARK RESULTS")
+    print("=" * 60)
+    print()
+
+    # Correctness
+    if correctness.get('correct'):
+        print(f"CORRECTNESS:  PASSED ({correctness.get('matched', 0)} physics values verified)")
+    else:
+        print(f"CORRECTNESS:  FAILED ({correctness.get('total_differences', 0)} values differ!)")
+        for diff in correctness.get('differences', [])[:3]:
+            print(f"  - {diff.get('key')}: expected {diff.get('baseline')}, got {diff.get('modified')}")
+    print()
+
+    # Performance (simplified - no detailed breakdown)
+    print(f"BASELINE TIME:   {baseline_time:.2f} seconds")
+    print(f"MODIFIED TIME:   {modified_time:.2f} seconds")
+    print()
+
+    if speedup > 1.0:
+        print(f"RESULT:          {speedup:.2f}x SPEEDUP")
+        print(f"TIME SAVED:      {baseline_time - modified_time:.2f} seconds")
+    elif speedup < 1.0:
+        slowdown = 1.0 / speedup
+        print(f"RESULT:          {slowdown:.2f}x SLOWDOWN")
+        print(f"TIME ADDED:      {modified_time - baseline_time:.2f} seconds")
+    else:
+        print("RESULT:          NO CHANGE")
+
+    print()
+    print("=" * 60)
+
+    # Determine exit status
+    if not correctness.get('correct'):
+        print("Status: FAILED (correctness check failed)")
+        sys.exit(1)
+    elif speedup >= 1.0:
+        print("Status: SUCCESS")
+        sys.exit(0)
+    else:
+        print("Status: REGRESSION (slower than baseline)")
+        sys.exit(0)  # Don't fail on slowdown, just report it
+
+
+if __name__ == '__main__':
+    main()

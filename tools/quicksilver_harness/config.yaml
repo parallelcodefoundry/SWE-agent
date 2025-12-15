@@ -1,0 +1,109 @@
+tools:
+  qs_build:
+    signature: "qs_build [<clean>]"
+    docstring: |
+      Build the Quicksilver Monte Carlo particle transport proxy application.
+
+      IMPORTANT: The goal is to optimize GPU performance. Do NOT disable
+      CUDA/GPU support in the Makefile.
+
+      Build configuration:
+        - Compiler: nvcc (CUDA) for A100 GPUs
+        - Base flags: -O3 -std=c++11 -fopenmp -gencode=arch=compute_80,code=sm_80
+        - Features: OpenMP, CUDA GPU support (no MPI)
+
+      Makefile customization:
+        You CAN add optimization flags to the Makefile and they will be respected:
+        - CXXFLAGS: Add flags like -funroll-loops, -ffast-math, -ftree-vectorize
+          (these are passed to the host compiler via -Xcompiler)
+        - LDFLAGS: Add linker flags like -L, -l, -Wl,
+
+      Returns build status and any compilation errors.
+    arguments:
+      - name: clean
+        type: boolean
+        description: "Force clean rebuild (make clean first)"
+        required: false
+        argument_format: "--clean"
+
+  qs_run:
+    signature: "qs_run"
+    docstring: |
+      Run Quicksilver benchmark and compare performance against baseline.
+
+      This tool runs a standardized benchmark (Coral2_P2_1) that provides
+      consistent, low-variance results for reliable performance measurement.
+
+      What it does:
+        1. Runs the BASELINE (unmodified Quicksilver) with the benchmark
+        2. Runs YOUR MODIFIED version with the same benchmark
+        3. Compares physics values to verify CORRECTNESS
+        4. Compares total runtime to measure SPEEDUP
+
+      Output shows:
+        - CORRECTNESS: PASSED/FAILED (physics values match baseline)
+        - BASELINE TIME: Runtime of unmodified version (seconds)
+        - MODIFIED TIME: Runtime of your version (seconds)
+        - RESULT: Speedup or slowdown factor
+
+      NOTE: The benchmark takes ~50 seconds per run (~100 seconds total).
+      No arguments needed - uses a fixed, well-tested benchmark configuration.
+
+      IMPORTANT: Always run qs_build after code changes before running qs_run!
+    arguments: []
+
+  qs_parse_timing:
+    signature: "qs_parse_timing <output_file>"
+    docstring: |
+      Parse timing information from Quicksilver output.
+
+      Extracts timer values from Quicksilver's output including:
+        - cycleTracking_Kernel: Kernel time
+        - cycleTracking: Total cycle tracking time
+        - Total time
+
+      Returns JSON with timing breakdown.
+    arguments:
+      - name: output_file
+        type: string
+        description: "Path to Quicksilver output file"
+        required: true
+        argument_format: "{{value}}"
+
+  qs_check_correct:
+    signature: "qs_check_correct [<nParticles>] [<nSteps>] [<tolerance>]"
+    docstring: |
+      (OPTIONAL) Standalone correctness verification tool.
+
+      NOTE: qs_run already checks correctness automatically! You only need
+      this tool if you want to run a quick correctness check with smaller
+      parameters (faster) before running the full qs_run benchmark.
+
+      This tool runs BOTH pristine and modified Quicksilver with identical
+      parameters, then compares SCIENTIFIC values (scalar_flux, particle
+      counts) to ensure correctness is preserved.
+
+      Uses small default parameters (10x10x10 domain, 10000 particles, 5 steps)
+      for quick checking.
+
+      Example usage:
+        qs_check_correct                    # Quick check with defaults
+        qs_check_correct --nSteps 20        # More thorough check
+
+      Returns JSON with 'correct' (bool) and details of any differences.
+    arguments:
+      - name: nParticles
+        type: integer
+        description: "Number of particles (default: 10000 for quick check)"
+        required: false
+        argument_format: "--nParticles {{value}}"
+      - name: nSteps
+        type: integer
+        description: "Number of steps (default: 5 for quick check)"
+        required: false
+        argument_format: "--nSteps {{value}}"
+      - name: tolerance
+        type: float
+        description: "Relative error tolerance (default: 1e-6)"
+        required: false
+        argument_format: "--tolerance {{value}}"

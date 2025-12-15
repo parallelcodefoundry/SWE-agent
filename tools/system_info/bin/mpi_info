@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# MPI Environment Information for SWE-agent
+# Queries MPI implementation and capabilities
+
+main() {
+    echo "=== MPI Information ==="
+    echo ""
+
+    # Check loaded MPI modules
+    if command -v module &> /dev/null; then
+        local mpi_modules=$(module list 2>&1 | grep -iE "mpi|mpich|openmpi|cray-mpich" || echo "")
+        if [ -n "$mpi_modules" ]; then
+            echo "Loaded MPI modules:"
+            echo "$mpi_modules"
+            echo ""
+        fi
+    fi
+
+    # Check for MPI environment variables
+    if [ -n "$MPI_ROOT" ]; then
+        echo "MPI_ROOT: $MPI_ROOT"
+    fi
+    if [ -n "$MPICH_GPU_SUPPORT_ENABLED" ]; then
+        echo "MPICH GPU Support: $MPICH_GPU_SUPPORT_ENABLED"
+    fi
+    if [ -n "$CRAY_MPICH_VERSION" ]; then
+        echo "Cray MPICH Version: $CRAY_MPICH_VERSION"
+    fi
+
+    echo ""
+
+    # Check for common MPI executables
+    echo "MPI Implementations Available:"
+    for mpi_cmd in mpirun mpiexec srun; do
+        if command -v $mpi_cmd &> /dev/null; then
+            local mpi_path=$(command -v $mpi_cmd)
+            echo "  $mpi_cmd: $mpi_path"
+        fi
+    done
+
+    # Try to get MPI version if possible
+    echo ""
+    if command -v mpirun &> /dev/null; then
+        echo "MPI Version Info:"
+        mpirun --version 2>/dev/null | head -3 || echo "  Version info unavailable"
+    fi
+}
+
+main "$@"

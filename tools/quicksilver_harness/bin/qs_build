@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""
+qs_build - Build Quicksilver Monte Carlo transport proxy application.
+
+Builds with CUDA + OpenMP for single-GPU execution on NVIDIA GPUs.
+MPI is not used - designed for running on one GPU while other GPUs
+are used for model serving (vLLM).
+
+Respects user customizations in Makefile while ensuring CUDA/GPU support
+is always enabled.
+"""
+import subprocess
+import os
+import sys
+import json
+import re
+
+
+def parse_makefile_flags(makefile_path):
+    """Parse user-customized flags from Makefile.
+
+    Returns dict with any custom flags the user has set.
+    We look for common optimization flags that can be passed to nvcc.
+    """
+    custom_flags = {
+        'extra_cxxflags': [],
+        'extra_ldflags': [],
+    }
+
+    if not os.path.isfile(makefile_path):
+        return custom_flags
+
+    try:
+        with open(makefile_path, 'r') as f:
+            content = f.read()
+
+        # Look for CXXFLAGS or CFLAGS definitions
+        # Match patterns like: CXXFLAGS = -O3 -funroll-loops
+        # or CXXFLAGS += -march=native
+        cxxflags_pattern = r'^\s*C(?:XX)?FLAGS\s*[+:]?=\s*(.+)$'
+        for match in re.finditer(cxxflags_pattern, content, re.MULTILINE):
+            flags_line = match.group(1).strip()
+            # Extract optimization flags that are safe to pass through
+            # These get passed to host compiler via -Xcompiler
+            safe_flags = []
+            for flag in flags_line.split():
+                # Allow optimization levels, unrolling, vectorization, march, mtune
+                if flag.startswith(('-O', '-funroll', '-ffast-math', '-march', '-mtune',
+                                   '-fvect', '-ftree-vectorize', '-fno-', '-finline')):
+                    safe_flags.append(flag)
+            custom_flags['extra_cxxflags'].extend(safe_flags)
+
+        # Look for LDFLAGS
+        ldflags_pattern = r'^\s*LDFLAGS\s*[+:]?=\s*(.+)$'
+        for match in re.finditer(ldflags_pattern, content, re.MULTILINE):
+            flags_line = match.group(1).strip()
+            for flag in flags_line.split():
+                # Allow linker optimization flags
+                if flag.startswith(('-L', '-l', '-Wl,')):
+                    custom_flags['extra_ldflags'].append(flag)
+
+    except Exception as e:
+        print(f"Warning: Could not parse Makefile: {e}")
+
+    return custom_flags
+
+
+def find_cuda_path():
+    """Find CUDA installation path."""
+    # Check environment variable first
+    cuda_home = os.environ.get('CUDA_HOME') or os.environ.get('CUDATOOLKIT_HOME')
+    if cuda_home and os.path.isdir(cuda_home):
+        return cuda_home
+
+    # Check common Perlmutter locations
+    candidates = [
+        '/opt/nvidia/hpc_sdk/Linux_x86_64/24.5/cuda/12.4',
+        '/opt/nvidia/hpc_sdk/Linux_x86_64/23.9/cuda/12.2',
+        '/usr/local/cuda',
+    ]
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+
+    # Try to find from nvcc
+    try:
+        result = subprocess.run(['which', 'nvcc'], capture_output=True, text=True)
+        if result.returncode == 0:
+            nvcc_path = result.stdout.strip()
+            # nvcc is typically in $CUDA_HOME/bin/nvcc
+            return os.path.dirname(os.path.dirname(nvcc_path))
+    except:
+        pass
+
+    return None
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='Build Quicksilver (CUDA + OpenMP, single GPU)')
+    parser.add_argument('--clean', action='store_true', help='Force clean rebuild')
+    args = parser.parse_args()
+
+    # Find Quicksilver directory
+    # Try environment variable first, then common locations
+    qs_root = os.environ.get('QUICKSILVER_ROOT')
+    if not qs_root:
+        # Try relative to SWE-agent
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate_paths = [
+            os.path.join(script_dir, '..', '..', '..', 'Quicksilver'),
+            '/global/u2/k/krydzy/SWE-agent/Quicksilver_test',
+        ]
+        for path in candidate_paths:
+            if os.path.isdir(path):
+                qs_root = os.path.abspath(path)
+                break
+
+    if not qs_root or not os.path.isdir(qs_root):
+        print(json.dumps({
+            "success": False,
+            "error": "Quicksilver directory not found. Set QUICKSILVER_ROOT environment variable."
+        }))
+        sys.exit(1)
+
+    src_dir = os.path.join(qs_root, 'src')
+    if not os.path.isdir(src_dir):
+        print(json.dumps({
+            "success": False,
+            "error": f"Quicksilver src directory not found at {src_dir}"
+        }))
+        sys.exit(1)
+
+    result = {
+        "success": False,
+        "qs_root": qs_root,
+        "clean": args.clean,
+        "arch": "CUDA"
+    }
+
+    try:
+        # Clean if requested
+        if args.clean:
+            print(f"Cleaning {src_dir}...")
+            subprocess.run(['make', 'clean'], cwd=src_dir, capture_output=True)
+
+        # Build for CUDA + OpenMP (no MPI, single GPU)
+        print(f"Building Quicksilver (CUDA + OpenMP, single GPU) in {src_dir}...")
+
+        build_env = os.environ.copy()
+
+        # CUDA build for NVIDIA GPUs (A100 = sm_80)
+        cuda_path = find_cuda_path()
+        if not cuda_path:
+            result["error"] = "CUDA not found. Load cuda module or set CUDA_HOME."
+            print(json.dumps(result, indent=2))
+            sys.exit(1)
+
+        nvcc = os.path.join(cuda_path, 'bin', 'nvcc')
+        if not os.path.isfile(nvcc):
+            result["error"] = f"nvcc not found at {nvcc}"
+            print(json.dumps(result, indent=2))
+            sys.exit(1)
+
+        result["cuda_path"] = cuda_path
+
+        # Use system g++ as host compiler
+        host_compiler = '/usr/bin/g++'
+
+        print(f"Using CUDA: {cuda_path}")
+        print(f"Using nvcc: {nvcc}")
+        print(f"Host compiler: {host_compiler}")
+        print("Building without MPI (single GPU mode)")
+
+        # Parse Makefile for user-customized flags
+        makefile_path = os.path.join(src_dir, 'Makefile')
+        custom_flags = parse_makefile_flags(makefile_path)
+
+        # Build the -Xcompiler flags string for host compiler options
+        # Start with required flags, then add user customizations
+        xcompiler_flags = ['-fopenmp']
+        if custom_flags['extra_cxxflags']:
+            # Remove any -O flags from user flags since we're using -O3 for nvcc
+            user_flags = [f for f in custom_flags['extra_cxxflags'] if not f.startswith('-O')]
+            xcompiler_flags.extend(user_flags)
+            if user_flags:
+                print(f"User Makefile flags (host compiler): {' '.join(user_flags)}")
+                result["user_cxxflags"] = user_flags
+
+        xcompiler_str = ','.join(xcompiler_flags)
+
+        # CUDA build flags for A100 (sm_80)
+        # NO MPI - just CUDA + OpenMP for single GPU execution
+        # -lineinfo enables source line mapping for GPU code (needed for profiling)
+        # Base CXXFLAGS - always use CUDA with -O3
+        cxxflags = f'-DHAVE_CUDA -std=c++11 -O3 -lineinfo -Xptxas -v -gencode=arch=compute_80,code=sm_80 --compiler-bindir={host_compiler} -Xcompiler {xcompiler_str}'
+
+        # LDFLAGS - base + any user customizations
+        ldflags = f'-L{cuda_path}/lib64 -lcudart -lcuda -lgomp'
+        if custom_flags['extra_ldflags']:
+            ldflags += ' ' + ' '.join(custom_flags['extra_ldflags'])
+            print(f"User Makefile flags (linker): {' '.join(custom_flags['extra_ldflags'])}")
+            result["user_ldflags"] = custom_flags['extra_ldflags']
+
+        build_cmd = [
+            'make', '-j8',
+            f'CXX={nvcc}',
+            f'CXXFLAGS={cxxflags}',
+            f'CPPFLAGS=-x cu -dc -DHAVE_OPENMP -I{cuda_path}/include',
+            f'LDFLAGS={ldflags}'
+        ]
+
+        proc = subprocess.run(
+            build_cmd,
+            cwd=src_dir,
+            capture_output=True,
+            text=True,
+            env=build_env
+        )
+
+        result["returncode"] = proc.returncode
+        result["stdout"] = proc.stdout[-4000:] if len(proc.stdout) > 4000 else proc.stdout
+        result["stderr"] = proc.stderr[-4000:] if len(proc.stderr) > 4000 else proc.stderr
+
+        # Check if executable was created
+        exe_path = os.path.join(src_dir, 'qs')
+        if os.path.isfile(exe_path):
+            result["success"] = True
+            result["executable"] = exe_path
+            print(f"Build successful: {exe_path}")
+        else:
+            result["error"] = "Build completed but executable 'qs' not found"
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    print(json.dumps(result, indent=2))
+    sys.exit(0 if result["success"] else 1)
+
+if __name__ == '__main__':
+    main()

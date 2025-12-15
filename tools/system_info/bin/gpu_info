@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# GPU Information Query Tool for SWE-agent
+# Queries NVIDIA GPU details using nvidia-smi
+
+main() {
+    # Check if nvidia-smi is available
+    if ! command -v nvidia-smi &> /dev/null; then
+        echo "GPU Info: No NVIDIA GPUs detected (nvidia-smi not available)"
+        return 0
+    fi
+
+    echo "=== GPU Information ==="
+    echo ""
+
+    # Get GPU count
+    local gpu_count=$(nvidia-smi -L | wc -l)
+    echo "GPU Count: $gpu_count"
+    echo ""
+
+    # Get detailed GPU information
+    if [ $gpu_count -gt 0 ]; then
+        echo "GPU Details:"
+        nvidia-smi --query-gpu=index,name,memory.total,memory.free,driver_version,compute_cap \
+            --format=csv,noheader,nounits | while IFS=',' read -r index name memory_total memory_free driver compute_cap; do
+            echo "  GPU $index:"
+            echo "    Model: $(echo $name | xargs)"
+            echo "    Memory Total: ${memory_total} MB"
+            echo "    Memory Free: ${memory_free} MB"
+            echo "    Driver Version: $(echo $driver | xargs)"
+            echo "    Compute Capability: $(echo $compute_cap | xargs)"
+            echo ""
+        done
+
+        # Get CUDA version
+        local cuda_version=$(nvidia-smi | grep "CUDA Version" | sed 's/.*CUDA Version: \([0-9.]*\).*/\1/')
+        if [ -n "$cuda_version" ]; then
+            echo "CUDA Version: $cuda_version"
+        fi
+
+        # Check for CUDA_VISIBLE_DEVICES
+        if [ -n "$CUDA_VISIBLE_DEVICES" ]; then
+            echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
+        else
+            echo "CUDA_VISIBLE_DEVICES: Not set (all GPUs visible)"
+        fi
+    fi
+}
+
+main "$@"

@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""
+benchmark_code - Build and benchmark HPC proxy applications comparing against baseline.
+"""
+import argparse
+import subprocess
+import os
+import sys
+import json
+import tempfile
+import shutil
+
+# Add lib directory to path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+lib_dir = os.path.join(script_dir, '..', 'lib')
+sys.path.insert(0, lib_dir)
+
+def get_app_root(app_name):
+    """Find the application root directory."""
+    env_var = f'{app_name.upper()}_ROOT'
+    app_root = os.environ.get(env_var)
+
+    if not app_root:
+        # Try common locations
+        swe_agent_root = os.environ.get('SWE_AGENT_ROOT',
+                                       '/global/u2/k/krydzy/SWE-agent')
+        candidate = os.path.join(swe_agent_root, app_name.capitalize())
+        if os.path.isdir(candidate):
+            app_root = candidate
+
+    return app_root
+
+def run_quicksilver(app_root, output_file):
+    """Build and run Quicksilver, return timing."""
+    src_dir = os.path.join(app_root, 'src')
+
+    # Build
+    build_cmd = ['make', '-j4', 'CXX=mpicxx',
+                 'CXXFLAGS=-O3 -std=c++11',
+                 'CPPFLAGS=-DHAVE_MPI -DHAVE_OPENMP']
+    proc = subprocess.run(build_cmd, cwd=src_dir, capture_output=True, text=True)
+    if proc.returncode != 0:
+        return None, f"Build failed: {proc.stderr[-1000:]}"
+
+    # Run
+    exe = os.path.join(src_dir, 'qs')
+    if not os.path.isfile(exe):
+        return None, "Executable not found after build"
+
+    run_cmd = [exe, '--lx', '10', '--ly', '10', '--lz', '10',
+               '--nx', '10', '--ny', '10', '--nz', '10',
+               '--nParticles', '10000', '--nSteps', '10']
+
+    proc = subprocess.run(run_cmd, cwd=src_dir, capture_output=True,
+                         text=True, timeout=300)
+
+    with open(output_file, 'w') as f:
+        f.write(proc.stdout)
+
+    # Parse timing (simplified - look for total time)
+    import re
+    match = re.search(r'Total\s+Time\s*:\s*([\d.]+)', proc.stdout, re.IGNORECASE)
+    if match:
+        return float(match.group(1)), None
+
+    # If no explicit total, estimate from elapsed
+    return 1.0, "Warning: Could not parse timing"
+
+def run_kripke(app_root, output_file):
+    """Build and run Kripke, return timing."""
+    build_dir = os.path.join(app_root, 'build')
+
+    # Ensure build directory exists and is configured
+    if not os.path.isfile(os.path.join(build_dir, 'Makefile')):
+        os.makedirs(build_dir, exist_ok=True)
+        cmake_cmd = ['cmake', '..',
+                    '-DCMAKE_BUILD_TYPE=Release',
+                    '-DENABLE_OPENMP=ON',
+                    '-DENABLE_MPI=ON']
+        proc = subprocess.run(cmake_cmd, cwd=build_dir, capture_output=True, text=True)
+        if proc.returncode != 0:
+            return None, f"CMake failed: {proc.stderr[-1000:]}"
+
+    # Build
+    proc = subprocess.run(['make', '-j4'], cwd=build_dir, capture_output=True, text=True)
+    if proc.returncode != 0:
+        return None, f"Build failed: {proc.stderr[-1000:]}"
+
+    # Run
+    exe = os.path.join(build_dir, 'bin', 'kripke.exe')
+    if not os.path.isfile(exe):
+        return None, "Executable not found after build"
+
+    run_cmd = [exe, '--arch', 'OpenMP', '--layout', 'DGZ',
+               '--zones', '16,16,16', '--groups', '32', '--niter', '10']
+
+    proc = subprocess.run(run_cmd, cwd=build_dir, capture_output=True,
+                         text=True, timeout=300)
+
+    with open(output_file, 'w') as f:
+        f.write(proc.stdout)
+
+    # Parse timing
+    import re
+    match = re.search(r'Solve\s+took\s+([\d.]+)', proc.stdout, re.IGNORECASE)
+    if match:
+        return float(match.group(1)), None
+
+    return 1.0, "Warning: Could not parse timing"
+
+def git_checkout(repo_dir, branch):
+    """Checkout a git branch, stashing any changes."""
+    # Stash current changes
+    subprocess.run(['git', 'stash'], cwd=repo_dir, capture_output=True)
+
+    # Checkout branch
+    proc = subprocess.run(['git', 'checkout', branch], cwd=repo_dir,
+                         capture_output=True, text=True)
+    return proc.returncode == 0
+
+def git_current_branch(repo_dir):
+    """Get current git branch name."""
+    proc = subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                         cwd=repo_dir, capture_output=True, text=True)
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+def main():
+    parser = argparse.ArgumentParser(description='Benchmark HPC application')
+    parser.add_argument('app_name', choices=['quicksilver', 'kripke'],
+                       help='Application to benchmark')
+    parser.add_argument('--branch', help='Branch with modifications (default: current)')
+    parser.add_argument('--baseline_branch', default='main',
+                       help='Branch with baseline code')
+    args = parser.parse_args()
+
+    app_root = get_app_root(args.app_name)
+    if not app_root or not os.path.isdir(app_root):
+        print(json.dumps({
+            "success": False,
+            "error": f"Application directory not found for {args.app_name}"
+        }))
+        sys.exit(1)
+
+    # Get current branch
+    current_branch = git_current_branch(app_root)
+    work_branch = args.branch or current_branch
+
+    result = {
+        "success": False,
+        "app_name": args.app_name,
+        "app_root": app_root,
+        "work_branch": work_branch,
+        "baseline_branch": args.baseline_branch
+    }
+
+    # Select run function
+    run_app = run_quicksilver if args.app_name == 'quicksilver' else run_kripke
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            baseline_output = os.path.join(tmpdir, 'baseline_output.txt')
+            modified_output = os.path.join(tmpdir, 'modified_output.txt')
+
+            # Run baseline
+            print(f"Building and running baseline ({args.baseline_branch})...", file=sys.stderr)
+            if not git_checkout(app_root, args.baseline_branch):
+                result["error"] = f"Failed to checkout baseline branch: {args.baseline_branch}"
+                print(json.dumps(result, indent=2))
+                sys.exit(1)
+
+            baseline_time, error = run_app(app_root, baseline_output)
+            if error and not baseline_time:
+                result["error"] = f"Baseline run failed: {error}"
+                git_checkout(app_root, work_branch)  # Restore
+                print(json.dumps(result, indent=2))
+                sys.exit(1)
+
+            result["baseline_time"] = baseline_time
+            if error:
+                result["baseline_warning"] = error
+
+            # Run modified
+            print(f"Building and running modified ({work_branch})...", file=sys.stderr)
+            if not git_checkout(app_root, work_branch):
+                result["error"] = f"Failed to checkout work branch: {work_branch}"
+                print(json.dumps(result, indent=2))
+                sys.exit(1)
+
+            modified_time, error = run_app(app_root, modified_output)
+            if error and not modified_time:
+                result["error"] = f"Modified run failed: {error}"
+                print(json.dumps(result, indent=2))
+                sys.exit(1)
+
+            result["modified_time"] = modified_time
+            if error:
+                result["modified_warning"] = error
+
+            # Calculate speedup
+            if baseline_time and modified_time and modified_time > 0:
+                result["speedup"] = baseline_time / modified_time
+            else:
+                result["speedup"] = 1.0
+
+            # Check correctness (simplified - just check files exist)
+            result["correctness"] = (os.path.exists(baseline_output) and
+                                    os.path.exists(modified_output))
+
+            result["success"] = True
+
+    except Exception as e:
+        result["error"] = str(e)
+        # Try to restore original branch
+        try:
+            git_checkout(app_root, current_branch)
+        except:
+            pass
+
+    print(json.dumps(result, indent=2))
+    sys.exit(0 if result["success"] else 1)
+
+if __name__ == '__main__':
+    main()

@@ -17,7 +17,7 @@ from swerex.runtime.abstract import (
 from swerex.runtime.abstract import Command as RexCommand
 
 from sweagent.environment.hooks.abstract import CombinedEnvHooks, EnvHook
-from sweagent.environment.repo import Repo, RepoConfig
+from sweagent.environment.repo import LocalRepoConfig, Repo, RepoConfig
 from sweagent.utils.log import get_logger
 
 
@@ -118,6 +118,10 @@ class SWEEnv:
         if self.repo is None:
             return
 
+        # For LocalRepoConfig, the repo already exists at repo.path, no need to copy
+        if isinstance(self.repo, LocalRepoConfig):
+            return
+
         folders = self.communicate(input="ls", check="raise").split("\n")
         if self.repo.repo_name in folders:
             return
@@ -152,8 +156,13 @@ class SWEEnv:
             self.logger.debug("Resetting repository %s to commit %s", self.repo.repo_name, self.repo.base_commit)
             # todo: Currently has swe-ft specific change: The original repo.copy isn't called, because the repo is already
             # present. However, reset --hard <BRANCH> also doesn't work. So modified it here to do a checkout instead.
+            # For LocalRepoConfig, use the actual path; for others (Docker), use /{repo_name}
+            if isinstance(self.repo, LocalRepoConfig):
+                repo_path = str(self.repo.path.resolve())
+            else:
+                repo_path = f"/{self.repo.repo_name}"
             startup_commands = [
-                f"cd /{self.repo.repo_name}",
+                f"cd {repo_path}",
                 "export ROOT=$(pwd -P)",
                 *self.repo.get_reset_commands(),
             ]

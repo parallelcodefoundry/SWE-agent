@@ -1,0 +1,70 @@
+tools:
+  gpu_info:
+    signature: "gpu_info"
+    docstring: |
+      Query NVIDIA GPU information including count, model, memory, driver version, and CUDA version.
+
+      Use this to determine available GPUs before profiling.
+
+  cpu_info:
+    signature: "cpu_info"
+    docstring: |
+      Query CPU architecture, core count, NUMA topology, and cache hierarchy.
+
+      Use this to understand CPU resources and optimize thread placement.
+
+  memory_info:
+    signature: "memory_info"
+    docstring: |
+      Query system memory availability (total, used, available in GB).
+
+      Use this to ensure sufficient memory for profiling overhead.
+
+  slurm_info:
+    signature: "slurm_info"
+    docstring: |
+      Query SLURM job context including job ID, allocated resources, and partition.
+
+      Use this to understand resource allocation and adapt profiling strategy.
+
+  mpi_info:
+    signature: "mpi_info"
+    docstring: |
+      Query MPI implementation, version, and GPU support status.
+
+      Use this to determine MPI capabilities for parallel profiling.
+
+  module_info:
+    signature: "module_info"
+    docstring: |
+      List loaded environment modules including compilers, MPI, and profiling tools.
+
+      Use this to verify required modules are loaded.
+
+  profiler_info:
+    signature: "profiler_info"
+    docstring: |
+      Check availability of profiling tools (HPCToolkit, NSight, PerfTools).
+
+      Use this to determine which profiling tools can be used.
+
+  dcgm_status:
+    signature: "dcgm_status"
+    docstring: |
+      Check NVIDIA DCGM (Data Center GPU Manager) status and GPU health.
+
+      Use this to verify DCGM won't interfere with profiling measurements.
+
+  system_summary:
+    signature: "system_summary"
+    docstring: |
+      Generate comprehensive system overview by calling all info commands.
+
+      Use this to get complete system profile for decision-making.
+
+  check_profiling_ready:
+    signature: "check_profiling_ready"
+    docstring: |
+      Pre-flight check to validate system is ready for profiling.
+
+      Returns GO/NO-GO status with specific recommendations. Run this before profiling.

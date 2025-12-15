@@ -1,0 +1,28 @@
+tools:
+  hatchet_analyze:
+    signature: "hatchet_analyze <database_dir> [<metric>]"
+    docstring: |
+      Analyze HPCToolkit profiling data using Hatchet and generate LLM-friendly output.
+
+      This tool reads an HPCToolkit database and performs comprehensive performance analysis:
+      - Hot path analysis: Identifies the most time-consuming execution paths
+      - Function ranking: Lists top functions by time/metric with percentages
+      - Load imbalance: Analyzes performance distribution across MPI ranks
+      - Call tree summary: Shows hierarchical calling context with metrics
+      - Source locations: Maps hotspots to source file and line ranges
+
+      The metric is auto-detected based on what's available in the database:
+      - GPU profiling: Uses "GKER (sec)" (GPU kernel time)
+      - CPU profiling: Uses "time" or "cycles"
+
+      The output is formatted as structured text suitable for LLM interpretation,
+      making it easy to identify performance bottlenecks and optimization opportunities.
+    arguments:
+      - name: database_dir
+        type: string
+        description: "Path to HPCToolkit database directory (output from hpc_profile or hpcprof)"
+        required: true
+      - name: metric
+        type: string
+        description: "Metric to analyze (auto-detected if not specified). Override with: time, cycles, 'GKER (sec)'"
+        required: false

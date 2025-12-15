@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+"""
+compiler_analysis - Compile code with analysis flags and parse resource usage.
+"""
+import argparse
+import subprocess
+import os
+import sys
+import json
+import re
+import tempfile
+
+def parse_nvcc_output(stderr_output):
+    """Parse nvcc -ptxas-options=-v output for resource usage."""
+    resources = {
+        "registers": None,
+        "smem_bytes": None,
+        "cmem_bytes": None,
+        "spill_loads": 0,
+        "spill_stores": 0
+    }
+
+    # Pattern: ptxas info    : Used N registers, M bytes smem, K bytes cmem[0]
+    # Also: ptxas info    : Used N registers
+
+    for line in stderr_output.split('\n'):
+        # Register usage
+        match = re.search(r'Used\s+(\d+)\s+registers', line)
+        if match:
+            resources["registers"] = int(match.group(1))
+
+        # Shared memory
+        match = re.search(r'(\d+)\s+bytes\s+smem', line)
+        if match:
+            resources["smem_bytes"] = int(match.group(1))
+
+        # Constant memory
+        match = re.search(r'(\d+)\s+bytes\s+cmem', line)
+        if match:
+            resources["cmem_bytes"] = int(match.group(1))
+
+        # Stack frame
+        match = re.search(r'(\d+)\s+bytes\s+stack\s+frame', line)
+        if match:
+            resources["stack_bytes"] = int(match.group(1))
+
+        # Spill loads
+        match = re.search(r'(\d+)\s+bytes\s+spill\s+loads', line)
+        if match:
+            resources["spill_loads"] = int(match.group(1))
+
+        # Spill stores
+        match = re.search(r'(\d+)\s+bytes\s+spill\s+stores', line)
+        if match:
+            resources["spill_stores"] = int(match.group(1))
+
+        # Local memory
+        match = re.search(r'(\d+)\s+bytes\s+lmem', line)
+        if match:
+            resources["lmem_bytes"] = int(match.group(1))
+
+    return resources
+
+def estimate_occupancy(registers, smem_bytes, arch='sm_80'):
+    """Estimate occupancy based on resource usage for given architecture."""
+    if registers is None:
+        return None
+
+    # A100 (sm_80) limits
+    if arch.startswith('sm_8'):
+        max_registers_per_sm = 65536
+        max_smem_per_sm = 164 * 1024  # 164 KB
+        max_threads_per_sm = 2048
+        max_blocks_per_sm = 32
+        max_registers_per_thread = 255
+        warp_size = 32
+    else:
+        # Fallback for older architectures
+        max_registers_per_sm = 65536
+        max_smem_per_sm = 96 * 1024
+        max_threads_per_sm = 2048
+        max_blocks_per_sm = 32
+        max_registers_per_thread = 255
+        warp_size = 32
+
+    # Assume 256 threads per block (common default)
+    threads_per_block = 256
+
+    # Calculate register-limited blocks
+    regs_per_block = registers * threads_per_block
+    if regs_per_block > 0:
+        blocks_by_regs = max_registers_per_sm // regs_per_block
+    else:
+        blocks_by_regs = max_blocks_per_sm
+
+    # Calculate smem-limited blocks
+    if smem_bytes and smem_bytes > 0:
+        blocks_by_smem = max_smem_per_sm // smem_bytes
+    else:
+        blocks_by_smem = max_blocks_per_sm
+
+    # Limit by max blocks
+    blocks_by_hw = max_blocks_per_sm
+
+    # Actual blocks is minimum of all limits
+    actual_blocks = min(blocks_by_regs, blocks_by_smem, blocks_by_hw)
+
+    # Occupancy is ratio of achieved threads to max threads
+    achieved_threads = actual_blocks * threads_per_block
+
+    # Cap achieved threads at max_threads_per_sm (can't exceed hardware limit)
+    achieved_threads = min(achieved_threads, max_threads_per_sm)
+    occupancy = achieved_threads / max_threads_per_sm
+
+    return {
+        "occupancy_ratio": round(occupancy, 3),
+        "occupancy_percent": round(occupancy * 100, 1),
+        "blocks_per_sm": actual_blocks,
+        "threads_per_sm": achieved_threads,
+        "limited_by": "registers" if blocks_by_regs <= blocks_by_smem else "smem"
+    }
+
+def main():
+    parser = argparse.ArgumentParser(description='Analyze compiler resource usage')
+    parser.add_argument('source_file', help='Path to source file to analyze')
+    parser.add_argument('--compiler', default='nvcc', help='Compiler to use')
+    parser.add_argument('--flags', help='Additional compiler flags')
+    args = parser.parse_args()
+
+    if not os.path.isfile(args.source_file):
+        print(json.dumps({
+            "success": False,
+            "error": f"Source file not found: {args.source_file}"
+        }))
+        sys.exit(1)
+
+    # Determine architecture from flags or default
+    arch = 'sm_80'  # Default to A100
+    if args.flags:
+        match = re.search(r'-arch[=\s]*(sm_\d+)', args.flags)
+        if match:
+            arch = match.group(1)
+
+    # Build compiler command with analysis flags
+    if args.compiler == 'nvcc':
+        base_flags = f'-O3 -arch={arch} -Xptxas -v'
+        if args.flags:
+            base_flags = f'{args.flags} -Xptxas -v'
+    else:
+        base_flags = args.flags or '-O3'
+
+    result = {
+        "success": False,
+        "source_file": args.source_file,
+        "compiler": args.compiler,
+        "flags": base_flags,
+        "arch": arch
+    }
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, 'analysis_output.o')
+
+            # Use -c for compile-only (no linking) - we just want resource info
+            cmd = [args.compiler] + base_flags.split() + [
+                '-c', args.source_file, '-o', output_file
+            ]
+
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+            result["returncode"] = proc.returncode
+            result["compiler_output"] = proc.stderr[-2000:] if len(proc.stderr) > 2000 else proc.stderr
+
+            if proc.returncode != 0:
+                result["error"] = f"Compilation failed"
+                print(json.dumps(result, indent=2))
+                sys.exit(1)
+
+            # Parse resource usage
+            if args.compiler == 'nvcc':
+                resources = parse_nvcc_output(proc.stderr)
+                result.update(resources)
+
+                # Estimate occupancy
+                occupancy = estimate_occupancy(
+                    resources.get("registers"),
+                    resources.get("smem_bytes"),
+                    arch
+                )
+                if occupancy:
+                    result["occupancy"] = occupancy
+
+                # Add warnings for potential issues
+                warnings = []
+                if resources.get("spill_loads", 0) > 0 or resources.get("spill_stores", 0) > 0:
+                    warnings.append("Register spilling detected - consider reducing register pressure")
+                if resources.get("registers") and resources["registers"] > 128:
+                    warnings.append(f"High register usage ({resources['registers']}) may limit occupancy")
+                if occupancy and occupancy["occupancy_percent"] < 50:
+                    warnings.append(f"Low occupancy ({occupancy['occupancy_percent']}%) - consider optimizing resource usage")
+
+                if warnings:
+                    result["warnings"] = warnings
+
+            result["success"] = True
+
+    except subprocess.TimeoutExpired:
+        result["error"] = "Compilation timed out (>120 seconds)"
+    except Exception as e:
+        result["error"] = str(e)
+
+    print(json.dumps(result, indent=2))
+    sys.exit(0 if result["success"] else 1)
+
+if __name__ == '__main__':
+    main()

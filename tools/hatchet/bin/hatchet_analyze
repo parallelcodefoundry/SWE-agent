@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+
+"""
+Hatchet Analysis Tool for SWE-agent
+Analyzes HPCToolkit profiling data and generates LLM-friendly output
+"""
+
+import sys
+import os
+from pathlib import Path
+
+# Add local hatchet installation (with HPCToolkit v4 support) to path
+# This takes priority over system-installed hatchet
+local_hatchet = Path.home() / "hatchet"
+if local_hatchet.is_dir():
+    sys.path.insert(0, str(local_hatchet))
+
+# Add lib directory to path
+lib_dir = Path(__file__).parent.parent / "lib"
+sys.path.insert(0, str(lib_dir))
+
+
+def auto_detect_metric(gf):
+    """Auto-detect the best metric to use based on available columns.
+
+    Priority:
+    1. GKER (sec) - GPU kernel time (for GPU profiling)
+    2. time - CPU time (for CPU profiling)
+    3. cycles - CPU cycles
+    4. First numeric column found
+    """
+    columns = list(gf.dataframe.columns)
+
+    # Priority order for metric detection
+    preferred_metrics = [
+        "GKER (sec)",      # GPU kernel time - most relevant for GPU profiling
+        "GKER (sec) (inc)", # Inclusive GPU kernel time
+        "time",            # CPU time
+        "time (inc)",      # Inclusive CPU time
+        "cycles",          # CPU cycles
+        "CPUTIME (sec)",   # Alternative CPU time format
+    ]
+
+    for metric in preferred_metrics:
+        if metric in columns:
+            return metric
+
+    # Fallback: find first column that looks like a numeric metric
+    # (not metadata columns like 'name', 'file', 'line', etc.)
+    metadata_cols = {'name', 'file', 'line', 'type', 'node', 'rank', 'thread',
+                     'function', 'module', 'relation', 'node_pid', 'gpucontext',
+                     'gpustream', 'instruction', 'nid'}
+    for col in columns:
+        if col.lower() not in metadata_cols and not col.startswith('_'):
+            # Check if it's numeric
+            try:
+                if gf.dataframe[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+                    return col
+            except:
+                pass
+
+    return "time"  # Last resort fallback
+
+
+def main():
+    # Parse arguments
+    if len(sys.argv) < 2:
+        print("Usage: hatchet_analyze <database_dir> [<metric>]")
+        print()
+        print("Arguments:")
+        print("  database_dir - Path to HPCToolkit database directory")
+        print("  metric       - Metric to analyze (auto-detected if not specified)")
+        print()
+        print("Example:")
+        print("  hatchet_analyze ./profiling_results/database")
+        print("  hatchet_analyze ./profiling_results/database time")
+        sys.exit(1)
+
+    database_dir = sys.argv[1]
+    user_metric = sys.argv[2] if len(sys.argv) > 2 else None
+
+    # Validate database directory
+    if not os.path.isdir(database_dir):
+        print(f"Error: Database directory not found: {database_dir}")
+        sys.exit(1)
+
+    # Check if Hatchet is installed
+    try:
+        import hatchet as ht
+    except ImportError:
+        print("Error: Hatchet is not installed")
+        print("Please install Hatchet:")
+        print("  pip install hatchet")
+        sys.exit(1)
+
+    # Import analysis utilities
+    try:
+        from hatchet_utils import generate_summary
+    except ImportError:
+        print("Error: Could not import hatchet_utils")
+        print("Please ensure hatchet_utils.py is in the lib/ directory")
+        sys.exit(1)
+
+    # Load HPCToolkit database
+    try:
+        print(f"Loading HPCToolkit database from: {database_dir}", file=sys.stderr)
+        gf = ht.GraphFrame.from_hpctoolkit(database_dir)
+        print(f"Database loaded successfully", file=sys.stderr)
+    except Exception as e:
+        print(f"Error: Failed to load HPCToolkit database: {str(e)}")
+        print(f"Please ensure {database_dir} is a valid HPCToolkit database directory")
+        sys.exit(1)
+
+    # Auto-detect metric if not specified
+    if user_metric:
+        metric = user_metric
+    else:
+        metric = auto_detect_metric(gf)
+        print(f"Auto-detected metric: {metric}", file=sys.stderr)
+
+    print(f"Analyzing with metric: {metric}", file=sys.stderr)
+    print("", file=sys.stderr)
+
+    # Generate and print analysis
+    try:
+        summary = generate_summary(gf, metric=metric, database_dir=database_dir)
+        print(summary)
+    except Exception as e:
+        print(f"Error: Analysis failed: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

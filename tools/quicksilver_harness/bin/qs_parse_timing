@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""
+qs_parse_timing - Parse timing information from Quicksilver output.
+
+Extracts timer table and Figure of Merit from Quicksilver stdout.
+"""
+import argparse
+import re
+import json
+import sys
+
+def parse_quicksilver_timing(output_text):
+    """Parse timing information from Quicksilver output."""
+    timers = {}
+
+    # Parse Timer table
+    # Format:
+    # Timer                       Cumulative   Cumulative   Cumulative   Cumulative   Cumulative   Cumulative
+    # Name                            number    microSecs    microSecs    microSecs    microSecs   Efficiency
+    #                               of calls          min          avg          max       stddev       Rating
+    # main                                 1    9.613e+06    9.638e+06    9.676e+06    2.379e+04        99.61
+
+    # Pattern for timer lines: name  calls  min  avg  max  stddev  efficiency
+    timer_pattern = r'^(\w+)\s+(\d+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)'
+
+    for match in re.finditer(timer_pattern, output_text, re.MULTILINE):
+        name = match.group(1)
+        timers[name] = {
+            'calls': int(match.group(2)),
+            'min_us': float(match.group(3)),
+            'avg_us': float(match.group(4)),
+            'max_us': float(match.group(5)),
+            'stddev_us': float(match.group(6)),
+            'efficiency': float(match.group(7))
+        }
+
+    # Extract Figure of Merit - this is the key performance metric
+    fom_match = re.search(r'Figure\s+Of\s+Merit\s+([\d.eE+-]+)\s+\[([^\]]+)\]', output_text)
+    if fom_match:
+        timers['figure_of_merit'] = {
+            'value': float(fom_match.group(1)),
+            'unit': fom_match.group(2)
+        }
+
+    # Calculate summary metrics if we have the main timers
+    if 'main' in timers and 'cycleTracking' in timers:
+        main_time = timers['main']['avg_us']
+        tracking_time = timers['cycleTracking']['avg_us']
+
+        timers['_summary'] = {
+            'total_time_seconds': main_time / 1e6,
+            'tracking_time_seconds': tracking_time / 1e6,
+            'tracking_percentage': round(tracking_time / main_time * 100, 2) if main_time > 0 else 0
+        }
+
+    return timers
+
+def main():
+    parser = argparse.ArgumentParser(description='Parse Quicksilver timing output')
+    parser.add_argument('output_file', nargs='?', help='Path to Quicksilver output file')
+    args = parser.parse_args()
+
+    # If no argument, show usage
+    if not args.output_file:
+        print(json.dumps({
+            "error": "Usage: qs_parse_timing <output_file>",
+            "description": "Extracts timer table and Figure of Merit from Quicksilver output"
+        }, indent=2))
+        sys.exit(1)
+
+    try:
+        with open(args.output_file, 'r') as f:
+            output_text = f.read()
+    except FileNotFoundError:
+        print(json.dumps({"success": False, "error": f"File not found: {args.output_file}"}))
+        sys.exit(1)
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e)}))
+        sys.exit(1)
+
+    timers = parse_quicksilver_timing(output_text)
+
+    result = {
+        "success": len(timers) > 0,
+        "timers": timers,
+        "source_file": args.output_file
+    }
+
+    if not timers:
+        result["warning"] = "No timing information found in output"
+    elif 'figure_of_merit' in timers:
+        # Highlight FOM as it's the key metric
+        result["figure_of_merit"] = timers['figure_of_merit']['value']
+        result["fom_unit"] = timers['figure_of_merit']['unit']
+
+    print(json.dumps(result, indent=2))
+    sys.exit(0)
+
+if __name__ == '__main__':
+    main()

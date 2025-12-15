@@ -1,0 +1,29 @@
+tools:
+  hpc_profile:
+    signature: "hpc_profile <executable> <output_dir> [<app_args>...]"
+    docstring: |
+      Run HPCToolkit profiling workflow (hpcrun, hpcstruct, hpcprof) on an executable.
+
+      This tool automatically executes the complete HPCToolkit profiling sequence:
+      1. hpcrun: Profiles the application with GPU tracing enabled (-e gpu=nvidia -tt)
+      2. hpcstruct: Recovers program structure from measurements
+      3. hpcprof: Attributes measurements to source code
+
+      The tool handles DCGM pause/resume and creates organized output directories.
+      Results can be analyzed with the hatchet_analyze tool or hpcviewer.
+
+      GPU control: The number of GPUs used is determined by your application's
+      arguments/configuration or CUDA_VISIBLE_DEVICES, not by hpcrun itself.
+    arguments:
+      - name: executable
+        type: string
+        description: "Path to the executable to profile (can be relative or absolute)"
+        required: true
+      - name: output_dir
+        type: string
+        description: "Directory to store profiling results (measurements and database)"
+        required: true
+      - name: app_args
+        type: string
+        description: "Optional arguments to pass to your application (e.g., '-dev num-avail=4' for CHAMPS+)"
+        required: false

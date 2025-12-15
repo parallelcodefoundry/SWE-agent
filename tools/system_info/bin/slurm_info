@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# SLURM Job Context Information for SWE-agent
+# Queries SLURM allocation and job details
+
+main() {
+    echo "=== SLURM Information ==="
+    echo ""
+
+    # Check if running in SLURM job
+    if [ -n "$SLURM_JOB_ID" ]; then
+        echo "Running in SLURM job: YES"
+        echo "Job ID: $SLURM_JOB_ID"
+        echo "Job Name: ${SLURM_JOB_NAME:-N/A}"
+        echo "Partition/Queue: ${SLURM_JOB_PARTITION:-N/A}"
+        echo ""
+
+        echo "Resource Allocation:"
+        echo "  Number of nodes: ${SLURM_JOB_NUM_NODES:-N/A}"
+        echo "  Tasks (MPI ranks): ${SLURM_NTASKS:-N/A}"
+        echo "  CPUs per task: ${SLURM_CPUS_PER_TASK:-N/A}"
+        echo "  GPUs per task: ${SLURM_GPUS_PER_TASK:-N/A}"
+        echo "  GPUs per node: ${SLURM_GPUS_PER_NODE:-N/A}"
+        echo "  Total GPUs: ${SLURM_GPUS:-N/A}"
+        echo ""
+
+        echo "Job Timing:"
+        echo "  Time limit: ${SLURM_TIME_LIMIT:-N/A}"
+        echo "  Submit time: ${SLURM_SUBMIT_TIME:-N/A}"
+        echo ""
+
+        echo "Node Information:"
+        echo "  Node list: ${SLURM_NODELIST:-N/A}"
+        echo "  Local node ID: ${SLURM_NODEID:-N/A}"
+        echo "  Local rank ID: ${SLURM_LOCALID:-N/A}"
+
+    else
+        echo "Running in SLURM job: NO"
+        echo "Not running under SLURM job scheduler"
+        echo ""
+
+        # Try to get system queue information if sinfo is available
+        if command -v sinfo &> /dev/null; then
+            echo "Available SLURM partitions:"
+            sinfo -h --format="%P %a %l %D %T %N" 2>/dev/null | head -10
+        fi
+    fi
+}
+
+main "$@"

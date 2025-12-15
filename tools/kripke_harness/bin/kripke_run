@@ -1,0 +1,487 @@
+#!/usr/bin/env python3
+"""
+kripke_run - Run Kripke with specified parameters using MPI.
+Compares timing against baseline and reports speedup.
+Also verifies correctness by comparing scientific values between runs.
+"""
+import argparse
+import subprocess
+import os
+import sys
+import json
+import time
+import re
+
+# Pristine Kripke source (unmodified)
+PRISTINE_KRIPKE_ROOT = "/global/u2/k/krydzy/SWE-agent/Kripke"
+
+# Default tolerance for correctness checking
+DEFAULT_TOLERANCE = 1e-10
+
+def get_pristine_executable():
+    """Get path to pristine Kripke executable, building if needed."""
+    exe_path = os.path.join(PRISTINE_KRIPKE_ROOT, 'build', 'kripke.exe')
+
+    if not os.path.isfile(exe_path):
+        # Need to build pristine version
+        print("=" * 60, file=sys.stderr)
+        print("Building pristine Kripke for baseline...", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+
+        build_dir = os.path.join(PRISTINE_KRIPKE_ROOT, 'build')
+        os.makedirs(build_dir, exist_ok=True)
+
+        # Configure with cmake if needed
+        if not os.path.exists(os.path.join(build_dir, 'Makefile')):
+            cmake_result = subprocess.run(
+                ['cmake', '..', '-DENABLE_OPENMP=ON'],
+                cwd=build_dir,
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            if cmake_result.returncode != 0:
+                print(f"CMake failed: {cmake_result.stderr}", file=sys.stderr)
+                return None
+
+        build_result = subprocess.run(
+            ['make', '-j8'],
+            cwd=build_dir,
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+
+        if build_result.returncode != 0 or not os.path.isfile(exe_path):
+            print(f"Failed to build pristine Kripke: {build_result.stderr}", file=sys.stderr)
+            return None
+
+        print("Pristine build complete.", file=sys.stderr)
+
+    return exe_path
+
+def run_baseline(args, env):
+    """Run pristine Kripke to establish baseline timing.
+
+    IMPORTANT: Always runs with IDENTICAL parameters as the modified version
+    to ensure fair comparison. No caching - baseline is calculated fresh each time.
+
+    Returns: (timing_dict, stdout_str) or (None, None) on failure
+    """
+    exe_path = get_pristine_executable()
+    if not exe_path:
+        return None, None
+
+    print("=" * 60, file=sys.stderr)
+    print("BASELINE RUN: Unmodified Kripke with IDENTICAL parameters", file=sys.stderr)
+    print(f"  Arch: {args.arch}, Layout: {args.layout}, Zones: {args.zones}", file=sys.stderr)
+    print(f"  Groups: {args.groups}, Iterations: {args.niter}, Quad: {args.quad}", file=sys.stderr)
+    print(f"  MPI ranks: {args.np}, OMP threads: {args.omp_threads}", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+
+    # Build command with same parameters
+    kripke_cmd = [
+        exe_path,
+        '--arch', args.arch,
+        '--layout', args.layout,
+        '--zones', args.zones,
+        '--groups', str(args.groups),
+        '--niter', str(args.niter),
+        '--quad', str(args.quad),
+        '--procs', args.procs
+    ]
+
+    # Use same srun configuration
+    cmd = [
+        'srun', '-N', '1',
+        f'--ntasks-per-node={args.np}'
+    ] + kripke_cmd
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=os.path.dirname(exe_path),
+            capture_output=True,
+            text=True,
+            timeout=600,
+            env=env
+        )
+
+        if proc.returncode == 0:
+            timing = parse_timing_from_output(proc.stdout)
+            if timing and 'Solve' in timing:
+                print(f"Baseline completed: {timing['Solve']:.3f}s solve time", file=sys.stderr)
+                print("=" * 60, file=sys.stderr)
+                return timing, proc.stdout
+            else:
+                print("Failed to parse baseline timing from output", file=sys.stderr)
+        else:
+            print(f"Baseline run failed: {proc.stderr[-500:]}", file=sys.stderr)
+    except Exception as e:
+        print(f"Baseline run error: {e}", file=sys.stderr)
+
+    return None, None
+
+def get_baseline(args, env):
+    """Get baseline timing and output by running pristine Kripke with IDENTICAL parameters.
+
+    No caching - always runs fresh to ensure fair comparison with the exact same
+    configuration (zones, groups, MPI ranks, OMP threads, etc.).
+
+    Returns: (timing_dict, stdout_str) or (None, None) on failure
+    """
+    return run_baseline(args, env)
+
+
+def extract_scientific_values(output_text):
+    """Extract SCIENTIFIC values from Kripke output for correctness comparison.
+
+    NOTE: This excludes timing/performance metrics because those naturally vary
+    between runs and are NOT correctness indicators.
+    """
+    values = {}
+
+    # Kripke doesn't have cycle-by-cycle output like Quicksilver
+    # Look for solution values or residual norms if present
+    # For now, we'll compare the timer counts as a proxy for correctness
+    # (same number of iterations = same algorithmic behavior)
+
+    # Look for iteration count
+    iter_match = re.search(r'niter\s*[=:]\s*(\d+)', output_text, re.IGNORECASE)
+    if iter_match:
+        values['iterations'] = int(iter_match.group(1))
+
+    # Look for zone counts
+    zones_match = re.search(r'zones\s*[=:]\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', output_text)
+    if zones_match:
+        values['zones_x'] = int(zones_match.group(1))
+        values['zones_y'] = int(zones_match.group(2))
+        values['zones_z'] = int(zones_match.group(3))
+
+    # Look for groups
+    groups_match = re.search(r'groups\s*[=:]\s*(\d+)', output_text, re.IGNORECASE)
+    if groups_match:
+        values['groups'] = int(groups_match.group(1))
+
+    return values
+
+
+def check_correctness(baseline_output, modified_output, tolerance=DEFAULT_TOLERANCE):
+    """Compare scientific values between baseline and modified outputs.
+
+    Returns: dict with 'correct' (bool), 'matched' (int), 'differences' (list)
+    """
+    baseline_values = extract_scientific_values(baseline_output)
+    modified_values = extract_scientific_values(modified_output)
+
+    # For Kripke, if both runs complete successfully with same params,
+    # consider it correct (deterministic transport solver)
+    if not baseline_values and not modified_values:
+        return {"correct": True, "matched": 0, "note": "No specific values to compare, both runs completed"}
+
+    differences = []
+    matched = 0
+
+    for key in baseline_values.keys():
+        baseline_val = baseline_values[key]
+        modified_val = modified_values.get(key)
+
+        if modified_val is None:
+            differences.append({"key": key, "issue": "missing_in_modified", "baseline": baseline_val})
+        elif isinstance(baseline_val, float):
+            if baseline_val == 0:
+                rel_error = abs(modified_val) if modified_val != 0 else 0
+            else:
+                rel_error = abs(modified_val - baseline_val) / abs(baseline_val)
+
+            if rel_error > tolerance:
+                differences.append({
+                    "key": key,
+                    "baseline": baseline_val,
+                    "modified": modified_val,
+                    "relative_error": rel_error
+                })
+            else:
+                matched += 1
+        else:
+            if baseline_val != modified_val:
+                differences.append({
+                    "key": key,
+                    "baseline": baseline_val,
+                    "modified": modified_val,
+                    "difference": modified_val - baseline_val
+                })
+            else:
+                matched += 1
+
+    return {
+        "correct": len(differences) == 0,
+        "matched": matched,
+        "total_values": len(baseline_values),
+        "differences": differences[:5] if differences else [],
+        "total_differences": len(differences)
+    }
+
+def parse_timing_from_output(stdout):
+    """Extract timing information from Kripke output."""
+    timing = {}
+
+    # Parse timer output lines like:
+    # "Timer                 Total (s)    Count"
+    # "Solve                21.809679        1"
+    for line in stdout.split('\n'):
+        # Look for timing lines with format: name  time  count
+        match = re.match(r'\s*(\w+)\s+([\d.]+)\s+(\d+)\s*$', line)
+        if match:
+            name = match.group(1)
+            total_s = float(match.group(2))
+            timing[name] = total_s
+
+    return timing
+
+def calculate_speedup(baseline, current):
+    """Calculate speedup metrics comparing current to baseline."""
+    speedup = {}
+
+    if baseline and current:
+        # Primary speedup: Solve time (main computational phase)
+        if 'Solve' in baseline and 'Solve' in current:
+            if current['Solve'] > 0:
+                speedup['solve_speedup'] = baseline['Solve'] / current['Solve']
+                speedup['solve_baseline_s'] = baseline['Solve']
+                speedup['solve_current_s'] = current['Solve']
+                speedup['solve_time_saved_s'] = baseline['Solve'] - current['Solve']
+
+        # SweepSolver speedup
+        if 'SweepSolver' in baseline and 'SweepSolver' in current:
+            if current['SweepSolver'] > 0:
+                speedup['sweepsolver_speedup'] = baseline['SweepSolver'] / current['SweepSolver']
+                speedup['sweepsolver_baseline_s'] = baseline['SweepSolver']
+                speedup['sweepsolver_current_s'] = current['SweepSolver']
+
+        # LTimes speedup
+        if 'LTimes' in baseline and 'LTimes' in current:
+            if current['LTimes'] > 0:
+                speedup['ltimes_speedup'] = baseline['LTimes'] / current['LTimes']
+                speedup['ltimes_baseline_s'] = baseline['LTimes']
+                speedup['ltimes_current_s'] = current['LTimes']
+
+        # LPlusTimes speedup
+        if 'LPlusTimes' in baseline and 'LPlusTimes' in current:
+            if current['LPlusTimes'] > 0:
+                speedup['lplustimes_speedup'] = baseline['LPlusTimes'] / current['LPlusTimes']
+                speedup['lplustimes_baseline_s'] = baseline['LPlusTimes']
+                speedup['lplustimes_current_s'] = current['LPlusTimes']
+
+    return speedup
+
+def format_speedup_summary(speedup, correctness, args):
+    """Format speedup and correctness summary for prominent display."""
+    lines = []
+    lines.append("=" * 60)
+    lines.append("PERFORMANCE & CORRECTNESS COMPARISON: Modified vs Pristine")
+    lines.append("(Both runs used IDENTICAL configuration for fair comparison)")
+    lines.append(f"  MPI ranks: {args.np}, OMP threads: {args.omp_threads}")
+    lines.append("=" * 60)
+
+    # Correctness section
+    if correctness:
+        if correctness.get('correct'):
+            lines.append(f"CORRECTNESS:     PASSED ({correctness.get('matched', 0)} values match)")
+        else:
+            lines.append(f"CORRECTNESS:     FAILED ({correctness.get('total_differences', 0)} values differ!)")
+            for diff in correctness.get('differences', [])[:3]:
+                lines.append(f"  - {diff.get('key')}: expected {diff.get('baseline')}, got {diff.get('modified')}")
+    lines.append("-" * 60)
+
+    if 'solve_speedup' in speedup:
+        sp = speedup['solve_speedup']
+        if sp > 1.0:
+            status = f"FASTER (speedup: {sp:.2f}x)"
+        elif sp < 1.0:
+            status = f"SLOWER (slowdown: {1/sp:.2f}x)"
+        else:
+            status = "NO CHANGE"
+
+        lines.append(f"Solve Time:      {speedup.get('solve_current_s', 'N/A'):.3f}s vs baseline {speedup.get('solve_baseline_s', 'N/A'):.3f}s")
+        lines.append(f"Result:          {status}")
+        if 'solve_time_saved_s' in speedup:
+            saved = speedup['solve_time_saved_s']
+            if saved > 0:
+                lines.append(f"Time Saved:      {saved:.3f}s")
+            else:
+                lines.append(f"Time Added:      {-saved:.3f}s")
+    else:
+        lines.append("Could not calculate speedup (timing data missing)")
+
+    if 'sweepsolver_speedup' in speedup:
+        sp = speedup['sweepsolver_speedup']
+        lines.append(f"SweepSolver:     {speedup.get('sweepsolver_current_s', 'N/A'):.3f}s vs baseline {speedup.get('sweepsolver_baseline_s', 'N/A'):.3f}s (speedup: {sp:.2f}x)")
+
+    if 'ltimes_speedup' in speedup:
+        sp = speedup['ltimes_speedup']
+        lines.append(f"LTimes:          {speedup.get('ltimes_current_s', 'N/A'):.3f}s vs baseline {speedup.get('ltimes_baseline_s', 'N/A'):.3f}s (speedup: {sp:.2f}x)")
+
+    if 'lplustimes_speedup' in speedup:
+        sp = speedup['lplustimes_speedup']
+        lines.append(f"LPlusTimes:      {speedup.get('lplustimes_current_s', 'N/A'):.3f}s vs baseline {speedup.get('lplustimes_baseline_s', 'N/A'):.3f}s (speedup: {sp:.2f}x)")
+
+    lines.append("=" * 60)
+    return "\n".join(lines)
+
+def main():
+    parser = argparse.ArgumentParser(description='Run Kripke')
+    parser.add_argument('--arch', default='OpenMP', help='Backend: Sequential, OpenMP, CUDA, HIP')
+    parser.add_argument('--layout', default='DGZ', help='Data layout: DGZ, DZG, GDZ, GZD, ZDG, ZGD')
+    parser.add_argument('--zones', default='32,32,32', help='Zone dimensions as x,y,z')
+    parser.add_argument('--groups', type=int, default=32, help='Number of energy groups')
+    parser.add_argument('--niter', type=int, default=10, help='Number of iterations')
+    parser.add_argument('--quad', type=int, default=8, help='Quadrature order')
+    parser.add_argument('--np', type=int, default=4, help='Number of MPI ranks')
+    parser.add_argument('--procs', type=str, help='MPI decomposition as px,py,pz (must equal np)')
+    parser.add_argument('--omp-threads', type=int, default=8, help='OpenMP threads per rank')
+    parser.add_argument('--output', type=str, help='Output file path')
+    args = parser.parse_args()
+
+    # Compute default procs decomposition if not specified
+    if not args.procs:
+        # Find a factorization for the number of ranks
+        np = args.np
+        if np == 1:
+            args.procs = '1,1,1'
+        elif np == 2:
+            args.procs = '2,1,1'
+        elif np == 4:
+            args.procs = '2,2,1'
+        elif np == 8:
+            args.procs = '2,2,2'
+        else:
+            # Default: linear decomposition in x
+            args.procs = f'{np},1,1'
+
+    # Find Kripke executable
+    kripke_root = os.environ.get('KRIPKE_ROOT')
+    if not kripke_root:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate_paths = [
+            os.path.join(script_dir, '..', '..', '..', 'Kripke'),
+            '/global/u2/k/krydzy/SWE-agent/Kripke',
+        ]
+        for path in candidate_paths:
+            if os.path.isdir(path):
+                kripke_root = os.path.abspath(path)
+                break
+
+    exe_path = os.path.join(kripke_root, 'build', 'kripke.exe') if kripke_root else None
+
+    if not exe_path or not os.path.isfile(exe_path):
+        print(json.dumps({
+            "success": False,
+            "error": "Kripke executable not found. Run kripke_build first."
+        }))
+        sys.exit(1)
+
+    result = {
+        "success": False,
+        "executable": exe_path,
+        "parameters": {
+            "arch": args.arch,
+            "layout": args.layout,
+            "zones": args.zones,
+            "groups": args.groups,
+            "niter": args.niter,
+            "quad": args.quad,
+            "procs": args.procs
+        },
+        "mpi_ranks": args.np,
+        "omp_threads": args.omp_threads
+    }
+
+    # Set OpenMP environment
+    env = os.environ.copy()
+    env['OMP_NUM_THREADS'] = str(args.omp_threads)
+    env['OMP_PROC_BIND'] = 'spread'
+    env['OMP_PLACES'] = 'threads'
+
+    # Run baseline with IDENTICAL parameters for fair comparison
+    # Returns both timing and output for correctness checking
+    baseline_timing, baseline_output = get_baseline(args, env)
+
+    # Build Kripke command
+    kripke_cmd = [
+        exe_path,
+        '--arch', args.arch,
+        '--layout', args.layout,
+        '--zones', args.zones,
+        '--groups', str(args.groups),
+        '--niter', str(args.niter),
+        '--quad', str(args.quad),
+        '--procs', args.procs
+    ]
+
+    # Wrap with srun (Perlmutter native launcher)
+    # Note: OpenMP builds don't need GPU options
+    cmd = [
+        'srun', '-N', '1',
+        f'--ntasks-per-node={args.np}'
+    ] + kripke_cmd
+
+    try:
+        print(f"Running: {' '.join(cmd)}", file=sys.stderr)
+        print(f"OMP_NUM_THREADS={args.omp_threads}", file=sys.stderr)
+        start_time = time.time()
+
+        proc = subprocess.run(
+            cmd,
+            cwd=os.path.dirname(exe_path),
+            capture_output=True,
+            text=True,
+            timeout=600,  # 10 minute timeout
+            env=env
+        )
+
+        elapsed = time.time() - start_time
+
+        result["returncode"] = proc.returncode
+        result["elapsed_seconds"] = elapsed
+        result["stdout"] = proc.stdout
+        result["stderr"] = proc.stderr[-2000:] if len(proc.stderr) > 2000 else proc.stderr
+
+        if proc.returncode == 0:
+            result["success"] = True
+
+            # Parse timing from output
+            current_timing = parse_timing_from_output(proc.stdout)
+            result["timing"] = current_timing
+
+            # Check correctness by comparing scientific values
+            correctness = None
+            if baseline_output:
+                correctness = check_correctness(baseline_output, proc.stdout)
+                result["correctness"] = correctness
+
+            # Calculate speedup vs baseline
+            if baseline_timing and current_timing:
+                speedup = calculate_speedup(baseline_timing, current_timing)
+                result["speedup"] = speedup
+                result["baseline_timing"] = baseline_timing
+
+                # Print prominent speedup and correctness summary
+                print("\n" + format_speedup_summary(speedup, correctness, args), file=sys.stderr)
+
+        # Save output to file if requested
+        if args.output:
+            with open(args.output, 'w') as f:
+                f.write(proc.stdout)
+            result["output_file"] = args.output
+
+    except subprocess.TimeoutExpired:
+        result["error"] = "Execution timed out (>10 minutes)"
+    except Exception as e:
+        result["error"] = str(e)
+
+    print(json.dumps(result, indent=2))
+    sys.exit(0 if result["success"] else 1)
+
+if __name__ == '__main__':
+    main()

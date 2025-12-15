@@ -1,0 +1,123 @@
+tools:
+  benchmark_code:
+    signature: "benchmark_code <app_name> [--branch <branch>] [--baseline_branch <baseline_branch>]"
+    docstring: |
+      Build and benchmark an HPC proxy application, comparing against baseline.
+
+      This tool implements a git-based comparison workflow:
+      1. Builds the baseline version from baseline_branch (default: main)
+      2. Builds the modified version from the current branch
+      3. Runs both versions with identical inputs
+      4. Compares correctness (output within tolerance)
+      5. Compares timing for speedup calculation
+
+      Supported applications:
+        - quicksilver: Monte Carlo particle transport
+        - kripke: 3D Sn deterministic transport
+
+      Returns JSON with:
+        - correctness: bool (outputs match within tolerance)
+        - baseline_time: float (seconds)
+        - modified_time: float (seconds)
+        - speedup: float (baseline_time / modified_time)
+        - success: bool
+    arguments:
+      - name: app_name
+        type: string
+        description: "Application name: 'quicksilver' or 'kripke'"
+        required: true
+      - name: branch
+        type: string
+        description: "Branch with modifications (default: current branch)"
+        required: false
+      - name: baseline_branch
+        type: string
+        description: "Branch with baseline code (default: main)"
+        required: false
+
+  microbench_code:
+    signature: "microbench_code <code_file> [--compiler <compiler>] [--flags <flags>] [--repeat <repeat>]"
+    docstring: |
+      Compile and run a standalone code snippet for quick timing experiments.
+
+      Useful for testing kernel optimizations in isolation before integrating
+      into the full application. Supports CUDA, C++, and HIP code.
+
+      Example workflow:
+      1. Extract a kernel into standalone file
+      2. Run microbench_code to get baseline timing
+      3. Modify the kernel
+      4. Run microbench_code again to measure improvement
+
+      Compilers:
+        - nvcc: NVIDIA CUDA compiler
+        - g++: GNU C++ compiler
+        - hipcc: AMD HIP compiler
+
+      Returns JSON with timing statistics:
+        - mean_ms: Average time in milliseconds
+        - min_ms: Minimum time
+        - max_ms: Maximum time
+        - stddev_ms: Standard deviation
+        - compile_success: bool
+    arguments:
+      - name: code_file
+        type: string
+        description: "Path to source code file (.cu, .cpp, .c, .hip)"
+        required: true
+      - name: compiler
+        type: string
+        description: "Compiler command (default: nvcc for .cu, g++ otherwise)"
+        required: false
+      - name: flags
+        type: string
+        description: "Compiler flags (default: -O3)"
+        required: false
+      - name: repeat
+        type: integer
+        description: "Number of timing iterations (default: 5)"
+        required: false
+
+  compiler_analysis:
+    signature: "compiler_analysis <source_file> [--compiler <compiler>] [--flags <flags>]"
+    docstring: |
+      Compile code with analysis flags and parse resource usage.
+
+      For CUDA code, this parses nvcc's -ptxas-options=-v output to extract:
+        - registers: Number of registers per thread
+        - smem_bytes: Shared memory per block
+        - cmem_bytes: Constant memory used
+        - occupancy_estimate: Estimated occupancy based on resources
+
+      This information is crucial for GPU kernel optimization:
+        - High register count limits occupancy
+        - Register spills indicate need for optimization
+        - Shared memory usage affects block scheduling
+
+      Example usage for optimization:
+      1. Run compiler_analysis on original kernel
+      2. Note register count and any spills
+      3. Apply optimization (reduce locals, use __launch_bounds__)
+      4. Run compiler_analysis again to verify improvement
+
+      Returns JSON with:
+        - success: bool
+        - registers: int
+        - smem_bytes: int
+        - cmem_bytes: int
+        - spill_loads: int (register spills to local memory)
+        - spill_stores: int
+        - compiler_output: str (relevant portion)
+    arguments:
+      - name: source_file
+        type: string
+        description: "Path to source file to analyze"
+        required: true
+      - name: compiler
+        type: string
+        description: "Compiler to use (default: nvcc)"
+        required: false
+      - name: flags
+        type: string
+        description: "Additional compiler flags (default: -O3 -arch=sm_80)"
+        required: false

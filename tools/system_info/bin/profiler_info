@@ -1,0 +1,64 @@
+#!/bin/bash
+
+# Profiler Availability Check for SWE-agent
+# Checks which profiling tools are available
+
+main() {
+    echo "=== Available Profiling Tools ==="
+    echo ""
+
+    # HPCToolkit
+    echo "HPCToolkit:"
+    for tool in hpcrun hpcstruct hpcprof hpcprof-mpi; do
+        if command -v $tool &> /dev/null; then
+            echo "  ✓ $tool: $(command -v $tool)"
+        else
+            echo "  ✗ $tool: Not found"
+        fi
+    done
+    echo ""
+
+    # NVIDIA NSight tools
+    echo "NVIDIA NSight:"
+    for tool in ncu nsys; do
+        if command -v $tool &> /dev/null; then
+            echo "  ✓ $tool: $(command -v $tool)"
+        else
+            echo "  ✗ $tool: Not found"
+        fi
+    done
+    # Check in common HPC SDK location
+    if [ -d "/opt/nvidia/hpc_sdk" ]; then
+        local ncu_path=$(find /opt/nvidia/hpc_sdk -name ncu -type f 2>/dev/null | head -1)
+        local nsys_path=$(find /opt/nvidia/hpc_sdk -name nsys -type f 2>/dev/null | head -1)
+        if [ -n "$ncu_path" ]; then
+            echo "  ✓ ncu (HPC SDK): $ncu_path"
+        fi
+        if [ -n "$nsys_path" ]; then
+            echo "  ✓ nsys (HPC SDK): $nsys_path"
+        fi
+    fi
+    echo ""
+
+    # Cray PerfTools
+    echo "Cray PerfTools:"
+    if command -v module &> /dev/null; then
+        if module avail perftools 2>&1 | grep -q perftools; then
+            echo "  ✓ perftools modules available"
+            module avail perftools 2>&1 | grep "perftools" | sed 's/^/    /'
+        else
+            echo "  ✗ perftools modules not found"
+        fi
+    fi
+    echo ""
+
+    # Other profilers
+    echo "Other Tools:"
+    for tool in gprof valgrind perf; do
+        if command -v $tool &> /dev/null; then
+            echo "  ✓ $tool: $(command -v $tool)"
+        fi
+    done
+}
+
+main "$@"

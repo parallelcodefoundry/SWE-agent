@@ -1,0 +1,153 @@
+tools:
+  kripke_build:
+    signature: "kripke_build [<arch>] [<clean>]"
+    docstring: |
+      Build the Kripke 3D Sn deterministic transport proxy application.
+
+      IMPORTANT: The goal is to optimize GPU performance. Do NOT switch to a
+      CPU-only build.
+
+      This tool builds Kripke using CMake with RAJA for portability.
+      Supports multiple backends for different architectures.
+
+      Build configuration:
+        - CMake with Release mode
+        - MPI enabled
+        - OpenMP enabled
+
+      Backends:
+        - Sequential: Single-threaded CPU
+        - OpenMP: Multi-threaded CPU (default)
+        - CUDA: NVIDIA GPU (preferred for optimization)
+        - HIP: AMD GPU
+
+      Returns build status and any compilation errors.
+    arguments:
+      - name: arch
+        type: string
+        description: "Backend architecture: Sequential, OpenMP, CUDA, HIP (default: OpenMP)"
+        required: false
+        argument_format: "--arch {{value}}"
+      - name: clean
+        type: boolean
+        description: "Force clean rebuild (remove build directory)"
+        required: false
+        argument_format: "--clean"
+
+  kripke_run:
+    signature: "kripke_run [<arch>] [<layout>] [<zones>] [<groups>] [<niter>] [<np>] [<omp_threads>]"
+    docstring: |
+      Run Kripke with specified parameters using MPI.
+      This tool checks BOTH performance AND correctness in a single run.
+
+      IMPORTANT: This tool automatically runs BOTH the pristine (unmodified)
+      and modified Kripke with IDENTICAL parameters, then:
+        1. Compares TIMING to show speedup
+        2. Verifies CORRECTNESS by comparing configuration values
+
+      You do NOT need to call kripke_check_correct separately - this tool does both!
+
+      CRITICAL: Use the default parameters (4 MPI ranks, 8 OMP threads) to get
+      a meaningful performance comparison. Do NOT reduce to 1 MPI rank or
+      1 OMP thread as this defeats the purpose of parallel optimization testing.
+
+      Default configuration (use these for fair comparison):
+        - Backend: OpenMP
+        - Layout: DGZ
+        - Zones: 32,32,32
+        - Groups: 32
+        - Iterations: 10
+        - MPI ranks: 4 (1 per GPU)
+        - OpenMP threads: 8 per rank
+
+      Data layouts (6 nestings):
+        - DGZ, DZG, GDZ, GZD, ZDG, ZGD
+        (D=Direction, G=Group, Z=Zone)
+
+      The baseline is ALWAYS calculated with the SAME parameters you pass
+      to ensure accurate speedup measurement and correctness verification.
+
+      Returns: speedup comparison, correctness check, and timing details.
+    arguments:
+      - name: arch
+        type: string
+        description: "Backend: Sequential, OpenMP, CUDA, HIP (default: OpenMP)"
+        required: false
+        argument_format: "--arch {{value}}"
+      - name: layout
+        type: string
+        description: "Data layout nesting (default: DGZ)"
+        required: false
+        argument_format: "--layout {{value}}"
+      - name: zones
+        type: string
+        description: "Zone dimensions as x,y,z (default: 32,32,32)"
+        required: false
+        argument_format: "--zones {{value}}"
+      - name: groups
+        type: integer
+        description: "Number of energy groups (default: 32)"
+        required: false
+        argument_format: "--groups {{value}}"
+      - name: niter
+        type: integer
+        description: "Number of iterations (default: 10)"
+        required: false
+        argument_format: "--niter {{value}}"
+      - name: np
+        type: integer
+        description: "Number of MPI ranks (default: 4)"
+        required: false
+        argument_format: "--np {{value}}"
+      - name: omp_threads
+        type: integer
+        description: "OpenMP threads per rank (default: 8)"
+        required: false
+        argument_format: "--omp-threads {{value}}"
+
+  kripke_parse_timing:
+    signature: "kripke_parse_timing <output_file>"
+    docstring: |
+      Parse timing information from Kripke output.
+
+      Extracts timer values from Kripke's output including:
+        - LTimes: L-times moment calculation
+        - LPlusTimes: L-plus-times calculation
+        - Sweep: Sweep kernel time
+        - Scattering: Scattering kernel time
+        - Total solve time
+
+      Returns JSON with timing breakdown and percentages.
+    arguments:
+      - name: output_file
+        type: string
+        description: "Path to Kripke output file"
+        required: true
+        argument_format: "{{value}}"
+
+  kripke_check_correct:
+    signature: "kripke_check_correct <baseline_output> <test_output> [<tolerance>]"
+    docstring: |
+      Check correctness of Kripke output against baseline.
+
+      Compares flux values and solution metrics between baseline
+      and test runs. Values must be within tolerance
+      (default: 1e-10 relative error).
+
+      Returns JSON with 'correct' (bool) and 'differences' (list) fields.
+    arguments:
+      - name: baseline_output
+        type: string
+        description: "Path to baseline output file"
+        required: true
+        argument_format: "{{value}}"
+      - name: test_output
+        type: string
+        description: "Path to test output file to validate"
+        required: true
+        argument_format: "{{value}}"
+      - name: tolerance
+        type: float
+        description: "Relative error tolerance (default: 1e-10)"
+        required: false
+        argument_format: "--tolerance {{value}}"

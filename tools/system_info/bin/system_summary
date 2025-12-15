@@ -1,0 +1,81 @@
+#!/bin/bash
+
+# System Summary Tool for SWE-agent
+# Provides complete system overview by calling all info commands
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+main() {
+    echo "================================================================================"
+    echo "                        HPC SYSTEM INFORMATION SUMMARY"
+    echo "================================================================================"
+    echo ""
+
+    # GPU Information
+    if [ -x "$SCRIPT_DIR/gpu_info" ]; then
+        "$SCRIPT_DIR/gpu_info"
+        echo ""
+        echo "--------------------------------------------------------------------------------"
+        echo ""
+    fi
+
+    # CPU Information
+    if [ -x "$SCRIPT_DIR/cpu_info" ]; then
+        "$SCRIPT_DIR/cpu_info"
+        echo ""
+        echo "--------------------------------------------------------------------------------"
+        echo ""
+    fi
+
+    # Memory Information
+    if [ -x "$SCRIPT_DIR/memory_info" ]; then
+        "$SCRIPT_DIR/memory_info"
+        echo ""
+        echo "--------------------------------------------------------------------------------"
+        echo ""
+    fi
+
+    # SLURM Information
+    if [ -x "$SCRIPT_DIR/slurm_info" ]; then
+        "$SCRIPT_DIR/slurm_info"
+        echo ""
+        echo "--------------------------------------------------------------------------------"
+        echo ""
+    fi
+
+    # MPI Information
+    if [ -x "$SCRIPT_DIR/mpi_info" ]; then
+        "$SCRIPT_DIR/mpi_info"
+        echo ""
+        echo "--------------------------------------------------------------------------------"
+        echo ""
+    fi
+
+    # Module Information
+    if [ -x "$SCRIPT_DIR/module_info" ]; then
+        "$SCRIPT_DIR/module_info"
+        echo ""
+        echo "--------------------------------------------------------------------------------"
+        echo ""
+    fi
+
+    # Profiler Availability
+    if [ -x "$SCRIPT_DIR/profiler_info" ]; then
+        "$SCRIPT_DIR/profiler_info"
+        echo ""
+        echo "--------------------------------------------------------------------------------"
+        echo ""
+    fi
+
+    # DCGM Status
+    if [ -x "$SCRIPT_DIR/dcgm_status" ]; then
+        "$SCRIPT_DIR/dcgm_status"
+        echo ""
+    fi
+
+    echo "================================================================================"
+    echo "                           END OF SYSTEM SUMMARY"
+    echo "================================================================================"
+}
+
+main "$@"

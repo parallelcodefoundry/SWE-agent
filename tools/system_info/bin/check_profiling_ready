@@ -1,0 +1,138 @@
+#!/bin/bash
+
+# Profiling Readiness Check for SWE-agent
+# Validates system is ready for performance profiling
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+main() {
+    echo "=== Profiling Readiness Check ==="
+    echo ""
+
+    local all_ready=true
+    local warnings=0
+
+    # Check 1: GPU availability
+    echo "[1/7] Checking GPU availability..."
+    if command -v nvidia-smi &> /dev/null; then
+        local gpu_count=$(nvidia-smi -L | wc -l)
+        if [ $gpu_count -gt 0 ]; then
+            echo "  ✓ PASS: $gpu_count GPU(s) detected"
+        else
+            echo "  ✗ FAIL: No GPUs detected"
+            all_ready=false
+        fi
+    else
+        echo "  ⚠ WARNING: nvidia-smi not available (CPU-only profiling)"
+        warnings=$((warnings + 1))
+    fi
+    echo ""
+
+    # Check 2: Profiling tools availability
+    echo "[2/7] Checking profiling tools..."
+    local tools_found=0
+    for tool in hpcrun hpcstruct hpcprof ncu nsys; do
+        if command -v $tool &> /dev/null; then
+            tools_found=$((tools_found + 1))
+        fi
+    done
+    if [ $tools_found -gt 0 ]; then
+        echo "  ✓ PASS: $tools_found profiling tool(s) available"
+    else
+        echo "  ✗ FAIL: No profiling tools found"
+        echo "     Load HPCToolkit with: spack load hpctoolkit"
+        all_ready=false
+    fi
+    echo ""
+
+    # Check 3: Memory availability
+    echo "[3/7] Checking available memory..."
+    if command -v free &> /dev/null; then
+        local avail_gb=$(free -g | awk 'NR==2{print $7}')
+        if [ $avail_gb -gt 50 ]; then
+            echo "  ✓ PASS: ${avail_gb} GB available (sufficient)"
+        elif [ $avail_gb -gt 10 ]; then
+            echo "  ⚠ WARNING: Only ${avail_gb} GB available (may be tight)"
+            warnings=$((warnings + 1))
+        else
+            echo "  ✗ FAIL: Only ${avail_gb} GB available (insufficient)"
+            all_ready=false
+        fi
+    else
+        echo "  ⚠ WARNING: Cannot determine memory (proceeding anyway)"
+        warnings=$((warnings + 1))
+    fi
+    echo ""
+
+    # Check 4: DCGM status
+    echo "[4/7] Checking DCGM status..."
+    if command -v dcgmi &> /dev/null; then
+        if dcgmi profile --list 2>&1 | grep -q "paused"; then
+            echo "  ✓ PASS: DCGM profiling is paused (optimal)"
+        else
+            echo "  ⚠ WARNING: DCGM may be active (can affect measurements)"
+            echo "     Pause with: dcgmi profile --pause"
+            warnings=$((warnings + 1))
+        fi
+    else
+        echo "  ⚠ WARNING: DCGM not available (skipping check)"
+    fi
+    echo ""
+
+    # Check 5: SLURM allocation (if applicable)
+    echo "[5/7] Checking SLURM allocation..."
+    if [ -n "$SLURM_JOB_ID" ]; then
+        echo "  ✓ PASS: Running in SLURM job $SLURM_JOB_ID"
+        if [ -n "$SLURM_GPUS" ] || [ -n "$SLURM_GPUS_PER_TASK" ]; then
+            echo "     GPUs allocated: ${SLURM_GPUS:-${SLURM_GPUS_PER_TASK}}"
+        fi
+    else
+        echo "  ℹ INFO: Not in SLURM job (interactive session)"
+    fi
+    echo ""
+
+    # Check 6: Write permissions
+    echo "[6/7] Checking write permissions..."
+    if [ -w "." ]; then
+        echo "  ✓ PASS: Can write to current directory"
+    else
+        echo "  ✗ FAIL: No write permission in current directory"
+        all_ready=false
+    fi
+    echo ""
+
+    # Check 7: Disk space
+    echo "[7/7] Checking disk space..."
+    local avail_space=$(df -BG . | awk 'NR==2{print $4}' | sed 's/G//')
+    if [ $avail_space -gt 100 ]; then
+        echo "  ✓ PASS: ${avail_space} GB available (sufficient)"
+    elif [ $avail_space -gt 10 ]; then
+        echo "  ⚠ WARNING: Only ${avail_space} GB available"
+        warnings=$((warnings + 1))
+    else
+        echo "  ✗ FAIL: Only ${avail_space} GB available (insufficient)"
+        all_ready=false
+    fi
+    echo ""
+
+    # Final verdict
+    echo "================================================================================"
+    if $all_ready && [ $warnings -eq 0 ]; then
+        echo "STATUS: ✓ READY - System is ready for profiling"
+        echo ""
+        echo "Recommended profiling commands:"
+        echo "  hpc_profile ./executable ./output_dir [args...]"
+        echo "  ncu_profile ./executable ./output.ncu-rep [args...]"
+        echo "  nsys_profile ./executable ./output.nsys-rep [args...]"
+        return 0
+    elif $all_ready; then
+        echo "STATUS: ⚠ READY WITH WARNINGS - System can profile but check warnings above"
+        echo "Warnings: $warnings"
+        return 0
+    else
+        echo "STATUS: ✗ NOT READY - Fix issues above before profiling"
+        return 1
+    fi
+}
+
+main "$@"

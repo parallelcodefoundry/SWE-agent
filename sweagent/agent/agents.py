@@ -37,6 +37,7 @@ from sweagent.agent.reviewer import (
     ScoreRetryLoop,
     get_retry_loop_from_config,
 )
+from sweagent.environment.repo import LocalRepoConfig
 from sweagent.environment.swe_env import SWEEnv
 from sweagent.exceptions import (
     ContentPolicyViolationError,
@@ -663,12 +664,19 @@ class DefaultAgent(AbstractAgent):
         """
         assert self._problem_statement is not None
         assert self._env is not None
+        # Get repo path - use full path for LocalRepoConfig, repo_name for Docker
+        if self._env.repo is None:
+            repo_path = ""
+        elif isinstance(self._env.repo, LocalRepoConfig):
+            repo_path = str(self._env.repo.path.resolve())
+        else:
+            repo_path = self._env.repo.repo_name
         return dict(
             command_docs=self.tools.config.command_docs,
             **self.tools.config.env_variables,
             **kwargs,
             problem_statement=self._problem_statement.get_problem_statement(),
-            repo=self._env.repo.repo_name if self._env.repo is not None else "",
+            repo=repo_path,
             **self._problem_statement.get_extra_fields(),
         )
 
@@ -850,13 +858,17 @@ class DefaultAgent(AbstractAgent):
                 self.logger.info("Diff from last traj step empty.")
             return step
         # Let us manually run the submission command and collect the output
-        repo_name = "/"
-        if self._env.repo is not None:
-            repo_name = f"/{self._env.repo.repo_name}"
-        submission_command = "git add -A && git diff --cached > /root/model.patch"
-        self.logger.info("Executing submission command %s in %s", submission_command, repo_name)
+        # Use full path for LocalRepoConfig, Docker-style path for others
+        if self._env.repo is None:
+            repo_path = "/"
+        elif isinstance(self._env.repo, LocalRepoConfig):
+            repo_path = str(self._env.repo.path.resolve())
+        else:
+            repo_path = f"/{self._env.repo.repo_name}"
+        submission_command = "mkdir -p /tmp/sweagent && git add -A && git diff --cached > /tmp/sweagent/model.patch"
+        self.logger.info("Executing submission command %s in %s", submission_command, repo_path)
         try:
-            self._env.execute_command(submission_command, check=True, cwd=repo_name)
+            self._env.execute_command(submission_command, check=True, cwd=repo_path)
         except Exception as e:
             self.logger.error("Failed to execute submission command, got %s", e)
         # There's still hope for the submission, because the `/root/model.patch` file might have been
@@ -884,7 +896,7 @@ class DefaultAgent(AbstractAgent):
         if is_submission or force_submission:
             assert self._env is not None
             try:
-                submission = self._env.read_file("/root/model.patch", encoding="utf-8", errors="backslashreplace")
+                submission = self._env.read_file("/tmp/sweagent/model.patch", encoding="utf-8", errors="backslashreplace")
             except FileNotFoundError:
                 self.logger.warning("Submission file not found, no submission was made")
                 return step
@@ -911,11 +923,16 @@ class DefaultAgent(AbstractAgent):
             if self._env.repo is None:
                 pf = None
             else:
+                # Use full path for LocalRepoConfig, Docker-style path for others
+                if isinstance(self._env.repo, LocalRepoConfig):
+                    repo_base_path = str(self._env.repo.path.resolve())
+                else:
+                    repo_base_path = f"/{self._env.repo.repo_name}"
                 pf = (
                     PatchFormatter(
                         patch,
-                        read_method=lambda path: self._env.read_file(  # type: ignore[attr-defined]
-                            PurePosixPath("/") / self._env.repo.repo_name / path  # type: ignore[attr-defined]
+                        read_method=lambda path, base=repo_base_path: self._env.read_file(  # type: ignore[attr-defined]
+                            PurePosixPath(base) / path  # type: ignore[attr-defined]
                         ),
                     )
                     if patch

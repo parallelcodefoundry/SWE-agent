@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# DCGM Status Check for SWE-agent
+# Queries NVIDIA DCGM GPU monitoring status
+
+main() {
+    echo "=== DCGM Status ==="
+    echo ""
+
+    if ! command -v dcgmi &> /dev/null; then
+        echo "DCGM: Not available (dcgmi not found)"
+        echo "Note: DCGM is NVIDIA's Data Center GPU Manager"
+        return 0
+    fi
+
+    echo "DCGM: Available"
+    echo ""
+
+    # Check DCGM version
+    local dcgm_version=$(dcgmi --version 2>/dev/null | head -1 || echo "Unknown")
+    echo "Version: $dcgm_version"
+    echo ""
+
+    # Run basic diagnostics
+    echo "Running GPU diagnostics (this may take a moment)..."
+    dcgmi diag -r 1 2>&1 | grep -A 5 "Diagnostic" || echo "Diagnostics unavailable"
+    echo ""
+
+    # Check profiling status
+    echo "Profiling Status:"
+    if dcgmi profile --list 2>&1 | grep -q "paused"; then
+        echo "  Status: PAUSED (good for profiling)"
+    elif dcgmi profile --list 2>&1 | grep -q "enabled"; then
+        echo "  Status: ENABLED (may interfere with profiling)"
+        echo "  Recommendation: Pause DCGM before profiling with: dcgmi profile --pause"
+    else
+        dcgmi profile --list 2>&1 | head -5
+    fi
+    echo ""
+
+    echo "GPU Health Summary:"
+    dcgmi health -c 2>&1 | grep -E "Overall|GPU" | head -10 || echo "Health check unavailable"
+}
+
+main "$@"

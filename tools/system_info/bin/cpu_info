@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# CPU and NUMA Information Query Tool for SWE-agent
+# Queries CPU architecture and NUMA topology
+
+main() {
+    echo "=== CPU Information ==="
+    echo ""
+
+    # Check if lscpu is available
+    if command -v lscpu &> /dev/null; then
+        # Get CPU model
+        local cpu_model=$(lscpu | grep "Model name" | sed 's/Model name: *//')
+        echo "CPU Model: $cpu_model"
+
+        # Get architecture
+        local arch=$(lscpu | grep "Architecture" | awk '{print $2}')
+        echo "Architecture: $arch"
+
+        # Get CPU counts
+        local total_cpus=$(lscpu | grep "^CPU(s):" | awk '{print $2}')
+        local cores_per_socket=$(lscpu | grep "Core(s) per socket" | awk '{print $4}')
+        local sockets=$(lscpu | grep "Socket(s)" | awk '{print $2}')
+        local threads_per_core=$(lscpu | grep "Thread(s) per core" | awk '{print $4}')
+
+        echo "Total CPUs (threads): $total_cpus"
+        echo "Sockets: $sockets"
+        echo "Cores per socket: $cores_per_socket"
+        echo "Threads per core: $threads_per_core"
+        echo "Total cores: $((cores_per_socket * sockets))"
+
+        # Get cache info
+        local l1d=$(lscpu | grep "L1d cache" | awk '{print $3, $4}')
+        local l2=$(lscpu | grep "L2 cache" | awk '{print $3, $4}')
+        local l3=$(lscpu | grep "L3 cache" | awk '{print $3, $4}')
+
+        if [ -n "$l1d" ]; then
+            echo "L1d Cache: $l1d"
+        fi
+        if [ -n "$l2" ]; then
+            echo "L2 Cache: $l2"
+        fi
+        if [ -n "$l3" ]; then
+            echo "L3 Cache: $l3"
+        fi
+    else
+        echo "lscpu not available"
+        # Fallback to /proc/cpuinfo
+        local cpu_count=$(grep -c ^processor /proc/cpuinfo 2>/dev/null || echo "Unknown")
+        echo "CPU Count (from /proc/cpuinfo): $cpu_count"
+    fi
+
+    echo ""
+    echo "=== NUMA Topology ==="
+    echo ""
+
+    # Check if numactl is available
+    if command -v numactl &> /dev/null; then
+        local numa_nodes=$(numactl --hardware 2>/dev/null | grep "available:" | awk '{print $2}')
+        echo "NUMA Nodes: $numa_nodes"
+        echo ""
+
+        # Get per-node CPU distribution
+        numactl --hardware 2>/dev/null | grep "node .* cpus:" | while read line; do
+            echo "$line"
+        done
+    else
+        echo "numactl not available (NUMA information unavailable)"
+    fi
+}
+
+main "$@"

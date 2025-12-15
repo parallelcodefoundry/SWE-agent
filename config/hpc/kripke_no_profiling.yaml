@@ -1,0 +1,121 @@
+# Kripke optimization WITHOUT profiling tools
+# Run with: sweagent run --config config/hpc/kripke_no_profiling.yaml
+#
+# Prerequisites:
+#   module load cuda/12.4 openmpi/5.0.7
+
+agent:
+  templates:
+    system_template: |-
+      You are an autonomous agent that can interact with a computer to solve performance optimization tasks.
+
+      CRITICAL BUILD REQUIREMENT:
+      - You MUST run kripke_build after EVERY source code edit before testing
+      - Source changes have NO effect until you rebuild
+      - Do NOT skip rebuilding - your changes will not be applied otherwise
+
+      FILE EDITING GUIDANCE:
+      - Primary focus: src/Kripke/Kernel/*.cpp source files
+      - You MAY edit CMakeLists.txt to adjust compiler flags for optimization
+
+      SUBMISSION:
+      When you have made improvements and verified correctness, call the submit command.
+      Reasoning: high
+    instance_template: |-
+      <uploaded_files>
+      {{working_dir}}
+      </uploaded_files>
+
+      TASK: Optimize the runtime performance of the Kripke 3D Sn deterministic transport application.
+
+      The application is in {{working_dir}}.
+
+      WORKFLOW:
+      1. kripke_build - Build the application (CUDA for A100 GPUs)
+      2. kripke_run - Run to measure current performance AND verify correctness
+      3. Analyze source code for bottlenecks (src/Kripke/Kernel/Sweep.cpp, LTimes.cpp, etc.)
+      4. Edit source files to optimize
+      5. kripke_build - REBUILD (required after every edit!)
+      6. kripke_run - Measure improvement AND verify correctness (both checked automatically!)
+      7. submit - When done with improvements
+
+      NOTE: kripke_run automatically checks BOTH timing AND correctness - no separate correctness check needed!
+
+      NOTE: You do NOT have profiling tools available. Optimize based on code analysis and HPC best practices.
+      SCOPE: Focus on the specific areas mentioned. Do NOT modify unrelated code.
+
+      FILES TO EDIT: src/Kripke/Kernel/*.cpp, CMakeLists.txt
+
+      CRITICAL: Always rebuild with kripke_build after editing source files!
+
+      Thinking should be thorough.
+    next_step_template: |-
+      OBSERVATION:
+      {{observation}}
+      (Open file: {{open_file}})
+      (Current directory: {{working_dir}})
+      bash-$
+    next_step_no_output_template: |-
+      Your command ran successfully and did not produce any output.
+      (Open file: {{open_file}})
+      (Current directory: {{working_dir}})
+      bash-$
+    demonstration_template: |
+      Here is a demonstration of how to correctly accomplish this task.
+      It is included to show you how to correctly use the interface.
+      You do not need to follow exactly what is done in the demonstration.
+      --- DEMONSTRATION ---
+      {{demonstration}}
+      --- END OF DEMONSTRATION ---
+    demonstrations:
+      - trajectories/demonstrations/str_replace_anthropic_demo.yaml
+    put_demos_in_history: true
+  model:
+    api_base: "http://127.0.0.1:8008/v1"
+    api_key: "dummy"
+    name: openai/openai/gpt-oss-120b
+    per_instance_cost_limit: 0
+  tools:
+    env_variables:
+      PAGER: cat
+      MANPAGER: cat
+      LESS: -R
+      GIT_PAGER: cat
+      CUDA_VISIBLE_DEVICES: "0,1,2,3"
+      OMP_NUM_THREADS: 32
+      KRIPKE_ROOT: /global/u2/k/krydzy/SWE-agent/Kripke_test
+    bundles:
+      - path: tools/registry
+      - path: tools/edit_anthropic
+      - path: tools/kripke_harness
+      - path: tools/review_on_submit_m
+      - path: tools/forfeit
+    registry_variables:
+      USE_FILEMAP: 'true'
+      SUBMIT_REVIEW_MESSAGES:
+        - |
+          Before finalizing submission, verify:
+
+          1. You ran kripke_run AFTER your last changes (it checks BOTH performance AND correctness)
+          2. The kripke_run output showed "CORRECTNESS: PASSED"
+          3. The kripke_run output showed a speedup (FASTER result)
+          4. Your changes are focused on the optimization task
+
+          If you have already verified these after your last changes, call submit again to finalize.
+
+          Changes to be submitted:
+          <diff>
+          {{diff}}
+          </diff>
+    enable_bash_tool: true
+    parse_function:
+      type: function_calling
+  history_processors:
+    - type: last_n_observations
+      n: 5
+
+env:
+  repo:
+    path: /global/u2/k/krydzy/SWE-agent/Kripke_test
+  deployment:
+    type: local

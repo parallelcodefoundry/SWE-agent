@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""
+kripke_build - Build Kripke 3D Sn transport proxy application.
+"""
+import argparse
+import subprocess
+import os
+import sys
+import json
+import shutil
+
+def main():
+    parser = argparse.ArgumentParser(description='Build Kripke')
+    parser.add_argument('--clean', action='store_true', help='Remove build dir and rebuild')
+    parser.add_argument('--arch', default='OpenMP', choices=['Sequential', 'OpenMP', 'CUDA', 'HIP'],
+                       help='Backend architecture')
+    args = parser.parse_args()
+
+    # Find Kripke directory
+    kripke_root = os.environ.get('KRIPKE_ROOT')
+    if not kripke_root:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate_paths = [
+            os.path.join(script_dir, '..', '..', '..', 'Kripke'),
+            '/global/u2/k/krydzy/SWE-agent/Kripke_test',
+        ]
+        for path in candidate_paths:
+            if os.path.isdir(path):
+                kripke_root = os.path.abspath(path)
+                break
+
+    if not kripke_root or not os.path.isdir(kripke_root):
+        print(json.dumps({
+            "success": False,
+            "error": "Kripke directory not found. Set KRIPKE_ROOT environment variable."
+        }))
+        sys.exit(1)
+
+    build_dir = os.path.join(kripke_root, 'build')
+
+    result = {
+        "success": False,
+        "kripke_root": kripke_root,
+        "build_dir": build_dir,
+        "arch": args.arch,
+        "clean": args.clean
+    }
+
+    try:
+        # Initialize submodules if needed
+        raja_cmake = os.path.join(kripke_root, 'tpl', 'raja', 'CMakeLists.txt')
+        if not os.path.isfile(raja_cmake):
+            print("Initializing submodules...", file=sys.stderr)
+            subprocess.run(['git', 'submodule', 'update', '--init', '--recursive'],
+                         cwd=kripke_root, capture_output=True)
+
+        # Clean if requested
+        if args.clean and os.path.isdir(build_dir):
+            print(f"Removing build directory: {build_dir}", file=sys.stderr)
+            shutil.rmtree(build_dir)
+
+        # Create build directory
+        os.makedirs(build_dir, exist_ok=True)
+
+        # Configure CMake
+        print(f"Configuring Kripke with {args.arch}...", file=sys.stderr)
+
+        cmake_args = [
+            'cmake', '..',
+            '-DCMAKE_BUILD_TYPE=Release',
+            f'-DENABLE_{args.arch.upper()}=ON',
+            '-DENABLE_MPI=ON',
+            '-DCMAKE_CXX_COMPILER=mpicxx',
+            '-DCMAKE_C_COMPILER=mpicc'
+        ]
+
+        # Add CUDA-specific flags
+        if args.arch == 'CUDA':
+            cmake_args.append('-DCMAKE_CUDA_ARCHITECTURES=80')
+
+        config_proc = subprocess.run(
+            cmake_args,
+            cwd=build_dir,
+            capture_output=True,
+            text=True
+        )
+
+        if config_proc.returncode != 0:
+            result["error"] = "CMake configuration failed"
+            result["cmake_stderr"] = config_proc.stderr[-4000:]
+            print(json.dumps(result, indent=2))
+            sys.exit(1)
+
+        # Build
+        print(f"Building Kripke...", file=sys.stderr)
+        build_proc = subprocess.run(
+            ['make', '-j8'],
+            cwd=build_dir,
+            capture_output=True,
+            text=True
+        )
+
+        result["returncode"] = build_proc.returncode
+        result["stdout"] = build_proc.stdout[-4000:] if len(build_proc.stdout) > 4000 else build_proc.stdout
+        result["stderr"] = build_proc.stderr[-4000:] if len(build_proc.stderr) > 4000 else build_proc.stderr
+
+        # Check if executable was created
+        exe_path = os.path.join(build_dir, 'bin', 'kripke.exe')
+        if os.path.isfile(exe_path):
+            result["success"] = True
+            result["executable"] = exe_path
+            print(f"Build successful: {exe_path}", file=sys.stderr)
+        else:
+            result["error"] = "Build completed but executable not found"
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    print(json.dumps(result, indent=2))
+    sys.exit(0 if result["success"] else 1)
+
+if __name__ == '__main__':
+    main()

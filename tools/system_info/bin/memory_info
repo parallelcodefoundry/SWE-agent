@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# Memory Information Query Tool for SWE-agent
+# Queries system memory availability
+
+main() {
+    echo "=== Memory Information ==="
+    echo ""
+
+    if command -v free &> /dev/null; then
+        # Get memory in GB
+        free -h | head -2
+        echo ""
+
+        # Parse specific values
+        local total_gb=$(free -g | awk 'NR==2{print $2}')
+        local available_gb=$(free -g | awk 'NR==2{print $7}')
+        local used_gb=$(free -g | awk 'NR==2{print $3}')
+
+        echo "Total Memory: ${total_gb} GB"
+        echo "Used Memory: ${used_gb} GB"
+        echo "Available Memory: ${available_gb} GB"
+
+        # Calculate percentage
+        if [ $total_gb -gt 0 ]; then
+            local used_percent=$((used_gb * 100 / total_gb))
+            echo "Memory Usage: ${used_percent}%"
+        fi
+    elif [ -f /proc/meminfo ]; then
+        # Fallback to /proc/meminfo
+        echo "Reading from /proc/meminfo:"
+        grep -E "MemTotal|MemFree|MemAvailable" /proc/meminfo
+    else
+        echo "Memory information unavailable"
+    fi
+}
+
+main "$@"

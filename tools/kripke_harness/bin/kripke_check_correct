@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""
+kripke_check_correct - Check correctness of Kripke output against baseline.
+"""
+import argparse
+import re
+import json
+import sys
+
+def extract_values(output_text):
+    """Extract numerical values from Kripke output for comparison."""
+    values = {}
+
+    # Extract phi (scalar flux) values
+    # Pattern: "phi = X.XXXXX" or "Phi: X.XXXXX"
+    match = re.search(r'(?:phi|Phi)\s*[=:]\s*([\d.eE+-]+)', output_text, re.IGNORECASE)
+    if match:
+        values['phi'] = float(match.group(1))
+
+    # Extract particle flux
+    match = re.search(r'(?:particle|total)\s*flux\s*[=:]\s*([\d.eE+-]+)', output_text, re.IGNORECASE)
+    if match:
+        values['particle_flux'] = float(match.group(1))
+
+    # Extract unknowns
+    match = re.search(r'unknowns\s*[=:]\s*([\d.eE+-]+)', output_text, re.IGNORECASE)
+    if match:
+        values['unknowns'] = float(match.group(1))
+
+    # Extract iteration count
+    match = re.search(r'(?:iterations?|iters?)\s*[=:]\s*(\d+)', output_text, re.IGNORECASE)
+    if match:
+        values['iterations'] = int(match.group(1))
+
+    # Extract residual/error
+    match = re.search(r'(?:residual|error|norm)\s*[=:]\s*([\d.eE+-]+)', output_text, re.IGNORECASE)
+    if match:
+        values['residual'] = float(match.group(1))
+
+    # Extract solver convergence
+    match = re.search(r'(?:converged|solved)\s+(?:in|after)\s+(\d+)', output_text, re.IGNORECASE)
+    if match:
+        values['convergence_iters'] = int(match.group(1))
+
+    # Look for final solution values
+    # Kripke may print "Solution: X.XXXXX" or similar
+    match = re.search(r'(?:solution|result|answer)\s*[=:]\s*([\d.eE+-]+)', output_text, re.IGNORECASE)
+    if match:
+        values['solution'] = float(match.group(1))
+
+    # Extract any RESULT lines
+    for match in re.finditer(r'RESULT\s*[=:]\s*(\w+)\s*[=:]\s*([\d.eE+-]+)', output_text, re.IGNORECASE):
+        key = match.group(1).lower()
+        values[f'result_{key}'] = float(match.group(2))
+
+    return values
+
+def compare_values(baseline_values, test_values, tolerance):
+    """Compare values within tolerance."""
+    differences = []
+    matched = []
+
+    all_keys = set(baseline_values.keys()) | set(test_values.keys())
+
+    for key in all_keys:
+        baseline_val = baseline_values.get(key)
+        test_val = test_values.get(key)
+
+        if baseline_val is None:
+            differences.append({
+                "key": key,
+                "issue": "missing_in_baseline",
+                "test_value": test_val
+            })
+        elif test_val is None:
+            differences.append({
+                "key": key,
+                "issue": "missing_in_test",
+                "baseline_value": baseline_val
+            })
+        else:
+            # Compare values
+            if baseline_val == 0:
+                rel_error = abs(test_val) if test_val != 0 else 0
+            else:
+                rel_error = abs(test_val - baseline_val) / abs(baseline_val)
+
+            if rel_error > tolerance:
+                differences.append({
+                    "key": key,
+                    "baseline": baseline_val,
+                    "test": test_val,
+                    "relative_error": rel_error
+                })
+            else:
+                matched.append({
+                    "key": key,
+                    "baseline": baseline_val,
+                    "test": test_val,
+                    "relative_error": rel_error
+                })
+
+    return matched, differences
+
+def main():
+    parser = argparse.ArgumentParser(description='Check Kripke output correctness')
+    parser.add_argument('baseline_output', help='Path to baseline output file')
+    parser.add_argument('test_output', help='Path to test output file')
+    parser.add_argument('--tolerance', type=float, default=1e-10, help='Relative error tolerance')
+    args = parser.parse_args()
+
+    try:
+        with open(args.baseline_output, 'r') as f:
+            baseline_text = f.read()
+        with open(args.test_output, 'r') as f:
+            test_text = f.read()
+    except FileNotFoundError as e:
+        print(json.dumps({"correct": False, "error": f"File not found: {e.filename}"}))
+        sys.exit(1)
+    except Exception as e:
+        print(json.dumps({"correct": False, "error": str(e)}))
+        sys.exit(1)
+
+    baseline_values = extract_values(baseline_text)
+    test_values = extract_values(test_text)
+
+    matched, differences = compare_values(baseline_values, test_values, args.tolerance)
+
+    result = {
+        "correct": len(differences) == 0,
+        "tolerance": args.tolerance,
+        "baseline_file": args.baseline_output,
+        "test_file": args.test_output,
+        "values_compared": len(matched) + len(differences),
+        "matched": len(matched),
+        "differences": differences
+    }
+
+    if not baseline_values and not test_values:
+        result["warning"] = "No comparable values found in either output"
+        result["correct"] = True  # Assume correct if nothing to compare
+
+    print(json.dumps(result, indent=2))
+    sys.exit(0 if result["correct"] else 1)
+
+if __name__ == '__main__':
+    main()

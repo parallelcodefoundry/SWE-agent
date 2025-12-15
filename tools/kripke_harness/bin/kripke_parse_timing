@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""
+kripke_parse_timing - Parse timing information from Kripke output.
+"""
+import argparse
+import re
+import json
+import sys
+
+def parse_kripke_timing(output_text):
+    """Parse timing information from Kripke output."""
+    timers = {}
+
+    # Kripke prints timing in several formats
+
+    # Format 1: TIMER_NAMES: name1, name2, ...
+    #           TIMER_DATA: val1, val2, ...
+    timer_names_match = re.search(r'TIMER_NAMES:\s*(.+)', output_text)
+    timer_data_match = re.search(r'TIMER_DATA:\s*(.+)', output_text)
+
+    if timer_names_match and timer_data_match:
+        names = [n.strip() for n in timer_names_match.group(1).split(',')]
+        values = timer_data_match.group(1).split(',')
+        for name, value in zip(names, values):
+            try:
+                timers[name] = float(value.strip())
+            except ValueError:
+                pass
+
+    # Format 2: Timer: name = X.XXX s
+    for match in re.finditer(r'Timer:\s*(\w+)\s*=\s*([\d.eE+-]+)\s*s', output_text):
+        timers[match.group(1)] = float(match.group(2))
+
+    # Format 3: Kernel timing table
+    # Look for lines like:  "  LTimes      10    0.123456"
+    for match in re.finditer(r'^\s*(\w+)\s+(\d+)\s+([\d.eE+-]+)\s*$', output_text, re.MULTILINE):
+        name = match.group(1)
+        # Skip if it's just a number
+        if not name[0].isdigit():
+            timers[name] = float(match.group(3))
+
+    # Format 4: "Solve took X.XXX seconds"
+    match = re.search(r'Solve\s+took\s+([\d.eE+-]+)\s*(?:seconds|s)', output_text, re.IGNORECASE)
+    if match:
+        timers['total'] = float(match.group(1))
+
+    # Format 5: Look for specific kernel names
+    kernel_names = ['LTimes', 'LPlusTimes', 'Sweep', 'Scattering', 'Source', 'Population']
+    for name in kernel_names:
+        match = re.search(rf'{name}\s*[=:]\s*([\d.eE+-]+)', output_text, re.IGNORECASE)
+        if match and name not in timers:
+            timers[name] = float(match.group(1))
+
+    # Calculate percentages if we have data
+    if timers:
+        total = timers.get('total', sum(v for k, v in timers.items() if not k.startswith('_')))
+        if total > 0:
+            timers['_percentages'] = {
+                k: round(v / total * 100, 2)
+                for k, v in timers.items()
+                if k != 'total' and not k.startswith('_') and isinstance(v, (int, float))
+            }
+
+    return timers
+
+def main():
+    parser = argparse.ArgumentParser(description='Parse Kripke timing output')
+    parser.add_argument('output_file', help='Path to Kripke output file')
+    args = parser.parse_args()
+
+    try:
+        with open(args.output_file, 'r') as f:
+            output_text = f.read()
+    except FileNotFoundError:
+        print(json.dumps({"error": f"File not found: {args.output_file}"}))
+        sys.exit(1)
+    except Exception as e:
+        print(json.dumps({"error": str(e)}))
+        sys.exit(1)
+
+    timers = parse_kripke_timing(output_text)
+
+    result = {
+        "success": len(timers) > 0,
+        "timers": timers,
+        "source_file": args.output_file
+    }
+
+    if not timers:
+        result["warning"] = "No timing information found in output"
+
+    print(json.dumps(result, indent=2))
+    sys.exit(0)
+
+if __name__ == '__main__':
+    main()

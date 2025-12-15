@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Environment Modules Information for SWE-agent
+# Queries loaded modules and environment
+
+main() {
+    echo "=== Environment Modules ==="
+    echo ""
+
+    if command -v module &> /dev/null; then
+        echo "Currently Loaded Modules:"
+        module list 2>&1 | grep -v "Currently Loaded" | grep -v "^$"
+        echo ""
+
+        # Check for key profiling/compiler modules
+        echo "Key Module Categories:"
+        echo ""
+
+        echo "Compilers:"
+        module list 2>&1 | grep -iE "gcc|intel|pgi|nvhpc|llvm" | sed 's/^/  /'
+        echo ""
+
+        echo "MPI:"
+        module list 2>&1 | grep -iE "mpi|mpich|openmpi" | sed 's/^/  /'
+        echo ""
+
+        echo "CUDA/GPU:"
+        module list 2>&1 | grep -iE "cuda|gpu|nvidia" | sed 's/^/  /'
+        echo ""
+
+        echo "Performance Tools:"
+        module list 2>&1 | grep -iE "perf|hpc|profil|vtune|advisor" | sed 's/^/  /'
+
+    else
+        echo "Module system not available"
+        echo ""
+
+        # Check for Spack as alternative
+        if command -v spack &> /dev/null; then
+            echo "Spack detected:"
+            spack find --loaded 2>/dev/null || echo "No loaded Spack packages"
+        fi
+    fi
+}
+
+main "$@"
