@@ -1,5 +1,6 @@
 import asyncio
 import os
+import shlex
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -33,7 +34,7 @@ def _get_git_reset_commands(base_commit: str) -> list[str]:
         "git status",
         "git restore .",
         "git reset --hard",
-        f"git checkout {base_commit}",
+        f"git checkout {shlex.quote(base_commit)}",
         "git clean -fdq",
     ]
 
@@ -172,8 +173,8 @@ class GithubRepoConfig(BaseModel):
                             f"mkdir /{self.repo_name}",
                             f"cd /{self.repo_name}",
                             "git init",
-                            f"git remote add origin {url}",
-                            f"git fetch --depth 1 origin {base_commit}",
+                            f"git remote add origin {shlex.quote(url)}",
+                            f"git fetch --depth 1 origin {shlex.quote(base_commit)}",
                             "git checkout FETCH_HEAD",
                             "cd ..",
                         )
