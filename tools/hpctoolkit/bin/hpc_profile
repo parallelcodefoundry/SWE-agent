@@ -33,12 +33,43 @@ main() {
         return 1
     fi
 
-    # Check if HPCToolkit is available
+    # Check if HPCToolkit is available, try to load via spack if not
     if ! command -v hpcrun &> /dev/null; then
-        echo "Error: HPCToolkit not found. Please load HPCToolkit:"
-        echo "  source ~/spack/share/spack/setup-env.sh"
-        echo "  spack load hpctoolkit"
-        return 1
+        echo "HPCToolkit not in PATH, attempting to load..."
+
+        # Try spack first
+        if [ -f "$HOME/spack/share/spack/setup-env.sh" ]; then
+            source "$HOME/spack/share/spack/setup-env.sh" 2>/dev/null
+            if spack load hpctoolkit 2>/dev/null; then
+                echo "HPCToolkit loaded successfully via spack"
+            fi
+        fi
+
+        # If still not available, try known Perlmutter paths
+        if ! command -v hpcrun &> /dev/null; then
+            # Check for spack-installed hpctoolkit in user's home
+            local hpctoolkit_paths=(
+                "$HOME/spack/opt/spack/linux-zen3/hpctoolkit-"*/bin
+                "$HOME/spack/opt/spack/linux-sles15-zen3/hpctoolkit-"*/bin
+                "/global/homes/${USER:0:1}/$USER/spack/opt/spack/linux-zen3/hpctoolkit-"*/bin
+            )
+            for hpc_path in "${hpctoolkit_paths[@]}"; do
+                if [ -d "$hpc_path" ] && [ -f "$hpc_path/hpcrun" ]; then
+                    export PATH="$hpc_path:$PATH"
+                    echo "HPCToolkit found at: $hpc_path"
+                    break
+                fi
+            done
+        fi
+
+        # Final check
+        if ! command -v hpcrun &> /dev/null; then
+            echo "Error: HPCToolkit not found"
+            echo "Please load HPCToolkit manually:"
+            echo "  source ~/spack/share/spack/setup-env.sh"
+            echo "  spack load hpctoolkit"
+            return 1
+        fi
     fi
 
     # Create output directory

@@ -12,8 +12,8 @@ import shutil
 def main():
     parser = argparse.ArgumentParser(description='Build Kripke')
     parser.add_argument('--clean', action='store_true', help='Remove build dir and rebuild')
-    parser.add_argument('--arch', default='OpenMP', choices=['Sequential', 'OpenMP', 'CUDA', 'HIP'],
-                       help='Backend architecture')
+    parser.add_argument('--arch', default='CUDA', choices=['Sequential', 'OpenMP', 'CUDA', 'HIP'],
+                       help='Backend architecture (default: CUDA for GPU optimization)')
     args = parser.parse_args()
 
     # Find Kripke directory

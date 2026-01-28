@@ -1,0 +1,130 @@
+# LULESH optimization WITH profiling tools
+# Run with: sweagent run --config config/hpc/lulesh_with_profiling.yaml
+#
+# Prerequisites:
+#   module load cuda/12.4 openmpi/5.0.7
+#   source ~/spack/share/spack/setup-env.sh && spack load hpctoolkit
+
+agent:
+  templates:
+    system_template: |-
+      You are an autonomous agent that can interact with a computer to solve performance optimization tasks.
+
+      CRITICAL BUILD REQUIREMENT:
+      - You MUST run lulesh_build after EVERY source code edit before testing
+      - Source changes have NO effect until you rebuild
+      - Do NOT skip rebuilding - your changes will not be applied otherwise
+
+      FILE EDITING GUIDANCE:
+      - Primary focus: cuda/src/lulesh.cu, cuda/src/allocator.cu
+      - You MAY edit the Makefile to adjust compiler flags for optimization
+      - Do NOT disable CUDA/GPU support - the goal is GPU performance optimization
+
+      SUBMISSION:
+      When you have made improvements and verified correctness, call the submit command.
+      Reasoning: high
+    instance_template: |-
+      <uploaded_files>
+      {{working_dir}}
+      </uploaded_files>
+
+      TASK: Optimize the runtime performance of the LULESH shock hydrodynamics proxy application.
+
+      The application is in {{working_dir}}.
+
+      WORKFLOW:
+      1. lulesh_build - Build the application (CUDA for A100 GPUs)
+      2. lulesh_run - Run to measure current performance AND verify correctness
+      3. hpc_profile / hatchet_analyze - Profile to identify hotspots
+      4. Analyze source code for bottlenecks (cuda/src/lulesh.cu)
+      5. Edit source files to optimize
+      6. lulesh_build - REBUILD (required after every edit!)
+      7. lulesh_run - Measure improvement AND verify correctness (both checked automatically!)
+      8. submit - When done with improvements
+
+      NOTE: lulesh_run automatically checks BOTH timing AND correctness - no separate correctness check needed!
+
+      SCOPE: Focus on the specific areas identified by profiling. Do NOT modify unrelated code.
+
+      FILES TO EDIT: cuda/src/lulesh.cu, cuda/src/allocator.cu, cuda/Makefile
+
+      CRITICAL: Always rebuild with lulesh_build after editing source files!
+
+      Thinking should be thorough.
+    next_step_template: |-
+      OBSERVATION:
+      {{observation}}
+      (Open file: {{open_file}})
+      (Current directory: {{working_dir}})
+      bash-$
+    next_step_no_output_template: |-
+      Your command ran successfully and did not produce any output.
+      (Open file: {{open_file}})
+      (Current directory: {{working_dir}})
+      bash-$
+    demonstration_template: |
+      Here is a demonstration of how to correctly accomplish this task.
+      It is included to show you how to correctly use the interface.
+      You do not need to follow exactly what is done in the demonstration.
+      --- DEMONSTRATION ---
+      {{demonstration}}
+      --- END OF DEMONSTRATION ---
+    demonstrations:
+      - trajectories/demonstrations/str_replace_anthropic_demo.yaml
+    put_demos_in_history: true
+  model:
+    api_base: "http://127.0.0.1:8008/v1"
+    api_key: "dummy"
+    name: openai/openai/gpt-oss-120b
+    per_instance_cost_limit: 0
+  tools:
+    execution_timeout: 150
+    tools_base_path: /tmp/sweagent
+    env_variables:
+      PAGER: cat
+      MANPAGER: cat
+      LESS: -R
+      GIT_PAGER: cat
+      CUDA_VISIBLE_DEVICES: "0,1,2,3"
+      OMP_NUM_THREADS: 32
+      LULESH_ROOT: /global/u2/k/krydzy/SWE-agent/Lulesh_test/cuda
+      SWE_AGENT_ENV_FILE: /tmp/sweagent/.swe-agent-env
+      SWE_AGENT_STATE_FILE: /tmp/sweagent/state.json
+    bundles:
+      - path: tools/registry
+      - path: tools/edit_anthropic
+      - path: tools/lulesh_harness
+      - path: tools/hpctoolkit
+      - path: tools/hatchet
+      - path: tools/profiling
+      - path: tools/review_on_submit_m
+      - path: tools/forfeit
+    registry_variables:
+      USE_FILEMAP: 'true'
+      SUBMIT_REVIEW_MESSAGES:
+        - |
+          Before finalizing submission, verify:
+
+          1. You ran lulesh_run AFTER your last changes (it checks BOTH performance AND correctness)
+          2. The lulesh_run output showed "CORRECTNESS: PASSED"
+          3. The lulesh_run output showed a speedup (FASTER result)
+          4. Your changes are focused on the optimization task
+
+          If you have already verified these after your last changes, call submit again to finalize.
+
+          Changes to be submitted:
+          <diff>
+          {{diff}}
+          </diff>
+    enable_bash_tool: true
+    parse_function:
+      type: function_calling
+  history_processors:
+    - type: last_n_observations
+      n: 5
+
+env:
+  repo:
+    path: /global/u2/k/krydzy/SWE-agent/Lulesh_test/cuda
+  deployment:
+    type: local

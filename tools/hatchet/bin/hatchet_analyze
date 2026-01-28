@@ -82,6 +82,26 @@ def main():
     # Validate database directory
     if not os.path.isdir(database_dir):
         print(f"Error: Database directory not found: {database_dir}")
+        # Check if user passed parent directory instead of database subdirectory
+        parent_db = os.path.join(database_dir, "database")
+        if os.path.isdir(parent_db):
+            print(f"\nDid you mean: {parent_db}")
+            print("HINT: hpc_profile creates a 'database/' subdirectory. Use that path.")
+        sys.exit(1)
+
+    # Check for meta.db which indicates a valid HPCToolkit v4 database
+    meta_db_path = os.path.join(database_dir, "meta.db")
+    if not os.path.exists(meta_db_path):
+        print(f"Error: Not a valid HPCToolkit database - missing meta.db")
+        print(f"  Checked path: {database_dir}")
+        # Check if there's a database subdirectory
+        db_subdir = os.path.join(database_dir, "database")
+        if os.path.isdir(db_subdir) and os.path.exists(os.path.join(db_subdir, "meta.db")):
+            print(f"\nFOUND: The database is at: {db_subdir}")
+            print("HINT: Use 'hatchet_analyze {}/database' instead".format(database_dir))
+        elif os.path.isdir(os.path.join(database_dir, "measurements")):
+            print(f"\nHINT: This looks like an hpc_profile output directory.")
+            print("      Use 'hatchet_analyze {}/database' instead".format(database_dir))
         sys.exit(1)
 
     # Check if Hatchet is installed
@@ -89,8 +109,12 @@ def main():
         import hatchet as ht
     except ImportError:
         print("Error: Hatchet is not installed")
-        print("Please install Hatchet:")
-        print("  pip install hatchet")
+        print("Please install Hatchet from the local repository:")
+        print("  cd ~/hatchet")
+        print("  pip install --use-pep517 .")
+        print("")
+        print("Note: We use a local fork with HPCToolkit v4 support.")
+        print("      This will change to 'pip install hatchet' once changes are upstreamed.")
         sys.exit(1)
 
     # Import analysis utilities
@@ -108,7 +132,14 @@ def main():
         print(f"Database loaded successfully", file=sys.stderr)
     except Exception as e:
         print(f"Error: Failed to load HPCToolkit database: {str(e)}")
-        print(f"Please ensure {database_dir} is a valid HPCToolkit database directory")
+        print(f"Path: {database_dir}")
+        # Provide helpful hints based on error
+        if "meta.db" in str(e) or "No such file" in str(e):
+            db_subdir = os.path.join(database_dir, "database")
+            if os.path.isdir(db_subdir):
+                print(f"\nHINT: Try using the database subdirectory: {db_subdir}")
+            elif os.path.isdir(os.path.join(database_dir, "measurements")):
+                print(f"\nHINT: This is an hpc_profile output directory. Use: {database_dir}/database")
         sys.exit(1)
 
     # Auto-detect metric if not specified

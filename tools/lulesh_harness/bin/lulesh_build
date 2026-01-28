@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""
+lulesh_build - Build the LULESH 2.0 CUDA shock hydrodynamics proxy application.
+
+IMPORTANT: The goal is to optimize GPU performance. Do NOT disable
+CUDA/GPU support.
+
+Build configuration:
+  - Compiler: nvcc (CUDA) for A100 GPUs (sm_80)
+  - Base flags: -O3 -std=c++11 -arch=sm_80
+  - Features: CUDA GPU support, optional MPI
+"""
+import subprocess
+import os
+import sys
+import json
+
+
+def find_lulesh_root():
+    """Find the LULESH source directory."""
+    lulesh_root = os.environ.get('LULESH_ROOT')
+    if lulesh_root and os.path.isdir(lulesh_root):
+        return lulesh_root
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidate_paths = [
+        os.path.join(script_dir, '..', '..', '..', 'Lulesh_test', 'cuda'),
+        '/global/u2/k/krydzy/SWE-agent/Lulesh_test/cuda',
+    ]
+    for path in candidate_paths:
+        if os.path.isdir(path):
+            return os.path.abspath(path)
+    return None
+
+
+def find_cuda_path():
+    """Find CUDA installation path."""
+    cuda_home = os.environ.get('CUDA_HOME') or os.environ.get('CUDATOOLKIT_HOME')
+    if cuda_home and os.path.isdir(cuda_home):
+        return cuda_home
+    candidates = [
+        '/opt/nvidia/hpc_sdk/Linux_x86_64/24.5/cuda/12.4',
+        '/opt/nvidia/hpc_sdk/Linux_x86_64/23.9/cuda/12.2',
+        '/usr/local/cuda',
+    ]
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return None
+
+
+def find_pristine_lulesh_root():
+    """Find the pristine (unmodified) LULESH source directory."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidate_paths = [
+        os.path.join(script_dir, '..', '..', '..', 'Lulesh', 'cuda'),
+        '/global/u2/k/krydzy/SWE-agent/Lulesh/cuda',
+    ]
+    for path in candidate_paths:
+        if os.path.isdir(path):
+            return os.path.abspath(path)
+    return None
+
+
+def ensure_makefile_exists(lulesh_root):
+    """Ensure Makefile exists in the test directory, copying from pristine if needed."""
+    import shutil
+
+    makefile_path = os.path.join(lulesh_root, 'Makefile')
+
+    if os.path.isfile(makefile_path):
+        return True  # Makefile already exists
+
+    # Try to copy from pristine directory
+    pristine_root = find_pristine_lulesh_root()
+    if pristine_root:
+        pristine_makefile = os.path.join(pristine_root, 'Makefile')
+        if os.path.isfile(pristine_makefile):
+            print(f"Copying Makefile from pristine directory...")
+            shutil.copy2(pristine_makefile, makefile_path)
+            return True
+        else:
+            print(f"Warning: Pristine Makefile not found at {pristine_makefile}")
+
+    return os.path.isfile(makefile_path)
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='Build LULESH')
+    parser.add_argument('--clean', action='store_true',
+                       help='Force clean rebuild (make clean first)')
+    parser.add_argument('--use-mpi', action='store_true',
+                       help='Enable MPI support for multi-GPU runs')
+    args = parser.parse_args()
+
+    lulesh_root = find_lulesh_root()
+    if not lulesh_root:
+        print(json.dumps({
+            "success": False,
+            "error": "Could not find LULESH source directory"
+        }))
+        sys.exit(1)
+
+    # Ensure Makefile exists (copy from pristine if needed)
+    if not ensure_makefile_exists(lulesh_root):
+        print(json.dumps({
+            "success": False,
+            "error": f"Makefile not found in {lulesh_root} and could not copy from pristine directory"
+        }))
+        sys.exit(1)
+
+    cuda_path = find_cuda_path()
+    build_env = os.environ.copy()
+    if cuda_path:
+        build_env['CUDATOOLKIT_HOME'] = cuda_path
+
+    print(f"Building LULESH in: {lulesh_root}")
+    print(f"CUDA path: {cuda_path}")
+
+    # Clean if requested
+    if args.clean:
+        print("Cleaning previous build...")
+        subprocess.run(['make', 'clean'], cwd=lulesh_root, env=build_env,
+                      capture_output=True)
+
+    # Build
+    make_args = ['make', '-j8']
+    if args.use_mpi:
+        make_args.append('USE_MPI=1')
+
+    print(f"Running: {' '.join(make_args)}")
+    sys.stdout.flush()
+
+    result = subprocess.run(
+        make_args,
+        cwd=lulesh_root,
+        capture_output=True,
+        text=True,
+        timeout=600,
+        env=build_env
+    )
+
+    exe_path = os.path.join(lulesh_root, 'lulesh')
+
+    if result.returncode == 0 and os.path.isfile(exe_path):
+        print(json.dumps({
+            "success": True,
+            "executable": exe_path,
+            "message": "Build successful"
+        }))
+        print("\nBuild successful!")
+        print(f"Executable: {exe_path}")
+        sys.exit(0)
+    else:
+        print(json.dumps({
+            "success": False,
+            "error": result.stderr[-1000:] if result.stderr else "Unknown error"
+        }))
+        print("\nBuild FAILED!")
+        if result.stderr:
+            print(result.stderr[-1000:])
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

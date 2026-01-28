@@ -1,0 +1,98 @@
+tools:
+  lulesh_build:
+    signature: "lulesh_build [<clean>] [<use_mpi>]"
+    docstring: |
+      Build the LULESH 2.0 CUDA shock hydrodynamics proxy application.
+
+      IMPORTANT: The goal is to optimize GPU performance. Do NOT disable
+      CUDA/GPU support.
+
+      Build configuration:
+        - Compiler: nvcc (CUDA) for A100 GPUs (sm_80)
+        - Base flags: -O3 -std=c++11 -arch=sm_80
+        - Features: CUDA GPU support, optional MPI
+
+      Returns build status and any compilation errors.
+    arguments:
+      - name: clean
+        type: boolean
+        description: "Force clean rebuild (make clean first)"
+        required: false
+        argument_format: "--clean"
+      - name: use_mpi
+        type: boolean
+        description: "Enable MPI support for multi-GPU runs"
+        required: false
+        argument_format: "--use-mpi"
+
+  lulesh_run:
+    signature: "lulesh_run [<size>] [<iterations>] [<gpu>]"
+    docstring: |
+      Run LULESH benchmark and compare performance against baseline.
+
+      This tool runs a standardized benchmark that provides consistent
+      results for reliable performance measurement.
+
+      What it does:
+        1. Runs the BASELINE (unmodified LULESH) with the parameters
+        2. Runs YOUR MODIFIED version with the same parameters
+        3. Compares energy values to verify CORRECTNESS
+        4. Compares total runtime to measure SPEEDUP
+
+      Output shows:
+        - CORRECTNESS: PASSED/FAILED (Final Origin Energy matches baseline)
+        - BASELINE TIME: Runtime of unmodified version (seconds)
+        - MODIFIED TIME: Runtime of your version (seconds)
+        - RESULT: Speedup or slowdown factor
+
+      Default parameters: size=30, iterations=100 (~30 second runtime each)
+
+      IMPORTANT: Always run lulesh_build after code changes before running!
+    arguments:
+      - name: size
+        type: integer
+        description: "Problem size - elements per side (default: 30)"
+        required: false
+        argument_format: "-s {{value}}"
+      - name: iterations
+        type: integer
+        description: "Number of iterations (default: 100)"
+        required: false
+        argument_format: "-i {{value}}"
+      - name: gpu
+        type: string
+        description: "GPU device to use (default: 0)"
+        required: false
+        argument_format: "--gpu {{value}}"
+
+  lulesh_check_correct:
+    signature: "lulesh_check_correct [<size>] [<iterations>] [<tolerance>]"
+    docstring: |
+      (OPTIONAL) Standalone correctness verification tool.
+
+      NOTE: lulesh_run already checks correctness automatically! You only
+      need this tool if you want to run a quick correctness check with
+      smaller parameters (faster) before running the full benchmark.
+
+      This tool runs BOTH pristine and modified LULESH with identical
+      parameters, then compares Final Origin Energy to ensure correctness.
+
+      Uses small default parameters (size=20, iter=50) for quick checking.
+
+      Returns JSON with 'correct' (bool) and details of any differences.
+    arguments:
+      - name: size
+        type: integer
+        description: "Problem size (default: 20 for quick check)"
+        required: false
+        argument_format: "-s {{value}}"
+      - name: iterations
+        type: integer
+        description: "Number of iterations (default: 50 for quick check)"
+        required: false
+        argument_format: "-i {{value}}"
+      - name: tolerance
+        type: float
+        description: "Relative error tolerance (default: 1e-8)"
+        required: false
+        argument_format: "--tolerance {{value}}"

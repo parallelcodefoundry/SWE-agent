@@ -1,0 +1,404 @@
+#!/usr/bin/env python3
+"""
+lulesh_run - Run LULESH benchmark and compare against baseline.
+
+LULESH is a shock hydrodynamics proxy application. It outputs final energy
+values that can be used for correctness verification.
+
+Runs on a single GPU and compares performance/correctness against pristine version.
+"""
+import subprocess
+import os
+import sys
+import json
+import re
+import time
+
+# Pristine LULESH source (unmodified baseline)
+PRISTINE_LULESH_ROOT = "/global/u2/k/krydzy/SWE-agent/Lulesh/cuda"
+
+# Default test parameters
+DEFAULT_SIZE = 30  # Problem size (elements per side)
+DEFAULT_ITERATIONS = 100  # Number of iterations
+
+# Default tolerance for correctness checking
+DEFAULT_TOLERANCE = 1e-8
+
+# GPU targeting
+TARGET_GPU = "0"
+
+
+def find_cuda_path():
+    """Find CUDA installation path."""
+    cuda_home = os.environ.get('CUDA_HOME') or os.environ.get('CUDATOOLKIT_HOME')
+    if cuda_home and os.path.isdir(cuda_home):
+        return cuda_home
+    candidates = [
+        '/opt/nvidia/hpc_sdk/Linux_x86_64/24.5/cuda/12.4',
+        '/opt/nvidia/hpc_sdk/Linux_x86_64/23.9/cuda/12.2',
+        '/usr/local/cuda',
+    ]
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return None
+
+
+def ensure_pristine_makefile():
+    """Ensure Makefile exists in pristine LULESH directory."""
+    makefile_path = os.path.join(PRISTINE_LULESH_ROOT, 'Makefile')
+    if os.path.isfile(makefile_path):
+        return True
+
+    # Makefile template for Perlmutter A100
+    makefile_content = '''# LULESH 2.0 CUDA Makefile for Perlmutter (NVIDIA A100 GPUs)
+CUDA_HOME ?= $(CUDATOOLKIT_HOME)
+NVCC = $(CUDA_HOME)/bin/nvcc
+CUDA_ARCH = sm_80
+HOST_CXX = g++
+
+NVCC_FLAGS = -arch=$(CUDA_ARCH) -O3 -std=c++11 -lineinfo
+NVCC_FLAGS += --compiler-bindir=$(HOST_CXX)
+NVCC_FLAGS += -Xcompiler -fopenmp
+
+INCLUDES = -I./src
+LIBS = -L$(CUDA_HOME)/lib64 -lcudart -lgomp
+
+SRC_DIR = src
+SRCS = $(SRC_DIR)/allocator.cu $(SRC_DIR)/lulesh.cu
+OBJS = $(SRCS:.cu=.o)
+TARGET = lulesh
+
+all: release
+release: NVCC_FLAGS += -DNDEBUG
+release: $(TARGET)
+
+$(TARGET): $(OBJS)
+\t$(NVCC) $(NVCC_FLAGS) -o $@ $^ $(LIBS)
+
+$(SRC_DIR)/%.o: $(SRC_DIR)/%.cu
+\t$(NVCC) $(NVCC_FLAGS) $(INCLUDES) -c $< -o $@
+
+clean:
+\trm -f $(SRC_DIR)/*.o $(TARGET)
+
+.PHONY: all release clean
+'''
+    try:
+        with open(makefile_path, 'w') as f:
+            f.write(makefile_content.replace('\\t', '\t'))
+        print(f"Created Makefile at {makefile_path}")
+        return True
+    except Exception as e:
+        print(f"Failed to create Makefile: {e}")
+        return False
+
+
+def get_pristine_executable():
+    """Get path to pristine LULESH executable, building if needed."""
+    exe_path = os.path.join(PRISTINE_LULESH_ROOT, 'lulesh')
+
+    if not os.path.isfile(exe_path):
+        print("Building pristine LULESH for baseline...")
+        sys.stdout.flush()
+
+        # Ensure Makefile exists
+        if not ensure_pristine_makefile():
+            print("Failed to ensure Makefile exists")
+            return None
+
+        cuda_path = find_cuda_path()
+        build_env = os.environ.copy()
+        if cuda_path:
+            build_env['CUDATOOLKIT_HOME'] = cuda_path
+
+        build_result = subprocess.run(
+            ['make', '-j8'],
+            cwd=PRISTINE_LULESH_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            timeout=300,
+            env=build_env
+        )
+        if build_result.returncode != 0 or not os.path.isfile(exe_path):
+            print(f"Failed to build pristine LULESH: {build_result.stderr}")
+            return None
+        print("Pristine build complete.")
+
+    return exe_path
+
+
+def run_lulesh(exe_path, size, iterations, label=""):
+    """Run LULESH with specified parameters.
+
+    Returns: (total_time_seconds, final_energy, output_text) or (None, None, None) on failure
+    """
+    env = os.environ.copy()
+    env['CUDA_VISIBLE_DEVICES'] = TARGET_GPU
+    env['OMP_NUM_THREADS'] = '1'
+
+    cmd = [exe_path, '-s', str(size), '-i', str(iterations)]
+
+    try:
+        if label:
+            print(f"Running {label}...")
+            sys.stdout.flush()
+
+        start_time = time.time()
+        proc = subprocess.run(
+            cmd,
+            cwd=os.path.dirname(exe_path),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            timeout=600,  # 10 minute timeout
+            env=env
+        )
+        elapsed = time.time() - start_time
+
+        if proc.returncode == 0:
+            # Extract final energy from output
+            # LULESH prints: "Final Origin Energy =  X.XXXXXXXXXXXXXXXX"
+            energy_match = re.search(r'Final Origin Energy\s*=\s*([\d.eE+-]+)', proc.stdout)
+            final_energy = float(energy_match.group(1)) if energy_match else None
+
+            # Use wall-clock elapsed time for accurate measurement
+            # (LULESH's internal timer can be very small for quick runs)
+            return elapsed, final_energy, proc.stdout
+        else:
+            print(f"Run failed: {proc.stderr[-500:]}")
+            return None, None, None
+
+    except subprocess.TimeoutExpired:
+        print("Run timed out (>10 minutes)")
+        return None, None, None
+    except Exception as e:
+        print(f"Run error: {e}")
+        return None, None, None
+
+
+def extract_scientific_values(output_text):
+    """Extract scientific values from LULESH output for correctness comparison."""
+    values = {}
+
+    if not output_text:
+        return values
+
+    # Final Origin Energy
+    energy_match = re.search(r'Final Origin Energy\s*=\s*([\d.eE+-]+)', output_text)
+    if energy_match:
+        values['final_origin_energy'] = float(energy_match.group(1))
+
+    # MaxAbsDiff (if present)
+    diff_match = re.search(r'MaxAbsDiff\s*=\s*([\d.eE+-]+)', output_text)
+    if diff_match:
+        values['max_abs_diff'] = float(diff_match.group(1))
+
+    # TotalAbsDiff (if present)
+    total_diff_match = re.search(r'TotalAbsDiff\s*=\s*([\d.eE+-]+)', output_text)
+    if total_diff_match:
+        values['total_abs_diff'] = float(total_diff_match.group(1))
+
+    # MaxRelDiff (if present)
+    rel_diff_match = re.search(r'MaxRelDiff\s*=\s*([\d.eE+-]+)', output_text)
+    if rel_diff_match:
+        values['max_rel_diff'] = float(rel_diff_match.group(1))
+
+    # Problem size
+    size_match = re.search(r'Problem size\s*=\s*(\d+)', output_text)
+    if size_match:
+        values['problem_size'] = int(size_match.group(1))
+
+    # Iteration count
+    iter_match = re.search(r'Iteration count\s*=\s*(\d+)', output_text)
+    if iter_match:
+        values['iteration_count'] = int(iter_match.group(1))
+
+    return values
+
+
+def check_correctness(baseline_output, modified_output, tolerance=DEFAULT_TOLERANCE):
+    """Compare scientific values between baseline and modified outputs."""
+    baseline_values = extract_scientific_values(baseline_output)
+    modified_values = extract_scientific_values(modified_output)
+
+    if not baseline_values:
+        return {"correct": False, "error": "No scientific values found in baseline output"}
+    if not modified_values:
+        return {"correct": False, "error": "No scientific values found in modified output"}
+
+    differences = []
+    matched = 0
+
+    for key in baseline_values.keys():
+        baseline_val = baseline_values[key]
+        modified_val = modified_values.get(key)
+
+        if modified_val is None:
+            differences.append({"key": key, "issue": "missing_in_modified", "baseline": baseline_val})
+        elif isinstance(baseline_val, float):
+            if baseline_val == 0:
+                rel_error = abs(modified_val) if modified_val != 0 else 0
+            else:
+                rel_error = abs(modified_val - baseline_val) / abs(baseline_val)
+
+            if rel_error > tolerance:
+                differences.append({
+                    "key": key,
+                    "baseline": baseline_val,
+                    "modified": modified_val,
+                    "relative_error": rel_error
+                })
+            else:
+                matched += 1
+        else:
+            if baseline_val != modified_val:
+                differences.append({
+                    "key": key,
+                    "baseline": baseline_val,
+                    "modified": modified_val,
+                    "difference": modified_val - baseline_val
+                })
+            else:
+                matched += 1
+
+    return {
+        "correct": len(differences) == 0,
+        "matched": matched,
+        "total_values": len(baseline_values),
+        "differences": differences[:5] if differences else [],
+        "total_differences": len(differences)
+    }
+
+
+def main():
+    global TARGET_GPU
+    import argparse
+    parser = argparse.ArgumentParser(description='Run LULESH benchmark')
+    parser.add_argument('-s', '--size', type=int, default=DEFAULT_SIZE,
+                       help=f'Problem size (elements per side, default: {DEFAULT_SIZE})')
+    parser.add_argument('-i', '--iterations', type=int, default=DEFAULT_ITERATIONS,
+                       help=f'Number of iterations (default: {DEFAULT_ITERATIONS})')
+    parser.add_argument('--gpu', type=str, default=TARGET_GPU,
+                       help=f'GPU device to use (default: {TARGET_GPU})')
+    args = parser.parse_args()
+
+    TARGET_GPU = args.gpu
+
+    # Find modified LULESH executable
+    lulesh_root = os.environ.get('LULESH_ROOT')
+    if not lulesh_root:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate_paths = [
+            os.path.join(script_dir, '..', '..', '..', 'Lulesh_test', 'cuda'),
+            '/global/u2/k/krydzy/SWE-agent/Lulesh_test/cuda',
+        ]
+        for path in candidate_paths:
+            if os.path.isdir(path):
+                lulesh_root = os.path.abspath(path)
+                break
+
+    modified_exe = os.path.join(lulesh_root, 'lulesh') if lulesh_root else None
+
+    if not modified_exe or not os.path.isfile(modified_exe):
+        print("=" * 60)
+        print("ERROR: LULESH executable not found.")
+        print("Run lulesh_build first to compile the application.")
+        print("=" * 60)
+        sys.exit(1)
+
+    # Get pristine executable for baseline
+    pristine_exe = get_pristine_executable()
+    if not pristine_exe:
+        print("=" * 60)
+        print("ERROR: Could not build baseline LULESH.")
+        print("=" * 60)
+        sys.exit(1)
+
+    print("=" * 60)
+    print(f"LULESH BENCHMARK: size={args.size}, iterations={args.iterations}")
+    print(f"Running on GPU {TARGET_GPU} (CUDA_VISIBLE_DEVICES={TARGET_GPU})")
+    print("=" * 60)
+
+    # Run baseline
+    baseline_time, baseline_energy, baseline_output = run_lulesh(
+        pristine_exe, args.size, args.iterations, "baseline (unmodified)"
+    )
+    if baseline_time is None:
+        print("=" * 60)
+        print("ERROR: Baseline run failed.")
+        print("=" * 60)
+        sys.exit(1)
+
+    # Run modified version
+    modified_time, modified_energy, modified_output = run_lulesh(
+        modified_exe, args.size, args.iterations, "modified version"
+    )
+    if modified_time is None:
+        print("=" * 60)
+        print("ERROR: Modified version run failed.")
+        print("=" * 60)
+        sys.exit(1)
+
+    # Check correctness
+    correctness = check_correctness(baseline_output, modified_output)
+
+    # Calculate speedup (handle edge cases)
+    if modified_time > 0 and baseline_time > 0:
+        speedup = baseline_time / modified_time
+    elif modified_time > 0:
+        speedup = 1.0  # baseline was instant, treat as no change
+    else:
+        speedup = 1.0  # both instant, treat as no change
+
+    # Print results
+    print("=" * 60)
+    print("LULESH BENCHMARK RESULTS")
+    print("=" * 60)
+    print()
+
+    # Correctness
+    if correctness.get('correct'):
+        print(f"CORRECTNESS:  PASSED ({correctness.get('matched', 0)} values verified)")
+        if baseline_energy is not None:
+            print(f"  Final Energy: {baseline_energy:.15e} (baseline)")
+            print(f"  Final Energy: {modified_energy:.15e} (modified)")
+    else:
+        print(f"CORRECTNESS:  FAILED ({correctness.get('total_differences', 0)} values differ!)")
+        for diff in correctness.get('differences', [])[:3]:
+            print(f"  - {diff.get('key')}: expected {diff.get('baseline')}, got {diff.get('modified')}")
+    print()
+
+    # Performance
+    print(f"BASELINE TIME:   {baseline_time:.3f} seconds")
+    print(f"MODIFIED TIME:   {modified_time:.3f} seconds")
+    print()
+
+    if speedup > 1.01:
+        print(f"RESULT:          {speedup:.2f}x SPEEDUP")
+        print(f"TIME SAVED:      {baseline_time - modified_time:.3f} seconds")
+    elif speedup < 0.99:
+        slowdown = 1.0 / speedup if speedup > 0 else float('inf')
+        print(f"RESULT:          {slowdown:.2f}x SLOWDOWN")
+        print(f"TIME ADDED:      {modified_time - baseline_time:.3f} seconds")
+    else:
+        print("RESULT:          NO SIGNIFICANT CHANGE")
+
+    print()
+    print("=" * 60)
+
+    # Determine exit status
+    if not correctness.get('correct'):
+        print("Status: FAILED (correctness check failed)")
+        sys.exit(1)
+    elif speedup >= 1.0:
+        print("Status: SUCCESS")
+        sys.exit(0)
+    else:
+        print("Status: REGRESSION (slower than baseline)")
+        sys.exit(0)
+
+
+if __name__ == '__main__':
+    main()

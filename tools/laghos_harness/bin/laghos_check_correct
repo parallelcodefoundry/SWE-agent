@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""
+laghos_check_correct - Quick correctness verification for Laghos.
+
+Runs a smaller problem to quickly verify correctness before running
+full benchmarks.
+"""
+import subprocess
+import os
+import sys
+import json
+import re
+
+# Pristine Laghos source (unmodified baseline)
+PRISTINE_LAGHOS_ROOT = "/global/u2/k/krydzy/SWE-agent/Laghos"
+
+# Quick check parameters
+DEFAULT_PROBLEM = 0  # Taylor-Green (smooth, fast)
+DEFAULT_DIM = 2
+DEFAULT_RS = 2  # Smaller refinement
+DEFAULT_TF = 0.1  # Short time
+DEFAULT_TOLERANCE = 1e-8
+
+
+def check_mfem(laghos_root):
+    """Check if MFEM is built."""
+    parent_dir = os.path.dirname(laghos_root)
+    mfem_lib = os.path.join(parent_dir, 'mfem', 'libmfem.a')
+    return os.path.isfile(mfem_lib)
+
+
+def get_pristine_executable():
+    """Get path to pristine Laghos executable, building if needed."""
+    exe_path = os.path.join(PRISTINE_LAGHOS_ROOT, 'laghos')
+
+    if not os.path.isfile(exe_path):
+        print("Building pristine Laghos...")
+        if not check_mfem(PRISTINE_LAGHOS_ROOT):
+            setup_result = subprocess.run(
+                ['make', 'setup', 'MFEM_BUILD=pcuda'],
+                cwd=PRISTINE_LAGHOS_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=1800
+            )
+            if setup_result.returncode != 0:
+                return None
+
+        build_result = subprocess.run(
+            ['make', '-j8'],
+            cwd=PRISTINE_LAGHOS_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=600
+        )
+        if build_result.returncode != 0 or not os.path.isfile(exe_path):
+            return None
+
+    return exe_path
+
+
+def run_laghos(exe_path, problem, dim, rs, tf, device='cuda'):
+    """Run Laghos and return output."""
+    env = os.environ.copy()
+    env['CUDA_VISIBLE_DEVICES'] = '0'
+    env['OMP_NUM_THREADS'] = '1'
+
+    cmd = [exe_path, '-p', str(problem), '-dim', str(dim), '-rs', str(rs), '-tf', str(tf), '-pa']
+    if device and device != 'cpu':
+        cmd.extend(['-d', device])
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=os.path.dirname(exe_path),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=env
+        )
+        if proc.returncode == 0:
+            return proc.stdout
+        return None
+    except Exception:
+        return None
+
+
+def extract_values(output_text):
+    """Extract scientific values from output."""
+    values = {}
+    if not output_text:
+        return values
+
+    final_match = re.search(
+        r'step\s*=\s*(\d+).*?dt\s*=\s*([\d.eE+-]+).*?\|e\|\s*=\s*([\d.eE+-]+)',
+        output_text,
+        re.DOTALL
+    )
+    if final_match:
+        values['final_step'] = int(final_match.group(1))
+        values['final_dt'] = float(final_match.group(2))
+        values['final_energy'] = float(final_match.group(3))
+
+    return values
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='Quick Laghos correctness check')
+    parser.add_argument('-p', '--problem', type=int, default=DEFAULT_PROBLEM)
+    parser.add_argument('--dim', type=int, default=DEFAULT_DIM)
+    parser.add_argument('--rs', type=int, default=DEFAULT_RS)
+    parser.add_argument('--tf', type=float, default=DEFAULT_TF)
+    parser.add_argument('-d', '--device', type=str, default='cuda')
+    parser.add_argument('--tolerance', type=float, default=DEFAULT_TOLERANCE)
+    args = parser.parse_args()
+
+    result = {
+        "correct": False,
+        "problem": args.problem,
+        "dim": args.dim,
+        "rs": args.rs,
+        "tf": args.tf,
+        "tolerance": args.tolerance
+    }
+
+    # Find modified Laghos
+    laghos_root = os.environ.get('LAGHOS_ROOT')
+    if not laghos_root:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate_paths = [
+            os.path.join(script_dir, '..', '..', '..', 'Laghos_test'),
+            '/global/u2/k/krydzy/SWE-agent/Laghos_test',
+        ]
+        for path in candidate_paths:
+            if os.path.isdir(path):
+                laghos_root = os.path.abspath(path)
+                break
+
+    modified_exe = os.path.join(laghos_root, 'laghos') if laghos_root else None
+    if not modified_exe or not os.path.isfile(modified_exe):
+        result["error"] = "Modified Laghos not found. Run laghos_build first."
+        print(json.dumps(result, indent=2))
+        sys.exit(1)
+
+    pristine_exe = get_pristine_executable()
+    if not pristine_exe:
+        result["error"] = "Could not build pristine Laghos."
+        print(json.dumps(result, indent=2))
+        sys.exit(1)
+
+    print(f"Running correctness check (p={args.problem}, dim={args.dim}, rs={args.rs}, tf={args.tf})...")
+
+    baseline_output = run_laghos(pristine_exe, args.problem, args.dim, args.rs, args.tf, args.device)
+    modified_output = run_laghos(modified_exe, args.problem, args.dim, args.rs, args.tf, args.device)
+
+    if not baseline_output:
+        result["error"] = "Baseline run failed"
+        print(json.dumps(result, indent=2))
+        sys.exit(1)
+
+    if not modified_output:
+        result["error"] = "Modified run failed"
+        print(json.dumps(result, indent=2))
+        sys.exit(1)
+
+    baseline_values = extract_values(baseline_output)
+    modified_values = extract_values(modified_output)
+
+    result["baseline_values"] = baseline_values
+    result["modified_values"] = modified_values
+
+    # Compare
+    differences = []
+    for key in baseline_values:
+        baseline_val = baseline_values[key]
+        modified_val = modified_values.get(key)
+
+        if modified_val is None:
+            differences.append({"key": key, "issue": "missing"})
+        elif isinstance(baseline_val, float):
+            if baseline_val == 0:
+                rel_error = abs(modified_val)
+            else:
+                rel_error = abs(modified_val - baseline_val) / abs(baseline_val)
+
+            if rel_error > args.tolerance:
+                differences.append({
+                    "key": key,
+                    "baseline": baseline_val,
+                    "modified": modified_val,
+                    "relative_error": rel_error
+                })
+
+    result["correct"] = len(differences) == 0
+    result["differences"] = differences
+
+    print(json.dumps(result, indent=2))
+    sys.exit(0 if result["correct"] else 1)
+
+
+if __name__ == '__main__':
+    main()

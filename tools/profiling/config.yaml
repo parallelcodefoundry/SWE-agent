@@ -1,6 +1,6 @@
 tools:
   benchmark_code:
-    signature: "benchmark_code <app_name> [--branch <branch>] [--baseline_branch <baseline_branch>]"
+    signature: "benchmark_code <app_name> [<branch>] [<baseline_branch>]"
     docstring: |
       Build and benchmark an HPC proxy application, comparing against baseline.
 
@@ -30,13 +30,15 @@ tools:
         type: string
         description: "Branch with modifications (default: current branch)"
         required: false
+        argument_format: "--branch {{value}}"
       - name: baseline_branch
         type: string
         description: "Branch with baseline code (default: main)"
         required: false
+        argument_format: "--baseline_branch {{value}}"
 
   microbench_code:
-    signature: "microbench_code <code_file> [--compiler <compiler>] [--flags <flags>] [--repeat <repeat>]"
+    signature: "microbench_code <code_file> [<compiler>] [<flags>] [<repeat>]"
     docstring: |
       Compile and run a standalone code snippet for quick timing experiments.
 
@@ -69,17 +71,20 @@ tools:
         type: string
         description: "Compiler command (default: nvcc for .cu, g++ otherwise)"
         required: false
+        argument_format: "--compiler {{value}}"
       - name: flags
         type: string
         description: "Compiler flags (default: -O3)"
         required: false
+        argument_format: "--flags {{value}}"
       - name: repeat
         type: integer
         description: "Number of timing iterations (default: 5)"
         required: false
+        argument_format: "--repeat {{value}}"
 
   compiler_analysis:
-    signature: "compiler_analysis <source_file> [--compiler <compiler>] [--flags <flags>]"
+    signature: "compiler_analysis <source_file> [<compiler>] [<flags>]"
     docstring: |
       Compile code with analysis flags and parse resource usage.
 
@@ -117,7 +122,9 @@ tools:
         type: string
         description: "Compiler to use (default: nvcc)"
         required: false
+        argument_format: "--compiler {{value}}"
       - name: flags
         type: string
         description: "Additional compiler flags (default: -O3 -arch=sm_80)"
         required: false
+        argument_format: "--flags {{value}}"

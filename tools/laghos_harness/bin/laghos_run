@@ -1,0 +1,437 @@
+#!/usr/bin/env python3
+"""
+laghos_run - Run Laghos benchmark and compare against baseline.
+
+Laghos is a high-order Lagrangian hydrodynamics miniapp that solves
+compressible gas dynamics equations.
+
+Key test problems:
+  -p 0: Taylor-Green vortex (smooth)
+  -p 1: Sedov blast wave (shock)
+  -p 3: Triple-point problem
+  -p 4: Gresho vortex
+
+Output includes energy values for correctness verification.
+"""
+import subprocess
+import os
+import sys
+import json
+import re
+import time
+
+# Pristine Laghos source (unmodified baseline)
+PRISTINE_LAGHOS_ROOT = "/global/u2/k/krydzy/SWE-agent/Laghos"
+
+# Default benchmark parameters
+DEFAULT_PROBLEM = 1  # Sedov blast
+DEFAULT_DIM = 2
+DEFAULT_RS = 3  # Refinement
+DEFAULT_TF = 0.8  # Final time
+DEFAULT_DEVICE = 'cuda'  # GPU device
+
+# Default tolerance for correctness
+DEFAULT_TOLERANCE = 1e-8
+
+# Reference values for standard tests (from Laghos README)
+REFERENCE_VALUES = {
+    # (problem, dim, rs, tf) -> (step, dt, energy)
+    (0, 2, 3, 0.75): (339, 0.000702, 4.9695537349e+01),
+    (0, 3, 1, 0.75): (1041, 0.000121, 3.3909635545e+03),
+    (1, 2, 3, 0.8): (1154, 0.001655, 4.6303396053e+01),
+    (1, 3, 2, 0.6): (560, 0.002449, 1.3408616722e+02),
+    (3, 2, 2, 3.0): (2872, 0.000064, 5.6547039096e+01),
+    (3, 3, 1, 5.0): (858, 0.000474, 5.6691500623e+01),
+}
+
+
+def find_cuda_path():
+    """Find CUDA installation path."""
+    cuda_home = os.environ.get('CUDA_HOME') or os.environ.get('CUDATOOLKIT_HOME')
+    if cuda_home and os.path.isdir(cuda_home):
+        return cuda_home
+    candidates = [
+        '/opt/nvidia/hpc_sdk/Linux_x86_64/24.5/cuda/12.4',
+        '/usr/local/cuda',
+    ]
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return None
+
+
+def ensure_pristine_makefile():
+    """Ensure makefile exists in pristine Laghos directory."""
+    makefile_path = os.path.join(PRISTINE_LAGHOS_ROOT, 'makefile')
+    if os.path.isfile(makefile_path):
+        return True
+
+    # Also check for Makefile (capital M)
+    makefile_upper = os.path.join(PRISTINE_LAGHOS_ROOT, 'Makefile')
+    if os.path.isfile(makefile_upper):
+        return True
+
+    # Laghos makefile should come from the repository, but if missing
+    # we can check common locations or create a minimal one
+    print(f"Warning: makefile not found in {PRISTINE_LAGHOS_ROOT}")
+    print("The Laghos makefile should be included in the repository.")
+    print("Please ensure the Laghos repository is properly cloned.")
+    return False
+
+
+def check_mfem(laghos_root):
+    """Check if MFEM is built."""
+    parent_dir = os.path.dirname(laghos_root)
+    mfem_lib = os.path.join(parent_dir, 'mfem', 'libmfem.a')
+    return os.path.isfile(mfem_lib)
+
+
+def get_pristine_executable():
+    """Get path to pristine Laghos executable, building if needed."""
+    exe_path = os.path.join(PRISTINE_LAGHOS_ROOT, 'laghos')
+
+    if not os.path.isfile(exe_path):
+        print("Building pristine Laghos for baseline...")
+        print("(This may take a while if dependencies need to be built)")
+        sys.stdout.flush()
+
+        # Ensure makefile exists
+        if not ensure_pristine_makefile():
+            print("Failed to ensure makefile exists")
+            return None
+
+        # Check if MFEM exists, if not build dependencies
+        if not check_mfem(PRISTINE_LAGHOS_ROOT):
+            print("Building MFEM and dependencies first...")
+            setup_result = subprocess.run(
+                ['make', 'setup', 'MFEM_BUILD=pcuda'],
+                cwd=PRISTINE_LAGHOS_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=1800
+            )
+            if setup_result.returncode != 0:
+                print(f"Failed to build dependencies: {setup_result.stderr[-500:]}")
+                return None
+
+        build_result = subprocess.run(
+            ['make', '-j8'],
+            cwd=PRISTINE_LAGHOS_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=600
+        )
+        if build_result.returncode != 0 or not os.path.isfile(exe_path):
+            print(f"Failed to build pristine Laghos: {build_result.stderr[-500:]}")
+            return None
+        print("Pristine build complete.")
+
+    return exe_path
+
+
+def run_laghos(exe_path, problem, dim, rs, tf, device, use_pa=True, label=""):
+    """Run Laghos with specified parameters.
+
+    Returns: (elapsed_time, final_energy, step, dt, output_text) or None on failure
+    """
+    env = os.environ.copy()
+    env['CUDA_VISIBLE_DEVICES'] = '0'
+    env['OMP_NUM_THREADS'] = '1'
+
+    cmd = [
+        exe_path,
+        '-p', str(problem),
+        '-dim', str(dim),
+        '-rs', str(rs),
+        '-tf', str(tf),
+    ]
+
+    # Add partial assembly for better GPU performance
+    if use_pa:
+        cmd.append('-pa')
+
+    # Add device flag for GPU
+    if device and device != 'cpu':
+        cmd.extend(['-d', device])
+
+    try:
+        if label:
+            print(f"Running {label}...")
+            sys.stdout.flush()
+
+        start_time = time.time()
+        proc = subprocess.run(
+            cmd,
+            cwd=os.path.dirname(exe_path),
+            capture_output=True,
+            text=True,
+            timeout=600,
+            env=env
+        )
+        elapsed = time.time() - start_time
+
+        if proc.returncode == 0:
+            # Extract final values from output
+            # Format: "step = XXXX, dt = X.XXXXXX |e| = X.XXXXXXXXXXe+XX"
+            final_match = re.search(
+                r'step\s*=\s*(\d+).*?dt\s*=\s*([\d.eE+-]+).*?\|e\|\s*=\s*([\d.eE+-]+)',
+                proc.stdout,
+                re.DOTALL
+            )
+
+            if final_match:
+                step = int(final_match.group(1))
+                dt = float(final_match.group(2))
+                energy = float(final_match.group(3))
+                return elapsed, energy, step, dt, proc.stdout
+
+            # Fallback: try to find any energy value
+            energy_match = re.search(r'\|e\|\s*=\s*([\d.eE+-]+)', proc.stdout)
+            if energy_match:
+                energy = float(energy_match.group(1))
+                return elapsed, energy, None, None, proc.stdout
+
+            return elapsed, None, None, None, proc.stdout
+        else:
+            print(f"Run failed: {proc.stderr[-500:]}")
+            return None
+
+    except subprocess.TimeoutExpired:
+        print("Run timed out (>10 minutes)")
+        return None
+    except Exception as e:
+        print(f"Run error: {e}")
+        return None
+
+
+def extract_scientific_values(output_text):
+    """Extract scientific values from Laghos output."""
+    values = {}
+    if not output_text:
+        return values
+
+    # Find all step lines and get the last one
+    # Format: "step    68,	t = 0.5000,	dt = 0.002180,	|e| = 2.4958996352e+01"
+    step_matches = re.findall(
+        r'step\s+(\d+),\s*t\s*=\s*[\d.]+,\s*dt\s*=\s*([\d.eE+-]+),\s*\|e\|\s*=\s*([\d.eE+-]+)',
+        output_text
+    )
+    if step_matches:
+        # Get the last match (final step)
+        last_match = step_matches[-1]
+        values['final_step'] = int(last_match[0])
+        values['final_dt'] = float(last_match[1])
+        values['final_energy'] = float(last_match[2])
+
+    # Also extract Energy diff if present
+    energy_diff_match = re.search(r'Energy\s+diff:\s*([\d.eE+-]+)', output_text)
+    if energy_diff_match:
+        values['energy_diff'] = float(energy_diff_match.group(1))
+
+    return values
+
+
+def check_correctness(baseline_output, modified_output, tolerance=DEFAULT_TOLERANCE):
+    """Compare scientific values between baseline and modified outputs."""
+    baseline_values = extract_scientific_values(baseline_output)
+    modified_values = extract_scientific_values(modified_output)
+
+    if not baseline_values:
+        return {"correct": False, "error": "No values found in baseline output"}
+    if not modified_values:
+        return {"correct": False, "error": "No values found in modified output"}
+
+    differences = []
+    matched = 0
+
+    for key in baseline_values.keys():
+        baseline_val = baseline_values[key]
+        modified_val = modified_values.get(key)
+
+        if modified_val is None:
+            differences.append({"key": key, "issue": "missing_in_modified", "baseline": baseline_val})
+        elif isinstance(baseline_val, float):
+            if baseline_val == 0:
+                rel_error = abs(modified_val) if modified_val != 0 else 0
+            else:
+                rel_error = abs(modified_val - baseline_val) / abs(baseline_val)
+
+            if rel_error > tolerance:
+                differences.append({
+                    "key": key,
+                    "baseline": baseline_val,
+                    "modified": modified_val,
+                    "relative_error": rel_error
+                })
+            else:
+                matched += 1
+        else:
+            if baseline_val != modified_val:
+                differences.append({
+                    "key": key,
+                    "baseline": baseline_val,
+                    "modified": modified_val
+                })
+            else:
+                matched += 1
+
+    return {
+        "correct": len(differences) == 0,
+        "matched": matched,
+        "total_values": len(baseline_values),
+        "differences": differences[:5] if differences else [],
+        "total_differences": len(differences)
+    }
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='Run Laghos benchmark')
+    parser.add_argument('-p', '--problem', type=int, default=DEFAULT_PROBLEM,
+                       help=f'Problem type (0=Taylor-Green, 1=Sedov, 3=Triple-point, 4=Gresho)')
+    parser.add_argument('--dim', type=int, default=DEFAULT_DIM,
+                       help=f'Dimension (2 or 3)')
+    parser.add_argument('--rs', type=int, default=DEFAULT_RS,
+                       help=f'Serial refinement level')
+    parser.add_argument('--tf', type=float, default=DEFAULT_TF,
+                       help=f'Final time')
+    parser.add_argument('-d', '--device', type=str, default=DEFAULT_DEVICE,
+                       choices=['cpu', 'cuda', 'hip'],
+                       help='Device type')
+    parser.add_argument('--no-pa', action='store_true',
+                       help='Disable partial assembly (use full assembly)')
+    args = parser.parse_args()
+
+    # Find modified Laghos executable
+    laghos_root = os.environ.get('LAGHOS_ROOT')
+    if not laghos_root:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate_paths = [
+            os.path.join(script_dir, '..', '..', '..', 'Laghos_test'),
+            '/global/u2/k/krydzy/SWE-agent/Laghos_test',
+        ]
+        for path in candidate_paths:
+            if os.path.isdir(path):
+                laghos_root = os.path.abspath(path)
+                break
+
+    modified_exe = os.path.join(laghos_root, 'laghos') if laghos_root else None
+
+    if not modified_exe or not os.path.isfile(modified_exe):
+        print("=" * 60)
+        print("ERROR: Laghos executable not found.")
+        print("Run laghos_build first to compile the application.")
+        print("=" * 60)
+        sys.exit(1)
+
+    # Get pristine executable for baseline
+    pristine_exe = get_pristine_executable()
+    if not pristine_exe:
+        print("=" * 60)
+        print("ERROR: Could not build baseline Laghos.")
+        print("=" * 60)
+        sys.exit(1)
+
+    use_pa = not args.no_pa
+
+    print("=" * 60)
+    print(f"LAGHOS BENCHMARK: problem={args.problem}, dim={args.dim}, rs={args.rs}, tf={args.tf}")
+    print(f"Device: {args.device}, Partial Assembly: {use_pa}")
+    print("=" * 60)
+
+    # Run baseline
+    baseline_result = run_laghos(
+        pristine_exe, args.problem, args.dim, args.rs, args.tf,
+        args.device, use_pa, "baseline (unmodified)"
+    )
+    if baseline_result is None:
+        print("=" * 60)
+        print("ERROR: Baseline run failed.")
+        print("=" * 60)
+        sys.exit(1)
+
+    baseline_time, baseline_energy, baseline_step, baseline_dt, baseline_output = baseline_result
+
+    # Run modified version
+    modified_result = run_laghos(
+        modified_exe, args.problem, args.dim, args.rs, args.tf,
+        args.device, use_pa, "modified version"
+    )
+    if modified_result is None:
+        print("=" * 60)
+        print("ERROR: Modified version run failed.")
+        print("=" * 60)
+        sys.exit(1)
+
+    modified_time, modified_energy, modified_step, modified_dt, modified_output = modified_result
+
+    # Check correctness
+    correctness = check_correctness(baseline_output, modified_output)
+
+    # Calculate speedup
+    speedup = baseline_time / modified_time if modified_time > 0 else 0
+
+    # Print results
+    print("=" * 60)
+    print("LAGHOS BENCHMARK RESULTS")
+    print("=" * 60)
+    print()
+
+    # Correctness
+    if correctness.get('correct'):
+        print(f"CORRECTNESS:  PASSED ({correctness.get('matched', 0)} values verified)")
+        if baseline_energy is not None:
+            print(f"  Final Energy |e|: {baseline_energy:.10e} (baseline)")
+            print(f"  Final Energy |e|: {modified_energy:.10e} (modified)")
+        if baseline_step is not None:
+            print(f"  Final Step: {baseline_step} (baseline), {modified_step} (modified)")
+    else:
+        print(f"CORRECTNESS:  FAILED ({correctness.get('total_differences', 0)} values differ!)")
+        for diff in correctness.get('differences', [])[:3]:
+            print(f"  - {diff.get('key')}: expected {diff.get('baseline')}, got {diff.get('modified')}")
+    print()
+
+    # Performance
+    print(f"BASELINE TIME:   {baseline_time:.3f} seconds")
+    print(f"MODIFIED TIME:   {modified_time:.3f} seconds")
+    print()
+
+    if speedup > 1.0:
+        print(f"RESULT:          {speedup:.2f}x SPEEDUP")
+        print(f"TIME SAVED:      {baseline_time - modified_time:.3f} seconds")
+    elif speedup < 1.0:
+        slowdown = 1.0 / speedup
+        print(f"RESULT:          {slowdown:.2f}x SLOWDOWN")
+        print(f"TIME ADDED:      {modified_time - baseline_time:.3f} seconds")
+    else:
+        print("RESULT:          NO CHANGE")
+
+    print()
+    print("=" * 60)
+
+    # Check against reference values if available
+    ref_key = (args.problem, args.dim, args.rs, args.tf)
+    if ref_key in REFERENCE_VALUES:
+        ref_step, ref_dt, ref_energy = REFERENCE_VALUES[ref_key]
+        print("Reference Values (from Laghos documentation):")
+        print(f"  Expected: step={ref_step}, dt={ref_dt:.6f}, |e|={ref_energy:.10e}")
+        if modified_energy is not None:
+            energy_err = abs(modified_energy - ref_energy) / ref_energy
+            print(f"  Got:      step={modified_step}, dt={modified_dt:.6f}, |e|={modified_energy:.10e}")
+            print(f"  Energy relative error: {energy_err:.2e}")
+        print("=" * 60)
+
+    # Determine exit status
+    if not correctness.get('correct'):
+        print("Status: FAILED (correctness check failed)")
+        sys.exit(1)
+    elif speedup >= 1.0:
+        print("Status: SUCCESS")
+        sys.exit(0)
+    else:
+        print("Status: REGRESSION (slower than baseline)")
+        sys.exit(0)
+
+
+if __name__ == '__main__':
+    main()

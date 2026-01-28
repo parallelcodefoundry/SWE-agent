@@ -10,10 +10,21 @@ tools:
       3. hpcprof: Attributes measurements to source code
 
       The tool handles DCGM pause/resume and creates organized output directories.
-      Results can be analyzed with the hatchet_analyze tool or hpcviewer.
+
+      OUTPUT STRUCTURE:
+        <output_dir>/
+          measurements/   <- Raw profiling data (.hpcrun, .hpctrace files)
+          database/       <- Processed database for analysis (contains meta.db)
+
+      IMPORTANT: To analyze results with hatchet_analyze, use the DATABASE subdirectory:
+        hatchet_analyze <output_dir>/database
 
       GPU control: The number of GPUs used is determined by your application's
       arguments/configuration or CUDA_VISIBLE_DEVICES, not by hpcrun itself.
+
+      Example:
+        hpc_profile ./myapp ./profile_output -s 30
+        hatchet_analyze ./profile_output/database
     arguments:
       - name: executable
         type: string
@@ -21,9 +32,9 @@ tools:
         required: true
       - name: output_dir
         type: string
-        description: "Directory to store profiling results (measurements and database)"
+        description: "Directory to store profiling results. Creates measurements/ and database/ subdirectories."
         required: true
       - name: app_args
         type: string
-        description: "Optional arguments to pass to your application (e.g., '-dev num-avail=4' for CHAMPS+)"
+        description: "Optional arguments to pass to your application (e.g., '-s 30' for problem size)"
         required: false

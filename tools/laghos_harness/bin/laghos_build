@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""
+laghos_build - Build the Laghos high-order Lagrangian hydrodynamics miniapp.
+
+Laghos requires MFEM, hypre, and METIS. These are built automatically
+if not present.
+
+Build configuration:
+  - Compiler: nvcc (CUDA) for A100 GPUs (sm_80)
+  - Dependencies: MFEM, hypre, METIS
+  - Device: CUDA GPU support with partial assembly
+"""
+import subprocess
+import os
+import sys
+import json
+
+
+def find_laghos_root():
+    """Find the Laghos source directory."""
+    laghos_root = os.environ.get('LAGHOS_ROOT')
+    if laghos_root and os.path.isdir(laghos_root):
+        return laghos_root
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidate_paths = [
+        os.path.join(script_dir, '..', '..', '..', 'Laghos_test'),
+        '/global/u2/k/krydzy/SWE-agent/Laghos_test',
+    ]
+    for path in candidate_paths:
+        if os.path.isdir(path):
+            return os.path.abspath(path)
+    return None
+
+
+def check_mfem(laghos_root):
+    """Check if MFEM is built."""
+    parent_dir = os.path.dirname(laghos_root)
+    mfem_lib = os.path.join(parent_dir, 'mfem', 'libmfem.a')
+    return os.path.isfile(mfem_lib)
+
+
+def find_pristine_laghos_root():
+    """Find the pristine (unmodified) Laghos source directory."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidate_paths = [
+        os.path.join(script_dir, '..', '..', '..', 'Laghos'),
+        '/global/u2/k/krydzy/SWE-agent/Laghos',
+    ]
+    for path in candidate_paths:
+        if os.path.isdir(path):
+            return os.path.abspath(path)
+    return None
+
+
+def ensure_source_files_exist(laghos_root):
+    """Ensure essential source files exist in the test directory."""
+    import shutil
+
+    required_files = ['laghos.cpp', 'laghos_solver.cpp', 'laghos_assembly.cpp', 'makefile']
+    missing_files = []
+
+    for fname in required_files:
+        fpath = os.path.join(laghos_root, fname)
+        if not os.path.isfile(fpath):
+            missing_files.append(fname)
+
+    if not missing_files:
+        return True
+
+    # Try to copy from pristine directory
+    pristine_root = find_pristine_laghos_root()
+    if pristine_root:
+        for fname in missing_files:
+            pristine_file = os.path.join(pristine_root, fname)
+            if os.path.isfile(pristine_file):
+                print(f"Copying {fname} from pristine directory...")
+                shutil.copy2(pristine_file, os.path.join(laghos_root, fname))
+
+    # Verify all files now exist
+    for fname in required_files:
+        if not os.path.isfile(os.path.join(laghos_root, fname)):
+            return False
+    return True
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='Build Laghos')
+    parser.add_argument('--clean', action='store_true',
+                       help='Force clean rebuild (make clean first)')
+    parser.add_argument('--setup', action='store_true',
+                       help='Build dependencies (MFEM, hypre, METIS) even if they exist')
+    args = parser.parse_args()
+
+    laghos_root = find_laghos_root()
+    if not laghos_root:
+        print(json.dumps({
+            "success": False,
+            "error": "Could not find Laghos source directory"
+        }))
+        sys.exit(1)
+
+    # Ensure source files exist (copy from pristine if needed)
+    if not ensure_source_files_exist(laghos_root):
+        print(json.dumps({
+            "success": False,
+            "error": f"Required source files missing in {laghos_root} and could not copy from pristine directory"
+        }))
+        sys.exit(1)
+
+    print(f"Building Laghos in: {laghos_root}")
+
+    # Check/build dependencies
+    if args.setup or not check_mfem(laghos_root):
+        print("Building dependencies (MFEM, hypre, METIS)...")
+        print("This may take several minutes...")
+        sys.stdout.flush()
+
+        setup_result = subprocess.run(
+            ['make', 'setup', 'MFEM_BUILD=pcuda'],
+            cwd=laghos_root,
+            capture_output=True,
+            text=True,
+            timeout=1800  # 30 minutes
+        )
+        if setup_result.returncode != 0:
+            print(json.dumps({
+                "success": False,
+                "error": f"Failed to build dependencies: {setup_result.stderr[-500:]}"
+            }))
+            sys.exit(1)
+        print("Dependencies built successfully.")
+
+    # Clean if requested
+    if args.clean:
+        print("Cleaning previous build...")
+        subprocess.run(['make', 'clean'], cwd=laghos_root, capture_output=True)
+
+    # Build Laghos
+    print("Building Laghos...")
+    sys.stdout.flush()
+
+    result = subprocess.run(
+        ['make', '-j8'],
+        cwd=laghos_root,
+        capture_output=True,
+        text=True,
+        timeout=600
+    )
+
+    exe_path = os.path.join(laghos_root, 'laghos')
+
+    if result.returncode == 0 and os.path.isfile(exe_path):
+        print(json.dumps({
+            "success": True,
+            "executable": exe_path,
+            "message": "Build successful"
+        }))
+        print("\nBuild successful!")
+        print(f"Executable: {exe_path}")
+        sys.exit(0)
+    else:
+        print(json.dumps({
+            "success": False,
+            "error": result.stderr[-1000:] if result.stderr else "Unknown error"
+        }))
+        print("\nBuild FAILED!")
+        if result.stderr:
+            print(result.stderr[-1000:])
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

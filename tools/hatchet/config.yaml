@@ -11,16 +11,27 @@ tools:
       - Call tree summary: Shows hierarchical calling context with metrics
       - Source locations: Maps hotspots to source file and line ranges
 
+      IMPORTANT: Pass the DATABASE subdirectory, not the hpc_profile output directory!
+        If you ran: hpc_profile ./app ./profile_output
+        Then use:   hatchet_analyze ./profile_output/database
+                    (NOT: hatchet_analyze ./profile_output)
+
+      The database directory must contain meta.db (created by hpcprof).
+
       The metric is auto-detected based on what's available in the database:
       - GPU profiling: Uses "GKER (sec)" (GPU kernel time)
       - CPU profiling: Uses "time" or "cycles"
 
       The output is formatted as structured text suitable for LLM interpretation,
       making it easy to identify performance bottlenecks and optimization opportunities.
+
+      Example workflow:
+        hpc_profile ./myapp ./profile_output -s 30
+        hatchet_analyze ./profile_output/database
     arguments:
       - name: database_dir
         type: string
-        description: "Path to HPCToolkit database directory (output from hpc_profile or hpcprof)"
+        description: "Path to HPCToolkit database directory. Use <hpc_profile_output>/database - must contain meta.db"
         required: true
       - name: metric
         type: string
