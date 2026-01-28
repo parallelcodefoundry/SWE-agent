@@ -1,0 +1,69 @@
+# Default configuration for HPC Batch Runner
+# Override via CLI arguments or environment variables
+
+# Applications to run (if --all not specified)
+default_apps:
+  - kripke
+  - laghos
+  - lulesh
+  - quicksilver
+
+# Number of runs per configuration
+default_runs: 1
+
+# Profiling configuration
+# Options: "with_profiling", "no_profiling", "both"
+default_profiling: "both"
+
+# Output directory (relative to SWE-agent root)
+default_output_dir: "batch_results"
+
+# vLLM server configuration
+vllm:
+  host: "127.0.0.1"
+  port: 8008
+  startup_timeout: 300  # seconds to wait for server
+  health_check_interval: 5  # seconds between health checks
+
+# SWE-agent configuration
+sweagent:
+  config_dir: "config/hpc"
+  # Config naming pattern: {app}_{profiling_type}.yaml
+
+# Test repository paths (relative to SWE-agent root)
+test_repos:
+  kripke: "Kripke_test"
+  laghos: "Laghos_test"
+  lulesh: "Lulesh_test"
+  quicksilver: "Quicksilver_test"
+
+# Metrics to always collect
+default_metrics:
+  - correctness
+  - baseline_time
+  - modified_time
+  - speedup
+  - duration_seconds
+
+# Full metrics (with --full-metrics flag)
+full_metrics:
+  - token_count
+  - api_calls
+  - trajectory_steps
+  - model_name
+
+# Harness output patterns (regex for extracting metrics)
+harness_patterns:
+  correctness: "CORRECTNESS:\\s*(PASSED|FAILED)"
+  baseline_time: "BASELINE TIME:\\s*([\\d.]+)\\s*s"
+  modified_time: "MODIFIED TIME:\\s*([\\d.]+)\\s*s"
+  speedup: "SPEEDUP:\\s*([\\d.]+)x"
+
+# SLURM configuration (for reference, actual values in hpc_batch_runner.sh)
+slurm:
+  account: "m2404"
+  constraint: "gpu"
+  queue: "regular"
+  time: "3:00:00"
+  nodes: 1
+  gpus_per_node: 4
