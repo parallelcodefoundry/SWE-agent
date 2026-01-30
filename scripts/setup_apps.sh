@@ -14,6 +14,13 @@
 
 set -e
 
+# Track failures but don't exit on them
+FAILED_APPS=""
+app_failed() {
+    FAILED_APPS="${FAILED_APPS} $1"
+    echo "  ERROR: $1 build failed"
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SWEAGENT_ROOT="$(dirname "$SCRIPT_DIR")"
 
@@ -45,7 +52,9 @@ usage() {
     echo ""
     echo "If no app flags are specified, all apps are set up."
     echo ""
-    echo "Prerequisites:"
+    echo "Prerequisites (loaded automatically by the script):"
+    echo "  module load python"
+    echo "  module load cmake"
     echo "  module load openmpi/5.0.7"
     echo "  module load cuda/12.4"
     exit 0
@@ -105,8 +114,34 @@ fi
 
 # Load modules
 echo "Loading modules..."
+module load python 2>/dev/null || true
+module load cmake 2>/dev/null || true
 module load openmpi/5.0.7 2>/dev/null || true
 module load cuda/12.4 2>/dev/null || true
+
+# Ensure CUDA environment is set (fallback if module load didn't work)
+if [[ -z "$CUDA_HOME" ]]; then
+    for cuda_candidate in /opt/nvidia/hpc_sdk/Linux_x86_64/24.5/cuda/12.4 /usr/local/cuda; do
+        if [[ -d "$cuda_candidate" ]]; then
+            export CUDA_HOME="$cuda_candidate"
+            export CUDATOOLKIT_HOME="$cuda_candidate"
+            break
+        fi
+    done
+fi
+if [[ -n "$CUDA_HOME" ]]; then
+    export PATH="$CUDA_HOME/bin:$PATH"
+    export LD_LIBRARY_PATH="$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}"
+    # CUDA math libraries (cusparse, cublas, cusolver, curand) are in a separate path on Perlmutter
+    CUDA_MATH_LIBS="${CUDA_HOME/cuda/math_libs}/lib64"
+    if [[ -d "$CUDA_MATH_LIBS" ]]; then
+        export LD_LIBRARY_PATH="$CUDA_MATH_LIBS:$LD_LIBRARY_PATH"
+        export LIBRARY_PATH="$CUDA_MATH_LIBS:${LIBRARY_PATH:-}"
+    fi
+fi
+
+echo "  CUDA_HOME=$CUDA_HOME"
+echo "  cmake: $(cmake --version 2>/dev/null | head -1 || echo 'not found')"
 
 # Determine where to install apps
 if [[ -n "$APP_PREFIX" ]]; then
@@ -158,8 +193,10 @@ if [[ "$SETUP_KRIPKE" == "true" ]]; then
 
     if [[ "$DO_BUILD" == "true" ]]; then
         echo "  Building Kripke (CUDA via RAJA)..."
-        export KRIPKE_ROOT="$APP_DIR/Kripke"
-        "$SWEAGENT_ROOT/tools/kripke_harness/bin/kripke_build" --arch CUDA || echo "  Warning: Kripke build failed"
+        (
+            export KRIPKE_ROOT="$APP_DIR/Kripke"
+            "$SWEAGENT_ROOT/tools/kripke_harness/bin/kripke_build" --arch CUDA
+        ) || app_failed "Kripke"
     fi
 
     if [[ "$DO_TEST" == "true" ]]; then
@@ -172,8 +209,10 @@ if [[ "$SETUP_KRIPKE" == "true" ]]; then
 
         if [[ "$DO_BUILD" == "true" ]]; then
             echo "  Building Kripke_test..."
-            export KRIPKE_ROOT="$APP_DIR/Kripke_test"
-            "$SWEAGENT_ROOT/tools/kripke_harness/bin/kripke_build" --arch CUDA || echo "  Warning: Kripke_test build failed"
+            (
+                export KRIPKE_ROOT="$APP_DIR/Kripke_test"
+                "$SWEAGENT_ROOT/tools/kripke_harness/bin/kripke_build" --clean --arch CUDA
+            ) || app_failed "Kripke_test"
         fi
     fi
 
@@ -202,14 +241,28 @@ if [[ "$SETUP_LAGHOS" == "true" ]]; then
     if [[ "$DO_BUILD" == "true" ]]; then
         echo "  Building Laghos dependencies (MFEM, hypre, METIS) and Laghos..."
         echo "  This may take a while..."
-        cd Laghos
-        if [[ ! -f "../mfem/libmfem.a" ]]; then
-            make setup MFEM_BUILD=pcuda
-        else
-            echo "  Dependencies already built, skipping make setup"
-        fi
-        make -j8
-        cd "$APP_DIR"
+        (
+            # Pre-download METIS if the upstream URL is broken
+            if [[ ! -d "$APP_DIR/metis-4.0" ]]; then
+                echo "  Pre-downloading METIS tarball..."
+                cd "$APP_DIR"
+                if ! wget -q -O metis-4.0.3.tar.gz "http://glaros.dtc.umn.edu/gkhome/fetch/sw/metis/OLD/metis-4.0.3.tar.gz" 2>/dev/null; then
+                    echo "  Original METIS URL failed, trying GitHub mirror..."
+                    wget -q -O metis-4.0.3.tar.gz "https://github.com/mfem/tpls/raw/gh-pages/metis-4.0.3.tar.gz" 2>/dev/null || \
+                    wget -q -O metis-4.0.3.tar.gz "https://ftp.mcs.anl.gov/pub/petsc/externalpackages/metis-4.0.3.tar.gz" 2>/dev/null || true
+                fi
+                if [[ -f metis-4.0.3.tar.gz ]]; then
+                    tar -xzf metis-4.0.3.tar.gz
+                    mv metis-4.0.3 metis-4.0
+                    cd metis-4.0
+                    make OPTFLAGS="-O2" -j8
+                    cd "$APP_DIR"
+                    rm -f metis-4.0.3.tar.gz
+                fi
+            fi
+            export LAGHOS_ROOT="$APP_DIR/Laghos"
+            "$SWEAGENT_ROOT/tools/laghos_harness/bin/laghos_build" --setup
+        ) || app_failed "Laghos"
     fi
 
     if [[ "$DO_TEST" == "true" ]]; then
@@ -224,9 +277,10 @@ if [[ "$SETUP_LAGHOS" == "true" ]]; then
 
         if [[ "$DO_BUILD" == "true" ]]; then
             echo "  Building Laghos_test..."
-            cd Laghos_test
-            make -j8
-            cd "$APP_DIR"
+            (
+                export LAGHOS_ROOT="$APP_DIR/Laghos_test"
+                "$SWEAGENT_ROOT/tools/laghos_harness/bin/laghos_build"
+            ) || app_failed "Laghos_test"
         fi
     fi
 
@@ -261,9 +315,10 @@ if [[ "$SETUP_LULESH" == "true" ]]; then
 
     if [[ "$DO_BUILD" == "true" ]]; then
         echo "  Building Lulesh (CUDA, sm_80)..."
-        cd Lulesh/cuda
-        make -j8
-        cd "$APP_DIR"
+        (
+            export LULESH_ROOT="$APP_DIR/Lulesh/cuda"
+            "$SWEAGENT_ROOT/tools/lulesh_harness/bin/lulesh_build"
+        ) || app_failed "Lulesh"
     fi
 
     if [[ "$DO_TEST" == "true" ]]; then
@@ -276,9 +331,10 @@ if [[ "$SETUP_LULESH" == "true" ]]; then
 
         if [[ "$DO_BUILD" == "true" ]]; then
             echo "  Building Lulesh_test..."
-            cd Lulesh_test/cuda
-            make -j8
-            cd "$APP_DIR"
+            (
+                export LULESH_ROOT="$APP_DIR/Lulesh_test/cuda"
+                "$SWEAGENT_ROOT/tools/lulesh_harness/bin/lulesh_build"
+            ) || app_failed "Lulesh_test"
         fi
     fi
 
@@ -306,8 +362,10 @@ if [[ "$SETUP_QUICKSILVER" == "true" ]]; then
 
     if [[ "$DO_BUILD" == "true" ]]; then
         echo "  Building Quicksilver (CUDA + OpenMP, sm_80)..."
-        export QUICKSILVER_ROOT="$APP_DIR/Quicksilver"
-        "$SWEAGENT_ROOT/tools/quicksilver_harness/bin/qs_build" || echo "  Warning: Quicksilver build failed"
+        (
+            export QUICKSILVER_ROOT="$APP_DIR/Quicksilver"
+            "$SWEAGENT_ROOT/tools/quicksilver_harness/bin/qs_build"
+        ) || app_failed "Quicksilver"
     fi
 
     if [[ "$DO_TEST" == "true" ]]; then
@@ -320,8 +378,10 @@ if [[ "$SETUP_QUICKSILVER" == "true" ]]; then
 
         if [[ "$DO_BUILD" == "true" ]]; then
             echo "  Building Quicksilver_test..."
-            export QUICKSILVER_ROOT="$APP_DIR/Quicksilver_test"
-            "$SWEAGENT_ROOT/tools/quicksilver_harness/bin/qs_build" || echo "  Warning: Quicksilver_test build failed"
+            (
+                export QUICKSILVER_ROOT="$APP_DIR/Quicksilver_test"
+                "$SWEAGENT_ROOT/tools/quicksilver_harness/bin/qs_build"
+            ) || app_failed "Quicksilver_test"
         fi
     fi
 
@@ -339,5 +399,9 @@ echo ""
 echo "Directory layout:"
 ls -d */ 2>/dev/null | grep -E '(Kripke|Laghos|Lulesh|Quicksilver)' | sed 's/^/  /'
 echo ""
+if [[ -n "$FAILED_APPS" ]]; then
+    echo "WARNING: The following builds FAILED:$FAILED_APPS"
+    echo ""
+fi
 echo "To reset test repos between agent runs:"
 echo "  ./scripts/reset_test_repos.sh"

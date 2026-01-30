@@ -111,6 +111,17 @@ def main():
 
     print(f"Building Laghos in: {laghos_root}")
 
+    # Ensure CUDA math library paths are available for linking
+    # On Perlmutter, cusparse/cublas/cusolver/curand are in math_libs, not cuda/lib64
+    cuda_home = os.environ.get('CUDA_HOME') or os.environ.get('CUDATOOLKIT_HOME', '')
+    if cuda_home:
+        math_libs = cuda_home.replace('/cuda/', '/math_libs/') + '/lib64' if '/cuda/' in cuda_home else ''
+        if math_libs and os.path.isdir(math_libs):
+            cur = os.environ.get('LIBRARY_PATH', '')
+            os.environ['LIBRARY_PATH'] = f"{math_libs}:{cur}" if cur else math_libs
+            cur_ld = os.environ.get('LD_LIBRARY_PATH', '')
+            os.environ['LD_LIBRARY_PATH'] = f"{math_libs}:{cur_ld}" if cur_ld else math_libs
+
     # Check/build dependencies
     if args.setup or not check_mfem(laghos_root):
         print("Building dependencies (MFEM, hypre, METIS)...")

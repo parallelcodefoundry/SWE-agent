@@ -163,8 +163,16 @@ def main():
 
         result["cuda_path"] = cuda_path
 
-        # Use system g++ as host compiler
-        host_compiler = '/usr/bin/g++'
+        # Use a g++ compatible with nvcc (g++ 13+ has issues with -std=c++11)
+        host_compiler = None
+        for candidate in ['/usr/bin/g++-12', '/usr/bin/g++-11', '/usr/bin/g++-10',
+                          '/opt/cray/pe/gcc/12.2.0/bin/g++', '/opt/cray/pe/gcc/11.2.0/bin/g++',
+                          '/usr/bin/g++']:
+            if os.path.isfile(candidate):
+                host_compiler = candidate
+                break
+        if not host_compiler:
+            host_compiler = 'g++'
 
         print(f"Using CUDA: {cuda_path}")
         print(f"Using nvcc: {nvcc}")

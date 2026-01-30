@@ -13,9 +13,9 @@ From the SWE-agent root directory, run:
 ```
 
 This single command will:
-1. Load the required modules (`openmpi/5.0.7`, `cuda/12.4`)
+1. Load the required modules (`python`, `cmake`, `openmpi/5.0.7`, `cuda/12.4`)
 2. Clone all 4 proxy apps from GitHub (correct branches and submodules)
-3. Build each app with CUDA/GPU support
+3. Build each app with CUDA/GPU support (A100, sm_80)
 4. Create `_test/` working copies for agent experiments
 
 Options:
@@ -62,9 +62,10 @@ Step-by-step instructions for setting up each component individually.
 ### Prerequisites
 
 ```bash
+module load python
+module load cmake
 module load openmpi/5.0.7
 module load cuda/12.4
-module load python
 ```
 
 ### 1. Kripke (3D Sn Deterministic Transport)
@@ -80,17 +81,19 @@ git submodule update --init --recursive
 **Build (CUDA via RAJA):**
 ```bash
 mkdir build && cd build
+mkdir build && cd build
 cmake .. \
   -DCMAKE_BUILD_TYPE=Release \
   -DENABLE_CUDA=ON \
   -DENABLE_MPI=ON \
   -DCMAKE_CXX_COMPILER=mpicxx \
   -DCMAKE_C_COMPILER=mpicc \
-  -DCMAKE_CUDA_ARCHITECTURES=80
+  -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_CUDA_FLAGS="--extended-lambda --expt-relaxed-constexpr"
 make -j8
 ```
 
-**Executable:** `build/bin/kripke.exe`
+**Executable:** `build/kripke.exe`
 
 **Notes:**
 - Uses RAJA portability layer; supports Sequential, OpenMP, CUDA, HIP backends
