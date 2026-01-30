@@ -12,7 +12,17 @@ import json
 import re
 
 # Pristine Laghos source (unmodified baseline)
-PRISTINE_LAGHOS_ROOT = "/global/u2/k/krydzy/SWE-agent/Laghos"
+def _find_pristine_laghos():
+    root = os.environ.get('PRISTINE_LAGHOS_ROOT')
+    if root and os.path.isdir(root):
+        return root
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidate = os.path.join(script_dir, '..', '..', '..', 'Laghos')
+    if os.path.isdir(candidate):
+        return os.path.abspath(candidate)
+    return "/global/u2/k/krydzy/SWE-agent/Laghos"
+
+PRISTINE_LAGHOS_ROOT = _find_pristine_laghos()
 
 # Quick check parameters
 DEFAULT_PROBLEM = 0  # Taylor-Green (smooth, fast)

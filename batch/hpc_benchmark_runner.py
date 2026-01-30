@@ -68,25 +68,25 @@ class BenchmarkResult:
 class HPCBenchmarkRunner:
     """Runs benchmark comparisons between agent and expert patches"""
 
-    # Repository configurations
-    REPO_CONFIGS = {
+    # Repository configurations (pristine paths derived from sweagent_root in __init__)
+    REPO_CONFIG_TEMPLATES = {
         "kripke": {
-            "pristine": "/global/u2/k/krydzy/SWE-agent/Kripke",
+            "pristine_subdir": "Kripke",
             "config_template": "config/hpc/kripke_{profiling}.yaml",
             "build_tool": "kripke_build",
         },
         "laghos": {
-            "pristine": "/global/u2/k/krydzy/SWE-agent/Laghos",
+            "pristine_subdir": "Laghos",
             "config_template": "config/hpc/laghos_{profiling}.yaml",
             "build_tool": "laghos_build",
         },
         "lulesh": {
-            "pristine": "/global/u2/k/krydzy/SWE-agent/Lulesh",
+            "pristine_subdir": "Lulesh",
             "config_template": "config/hpc/lulesh_{profiling}.yaml",
             "build_tool": "lulesh_build",
         },
         "quicksilver": {
-            "pristine": "/global/u2/k/krydzy/SWE-agent/Quicksilver",
+            "pristine_subdir": "Quicksilver",
             "config_template": "config/hpc/quicksilver_{profiling}.yaml",
             "build_tool": "qs_build",
         },
@@ -105,6 +105,15 @@ class HPCBenchmarkRunner:
         self.run_number = run_number
         self.sweagent_root = Path(__file__).parent.parent
         self.results: list[BenchmarkResult] = []
+
+        # Build repo configs with absolute pristine paths
+        self.repo_configs = {}
+        for name, tmpl in self.REPO_CONFIG_TEMPLATES.items():
+            self.repo_configs[name] = {
+                "pristine": str(self.sweagent_root / tmpl["pristine_subdir"]),
+                "config_template": tmpl["config_template"],
+                "build_tool": tmpl["build_tool"],
+            }
 
         # Create output directories
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -129,7 +138,7 @@ class HPCBenchmarkRunner:
         base_commit = instance["base_commit"]
         instance_id = instance["instance_id"]
 
-        config = self.REPO_CONFIGS.get(repo_name)
+        config = self.repo_configs.get(repo_name)
         if not config:
             self.log(f"  ERROR: Unknown repo {repo_name}")
             return None
@@ -173,7 +182,7 @@ class HPCBenchmarkRunner:
         """Create a temporary config file for this specific instance"""
         repo_name = instance["repo_name"]
         instance_id = instance["instance_id"]
-        base_config = self.REPO_CONFIGS[repo_name]["config_template"].format(
+        base_config = self.repo_configs[repo_name]["config_template"].format(
             profiling=self.profiling
         )
 

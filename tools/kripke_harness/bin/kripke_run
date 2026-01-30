@@ -13,7 +13,17 @@ import time
 import re
 
 # Pristine Kripke source (unmodified)
-PRISTINE_KRIPKE_ROOT = "/global/u2/k/krydzy/SWE-agent/Kripke"
+def _find_pristine_kripke():
+    root = os.environ.get('PRISTINE_KRIPKE_ROOT')
+    if root and os.path.isdir(root):
+        return root
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidate = os.path.join(script_dir, '..', '..', '..', 'Kripke')
+    if os.path.isdir(candidate):
+        return os.path.abspath(candidate)
+    return "/global/u2/k/krydzy/SWE-agent/Kripke"
+
+PRISTINE_KRIPKE_ROOT = _find_pristine_kripke()
 
 # Default tolerance for correctness checking
 DEFAULT_TOLERANCE = 1e-10

@@ -16,7 +16,17 @@ import json
 import re
 
 # Pristine Quicksilver source (unmodified reference)
-PRISTINE_QS_ROOT = "/global/u2/k/krydzy/SWE-agent/Quicksilver"
+def _find_pristine_qs():
+    root = os.environ.get('PRISTINE_QS_ROOT')
+    if root and os.path.isdir(root):
+        return root
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidate = os.path.join(script_dir, '..', '..', '..', 'Quicksilver')
+    if os.path.isdir(candidate):
+        return os.path.abspath(candidate)
+    return "/global/u2/k/krydzy/SWE-agent/Quicksilver"
+
+PRISTINE_QS_ROOT = _find_pristine_qs()
 
 def get_pristine_executable():
     """Get path to pristine Quicksilver executable, building if needed."""
