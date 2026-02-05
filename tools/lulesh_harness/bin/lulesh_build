@@ -49,40 +49,105 @@ def find_cuda_path():
     return None
 
 
-def find_pristine_lulesh_root():
-    """Find the pristine (unmodified) LULESH source directory."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    candidate_paths = [
-        os.path.join(script_dir, '..', '..', '..', 'Lulesh', 'cuda'),
-        '/global/u2/k/krydzy/SWE-agent/Lulesh/cuda',
-    ]
-    for path in candidate_paths:
-        if os.path.isdir(path):
-            return os.path.abspath(path)
-    return None
+EMBEDDED_MAKEFILE = '''# LULESH 2.0 CUDA Makefile for Perlmutter (NVIDIA A100 GPUs)
+# Adapted for NERSC Perlmutter with sm_80 architecture
+
+# Detect if MPI is available/desired
+USE_MPI ?= 0
+
+# CUDA settings for Perlmutter A100 (sm_80)
+CUDA_HOME ?= $(CUDATOOLKIT_HOME)
+NVCC = $(CUDA_HOME)/bin/nvcc
+CUDA_ARCH = sm_80
+
+# Host compiler (g++ 13+ is incompatible with nvcc -std=c++11; prefer g++-12)
+HOST_CXX ?= $(shell which g++-12 2>/dev/null || which g++-11 2>/dev/null || echo g++)
+
+# Compiler flags
+NVCC_FLAGS = -arch=$(CUDA_ARCH) -O3 -std=c++11 -lineinfo
+NVCC_FLAGS += --compiler-bindir=$(HOST_CXX)
+NVCC_FLAGS += -Xcompiler -fopenmp
+
+# Debug flags (optional)
+DEBUG_FLAGS = -g -G -lineinfo
+
+# MPI settings
+ifeq ($(USE_MPI),1)
+    MPI_FLAGS = -DUSE_MPI
+    MPI_INCLUDES = -I$(MPICH_DIR)/include
+    MPI_LIBS = -L$(MPICH_DIR)/lib -lmpi
+else
+    MPI_FLAGS =
+    MPI_INCLUDES =
+    MPI_LIBS =
+endif
+
+# Include paths
+INCLUDES = -I./src $(MPI_INCLUDES)
+
+# Libraries
+LIBS = -L$(CUDA_HOME)/lib64 -lcudart -lgomp $(MPI_LIBS)
+
+# Source files
+SRC_DIR = src
+SRCS = $(SRC_DIR)/allocator.cu $(SRC_DIR)/lulesh.cu
+ifeq ($(USE_MPI),1)
+    SRCS += $(SRC_DIR)/lulesh-comms.cu $(SRC_DIR)/lulesh-comms-gpu.cu
+endif
+
+# Object files
+OBJS = $(SRCS:.cu=.o)
+
+# Target executable
+TARGET = lulesh
+
+# Default target
+all: release
+
+release: NVCC_FLAGS += -DNDEBUG
+release: $(TARGET)
+
+debug: NVCC_FLAGS += $(DEBUG_FLAGS)
+debug: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(NVCC) $(NVCC_FLAGS) $(MPI_FLAGS) -o $@ $^ $(LIBS)
+
+$(SRC_DIR)/%.o: $(SRC_DIR)/%.cu
+	$(NVCC) $(NVCC_FLAGS) $(MPI_FLAGS) $(INCLUDES) -c $< -o $@
+
+clean:
+	rm -f $(SRC_DIR)/*.o $(TARGET)
+
+# Run with default parameters (small test)
+test: $(TARGET)
+	./$(TARGET) -s 20 -i 100
+
+# Run with larger problem
+benchmark: $(TARGET)
+	./$(TARGET) -s 30 -i 200
+
+.PHONY: all release debug clean test benchmark
+'''
 
 
 def ensure_makefile_exists(lulesh_root):
-    """Ensure Makefile exists in the test directory, copying from pristine if needed."""
-    import shutil
-
+    """Ensure Makefile exists in the test directory, generating if needed."""
     makefile_path = os.path.join(lulesh_root, 'Makefile')
 
     if os.path.isfile(makefile_path):
         return True  # Makefile already exists
 
-    # Try to copy from pristine directory
-    pristine_root = find_pristine_lulesh_root()
-    if pristine_root:
-        pristine_makefile = os.path.join(pristine_root, 'Makefile')
-        if os.path.isfile(pristine_makefile):
-            print(f"Copying Makefile from pristine directory...")
-            shutil.copy2(pristine_makefile, makefile_path)
-            return True
-        else:
-            print(f"Warning: Pristine Makefile not found at {pristine_makefile}")
-
-    return os.path.isfile(makefile_path)
+    # Generate Makefile from embedded template
+    print(f"Generating Makefile in {lulesh_root}...")
+    try:
+        with open(makefile_path, 'w') as f:
+            f.write(EMBEDDED_MAKEFILE)
+        print("Makefile generated successfully")
+        return True
+    except Exception as e:
+        print(f"Warning: Failed to generate Makefile: {e}")
+        return False
 
 
 def main():
