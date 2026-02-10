@@ -20,14 +20,9 @@ def main():
     kripke_root = os.environ.get('KRIPKE_ROOT')
     if not kripke_root:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        candidate_paths = [
-            os.path.join(script_dir, '..', '..', '..', 'Kripke'),
-            '/global/u2/k/krydzy/SWE-agent/Kripke_test',
-        ]
-        for path in candidate_paths:
-            if os.path.isdir(path):
-                kripke_root = os.path.abspath(path)
-                break
+        candidate = os.path.join(script_dir, '..', '..', '..', 'Kripke')
+        if os.path.isdir(candidate):
+            kripke_root = os.path.abspath(candidate)
 
     if not kripke_root or not os.path.isdir(kripke_root):
         print(json.dumps({

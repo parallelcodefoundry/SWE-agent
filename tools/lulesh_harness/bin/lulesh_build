@@ -23,13 +23,9 @@ def find_lulesh_root():
         return lulesh_root
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    candidate_paths = [
-        os.path.join(script_dir, '..', '..', '..', 'Lulesh_test', 'cuda'),
-        '/global/u2/k/krydzy/SWE-agent/Lulesh_test/cuda',
-    ]
-    for path in candidate_paths:
-        if os.path.isdir(path):
-            return os.path.abspath(path)
+    candidate = os.path.join(script_dir, '..', '..', '..', 'Lulesh_test', 'cuda')
+    if os.path.isdir(candidate):
+        return os.path.abspath(candidate)
     return None
 
 

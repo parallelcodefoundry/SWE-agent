@@ -15,7 +15,7 @@
 
 set -e  # Exit on error
 
-SWEAGENT_ROOT="${SWEAGENT_ROOT:-/global/u2/k/krydzy/SWE-agent}"
+SWEAGENT_ROOT="${SWEAGENT_ROOT:-/pscratch/sd/k/krydzy/SWE-agent}"
 
 # Parse arguments
 RESET_KRIPKE=false
@@ -68,6 +68,8 @@ fi
 
 # Load required modules
 echo "Loading modules..."
+module load python 2>/dev/null || true
+module load cmake 2>/dev/null || true  # Kripke requires cmake 3.23+
 module load openmpi/5.0.7 2>/dev/null || true
 module load cuda/12.4 2>/dev/null || true
 
@@ -91,6 +93,15 @@ if [[ "$RESET_KRIPKE" == "true" ]]; then
 
         echo "Removing build directory..."
         rm -rf build
+
+        # Apply git config fixes to prevent submodule recursion issues
+        # Kripke has 44+ nested submodules that cause git operations to hang
+        echo "Applying git config fixes for submodule recursion..."
+        git config --local status.submodulesummary false
+        git config --local submodule.recurse false
+        git config --local diff.ignoreSubmodules all
+        # Remove origin remote to prevent git fetch from trying to contact submodule remotes
+        git remote remove origin 2>/dev/null || true
 
         if [[ "$DO_BUILD" == "true" ]]; then
             echo "Rebuilding Kripke_test..."

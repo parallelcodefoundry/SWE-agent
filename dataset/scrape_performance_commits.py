@@ -94,22 +94,22 @@ class CommitScraper:
     # Repository configurations
     REPOS = {
         "kripke": {
-            "path": "/global/u2/k/krydzy/SWE-agent/Kripke",
+            "path": "/pscratch/sd/k/krydzy/SWE-agent/Kripke",
             "github_url": "https://github.com/LLNL/Kripke",
             "file_patterns": ["*.cpp", "*.hpp", "*.cxx", "*.hxx", "*.cu", "*.h"],
         },
         "laghos": {
-            "path": "/global/u2/k/krydzy/SWE-agent/Laghos",
+            "path": "/pscratch/sd/k/krydzy/SWE-agent/Laghos",
             "github_url": "https://github.com/CEED/Laghos",
             "file_patterns": ["*.cpp", "*.hpp", "*.cxx", "*.cu", "*.h"],
         },
         "lulesh": {
-            "path": "/global/u2/k/krydzy/SWE-agent/Lulesh",
+            "path": "/pscratch/sd/k/krydzy/SWE-agent/Lulesh",
             "github_url": "https://github.com/LLNL/LULESH",
             "file_patterns": ["*.cc", "*.cpp", "*.cu", "*.h", "*.hpp"],
         },
         "quicksilver": {
-            "path": "/global/u2/k/krydzy/SWE-agent/Quicksilver",
+            "path": "/pscratch/sd/k/krydzy/SWE-agent/Quicksilver",
             "github_url": "https://github.com/LLNL/Quicksilver",
             "file_patterns": ["*.cc", "*.cpp", "*.cu", "*.h", "*.hpp"],
         },

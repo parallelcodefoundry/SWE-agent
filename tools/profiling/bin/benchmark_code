@@ -21,10 +21,10 @@ def get_app_root(app_name):
     app_root = os.environ.get(env_var)
 
     if not app_root:
-        # Try common locations
+        # Derive from script location
         swe_agent_root = os.environ.get('SWE_AGENT_ROOT',
-                                       '/global/u2/k/krydzy/SWE-agent')
-        candidate = os.path.join(swe_agent_root, app_name.capitalize())
+                                       os.path.join(script_dir, '..', '..', '..'))
+        candidate = os.path.join(os.path.abspath(swe_agent_root), app_name.capitalize())
         if os.path.isdir(candidate):
             app_root = candidate
 

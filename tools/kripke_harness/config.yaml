@@ -1,3 +1,5 @@
+execution_timeout: 600  # 10 minutes for build/run operations
+
 tools:
   kripke_build:
     signature: "kripke_build [<arch>] [<clean>]"
@@ -125,29 +127,3 @@ tools:
         required: true
         argument_format: "{{value}}"
 
-  kripke_check_correct:
-    signature: "kripke_check_correct <baseline_output> <test_output> [<tolerance>]"
-    docstring: |
-      Check correctness of Kripke output against baseline.
-
-      Compares flux values and solution metrics between baseline
-      and test runs. Values must be within tolerance
-      (default: 1e-10 relative error).
-
-      Returns JSON with 'correct' (bool) and 'differences' (list) fields.
-    arguments:
-      - name: baseline_output
-        type: string
-        description: "Path to baseline output file"
-        required: true
-        argument_format: "{{value}}"
-      - name: test_output
-        type: string
-        description: "Path to test output file to validate"
-        required: true
-        argument_format: "{{value}}"
-      - name: tolerance
-        type: float
-        description: "Relative error tolerance (default: 1e-10)"
-        required: false
-        argument_format: "--tolerance {{value}}"

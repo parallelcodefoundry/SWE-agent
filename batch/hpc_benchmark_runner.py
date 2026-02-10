@@ -72,21 +72,25 @@ class HPCBenchmarkRunner:
     REPO_CONFIG_TEMPLATES = {
         "kripke": {
             "pristine_subdir": "Kripke",
+            "test_subdir": "Kripke_test",
             "config_template": "config/hpc/kripke_{profiling}.yaml",
             "build_tool": "kripke_build",
         },
         "laghos": {
             "pristine_subdir": "Laghos",
+            "test_subdir": "Laghos_test",
             "config_template": "config/hpc/laghos_{profiling}.yaml",
             "build_tool": "laghos_build",
         },
         "lulesh": {
             "pristine_subdir": "Lulesh",
+            "test_subdir": "Lulesh_test",
             "config_template": "config/hpc/lulesh_{profiling}.yaml",
             "build_tool": "lulesh_build",
         },
         "quicksilver": {
             "pristine_subdir": "Quicksilver",
+            "test_subdir": "Quicksilver_test",
             "config_template": "config/hpc/quicksilver_{profiling}.yaml",
             "build_tool": "qs_build",
         },
@@ -97,20 +101,29 @@ class HPCBenchmarkRunner:
         output_dir: Path,
         trajectory_dir: Path,
         profiling: str = "no_profiling",
-        run_number: int = 1
+        run_number: int = 1,
+        base_mode: bool = False,
+        vllm_host: str = "127.0.0.1",
+        vllm_port: int = 8008,
+        model_name: Optional[str] = None
     ):
         self.output_dir = output_dir
         self.trajectory_dir = trajectory_dir
         self.profiling = profiling
         self.run_number = run_number
+        self.base_mode = base_mode
+        self.vllm_host = vllm_host
+        self.vllm_port = vllm_port
+        self.model_name = model_name
         self.sweagent_root = Path(__file__).parent.parent
         self.results: list[BenchmarkResult] = []
 
-        # Build repo configs with absolute pristine paths
+        # Build repo configs with absolute pristine and test paths
         self.repo_configs = {}
         for name, tmpl in self.REPO_CONFIG_TEMPLATES.items():
             self.repo_configs[name] = {
                 "pristine": str(self.sweagent_root / tmpl["pristine_subdir"]),
+                "test": str(self.sweagent_root / tmpl["test_subdir"]),
                 "config_template": tmpl["config_template"],
                 "build_tool": tmpl["build_tool"],
             }
@@ -123,6 +136,70 @@ class HPCBenchmarkRunner:
 
         # Setup logging
         self.log_file = self.output_dir / "benchmark.log"
+
+    def generate_base_instances(self, apps: Optional[list[str]] = None) -> list[dict]:
+        """Generate instances for base mode (current state of test repos)"""
+        instances = []
+        repo_names = apps if apps else list(self.REPO_CONFIG_TEMPLATES.keys())
+
+        for repo_name in repo_names:
+            if repo_name not in self.repo_configs:
+                continue
+
+            test_path = Path(self.repo_configs[repo_name]["test"])
+            if not test_path.exists():
+                self.log(f"  Warning: Test repo not found: {test_path}")
+                continue
+
+            instances.append({
+                "instance_id": f"{repo_name}__base",
+                "repo_name": repo_name,
+                "optimization_type": "base_run",
+                "commit_hash": "current",
+                "commit_message": "Run on current state of test repo",
+                "base_commit": "HEAD",
+                "files_changed": [],
+                "insertions": 0,
+                "deletions": 0,
+                "diff": "",
+            })
+
+        return instances
+
+    def reset_test_repo(self, repo_name: str) -> bool:
+        """Reset a test repository to clean state"""
+        test_path = Path(self.repo_configs[repo_name]["test"])
+
+        if not test_path.exists():
+            self.log(f"  ERROR: Test repo not found: {test_path}")
+            return False
+
+        self.log(f"  Resetting test repo: {test_path}")
+
+        try:
+            subprocess.run(
+                ["git", "checkout", "."],
+                cwd=test_path,
+                check=True,
+                capture_output=True
+            )
+            subprocess.run(
+                ["git", "clean", "-fd"],
+                cwd=test_path,
+                check=True,
+                capture_output=True
+            )
+
+            # Remove build directory if exists
+            build_dir = test_path / "build"
+            if build_dir.exists():
+                shutil.rmtree(build_dir)
+
+            return True
+
+        except subprocess.CalledProcessError as e:
+            self.log(f"  ERROR resetting repo: {e.stderr.decode() if e.stderr else str(e)}")
+            return False
 
     def log(self, message: str) -> None:
         """Log message to both console and file"""
@@ -178,6 +255,45 @@ class HPCBenchmarkRunner:
             self.log(f"  ERROR setting up workspace: {e.stderr.decode() if e.stderr else str(e)}")
             return None
 
+    def _apply_model_overrides(self, config_content: str) -> str:
+        """Override model name and cost limit when using an external model"""
+        if self.model_name:
+            config_content = config_content.replace(
+                'name: openai/openai/gpt-oss-120b',
+                f'name: {self.model_name}'
+            )
+            # Enable cost limit for external (paid) APIs
+            config_content = config_content.replace(
+                'per_instance_cost_limit: 0',
+                'per_instance_cost_limit: 1.0'
+            )
+            # Remove api_base and api_key so LiteLLM uses env vars
+            import re
+            config_content = re.sub(
+                r'^\s*api_base:.*$\n?', '', config_content, flags=re.MULTILINE
+            )
+            config_content = re.sub(
+                r'^\s*api_key:.*$\n?', '', config_content, flags=re.MULTILINE
+            )
+        return config_content
+
+    def _inject_sweagent_root(self, config_content: str) -> str:
+        """Inject SWE_AGENT_ROOT into config env_variables.
+
+        SWE-agent copies tools to /tmp/sweagent/, so script-relative paths
+        can't find pristine repos. This env var lets tools locate them.
+        """
+        import re
+        sweagent_root_line = f"      SWE_AGENT_ROOT: {self.sweagent_root}"
+        # Insert after the env_variables: block header
+        config_content = re.sub(
+            r'(env_variables:\n)',
+            f'\\1{sweagent_root_line}\n',
+            config_content,
+            count=1
+        )
+        return config_content
+
     def create_instance_config(self, instance: dict, workspace: Path) -> Path:
         """Create a temporary config file for this specific instance"""
         repo_name = instance["repo_name"]
@@ -192,8 +308,8 @@ class HPCBenchmarkRunner:
             config_content = f.read()
 
         # Modify to use the workspace
-        # Replace the repo path with workspace
-        original_path = f"/global/u2/k/krydzy/SWE-agent/{repo_name.capitalize()}_test"
+        # Replace the repo path with workspace (derive from sweagent_root, not hardcoded)
+        original_path = str(self.sweagent_root / f"{repo_name.capitalize()}_test")
         config_content = config_content.replace(original_path, str(workspace))
 
         # Also update ROOT environment variable
@@ -203,20 +319,17 @@ class HPCBenchmarkRunner:
             f"{root_var}: {workspace}"
         )
 
-        # Handle special case for lulesh (cuda subdirectory)
-        if repo_name == "lulesh":
-            config_content = config_content.replace(
-                f"{workspace}/cuda",
-                f"{workspace}/cuda"  # Keep cuda subdirectory
-            )
+        # Inject SWE_AGENT_ROOT so tools can find pristine repos
+        config_content = self._inject_sweagent_root(config_content)
 
-        # Update trajectory output directory
-        # Find and replace output_dir in config if present
-        traj_instance_dir = self.trajectory_dir / instance_id
+        # Override api_base to point to the (possibly remote) vLLM server
         config_content = config_content.replace(
-            "trajectories/krydzy",
-            str(traj_instance_dir)
+            'api_base: "http://127.0.0.1:8008/v1"',
+            f'api_base: "http://{self.vllm_host}:{self.vllm_port}/v1"'
         )
+
+        # Override model name and cost limit for external APIs
+        config_content = self._apply_model_overrides(config_content)
 
         # Write modified config
         instance_config = self.output_dir / f"{instance_id}_config.yaml"
@@ -230,10 +343,10 @@ class HPCBenchmarkRunner:
         instance_id = instance["instance_id"]
         sweagent_venv = os.environ.get(
             "SWEAGENT_VENV",
-            "/global/u2/k/krydzy/envs/sweagent"
+            os.path.join(os.environ.get("HOME", ""), "envs", "sweagent")
         )
-        vllm_host = os.environ.get("VLLM_HOST", "127.0.0.1")
-        vllm_port = os.environ.get("VLLM_PORT", "8008")
+        vllm_host = self.vllm_host
+        vllm_port = self.vllm_port
         home_dir = os.environ.get("HOME", str(Path.home()))
 
         # Build shell script with podman wrapper setup and HPCToolkit
@@ -269,21 +382,28 @@ chmod +x "{home_dir}/bin/podman"
 export PATH="{home_dir}/bin:$PATH"
 hash -r
 
-export OPENAI_API_BASE=http://{vllm_host}:{vllm_port}/v1
-export OPENAI_API_KEY="dummy-key-ok"
+# Use real API credentials for external models, vLLM dummy key otherwise
+export OPENAI_API_BASE="{os.environ.get('OPENAI_API_BASE', f'http://{vllm_host}:{vllm_port}/v1')}"
+export OPENAI_API_KEY="{os.environ.get('OPENAI_API_KEY', 'dummy-key-ok')}"
 sweagent run --config {config_path} \\
-    --agent.model.per_instance_cost_limit=0 \\
     --agent.model.max_input_tokens=120000 \\
-    --agent.model.max_output_tokens=120000
+    --agent.model.max_output_tokens=120000 \\
+    --output_dir {self.trajectory_dir / instance_id}
 """
 
+        # Write real-time agent log alongside benchmark.log
+        agent_realtime_log = self.output_dir / f"{instance_id}_agent_realtime.log"
+        self.log(f"  Agent real-time log: {agent_realtime_log}")
+
         try:
-            proc = subprocess.run(
-                ["bash", "-c", shell_script],
-                capture_output=True,
-                text=True,
-                timeout=3600
-            )
+            with open(agent_realtime_log, "w") as log_fh:
+                proc = subprocess.run(
+                    ["bash", "-c", shell_script],
+                    stdout=log_fh,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=3600
+                )
 
             success = proc.returncode == 0
 
@@ -347,38 +467,89 @@ sweagent run --config {config_path} \\
     def run_benchmark(self, instance: dict) -> BenchmarkResult:
         """Run a single benchmark instance"""
         instance_id = instance["instance_id"]
+        repo_name = instance["repo_name"]
+
         self.log(f"\n{'='*60}")
-        self.log(f"Benchmark: {instance_id}")
+        self.log(f"{'BASE RUN' if self.base_mode else 'Benchmark'}: {instance_id}")
         self.log(f"{'='*60}")
-        self.log(f"  Expert commit: {instance['commit_hash'][:8]}")
-        self.log(f"  Message: {instance['commit_message'][:60]}...")
-        self.log(f"  Type: {instance['optimization_type']}")
+
+        if self.base_mode:
+            self.log(f"  Mode: Base (current test repo state)")
+            self.log(f"  Profiling: {self.profiling}")
+        else:
+            self.log(f"  Expert commit: {instance['commit_hash'][:8]}")
+            self.log(f"  Message: {instance['commit_message'][:60]}...")
+            self.log(f"  Type: {instance['optimization_type']}")
 
         result = BenchmarkResult(
             instance_id=instance_id,
-            repo_name=instance["repo_name"],
+            repo_name=repo_name,
             optimization_type=instance["optimization_type"],
             run_number=self.run_number,
             success=False,
-            expert_commit=instance["commit_hash"],
-            expert_message=instance["commit_message"],
-            expert_files_changed=instance["files_changed"],
-            expert_insertions=instance["insertions"],
-            expert_deletions=instance["deletions"],
+            expert_commit=instance.get("commit_hash", ""),
+            expert_message=instance.get("commit_message", ""),
+            expert_files_changed=instance.get("files_changed", []),
+            expert_insertions=instance.get("insertions", 0),
+            expert_deletions=instance.get("deletions", 0),
         )
 
         start_time = time.time()
 
-        # Setup workspace
-        workspace = self.setup_workspace(instance)
-        if not workspace:
-            result.error_message = "Failed to setup workspace"
-            result.duration_seconds = time.time() - start_time
-            return result
+        if self.base_mode:
+            # Base mode: create isolated workspace copy from test repo
+            test_repo = Path(self.repo_configs[repo_name]["test"])
+            if not test_repo.exists():
+                result.error_message = f"Test repo not found: {test_repo}"
+                result.duration_seconds = time.time() - start_time
+                return result
 
-        # Create instance-specific config
-        config_path = self.create_instance_config(instance, workspace)
+            workspace = self.work_dir / instance_id
+            if workspace.exists():
+                shutil.rmtree(workspace)
+
+            self.log(f"  Creating isolated workspace: {workspace}")
+            try:
+                # Use rsync instead of shutil.copytree to skip heavy git internals
+                # .git/modules contains submodule git databases (massive for Kripke's 44+ submodules)
+                # build/ contains stale build artifacts (agent will rebuild)
+                rsync_cmd = [
+                    "rsync", "-a", "--delete",
+                    "--exclude=.git/modules",
+                    "--exclude=build",
+                    f"{test_repo}/", f"{workspace}/"
+                ]
+                rsync_result = subprocess.run(rsync_cmd, capture_output=True, text=True, timeout=120)
+                if rsync_result.returncode != 0:
+                    self.log(f"  ERROR: rsync failed: {rsync_result.stderr}")
+                    result.error_message = f"rsync failed: {rsync_result.stderr}"
+                    result.duration_seconds = time.time() - start_time
+                    return result
+            except Exception as e:
+                result.error_message = f"Failed to copy test repo: {e}"
+                result.duration_seconds = time.time() - start_time
+                return result
+
+            # Apply Kripke git config fixes if needed
+            if repo_name == "kripke" and (workspace / ".git").exists():
+                subprocess.run(["git", "config", "--local", "status.submodulesummary", "false"], cwd=workspace, capture_output=True)
+                subprocess.run(["git", "config", "--local", "submodule.recurse", "false"], cwd=workspace, capture_output=True)
+                subprocess.run(["git", "config", "--local", "diff.ignoreSubmodules", "all"], cwd=workspace, capture_output=True)
+
+            # Create config pointing to the isolated workspace
+            config_path = self.create_base_config(repo_name, instance_id, workspace=workspace)
+        else:
+            # Benchmark mode: setup workspace with specific commit
+            workspace = self.setup_workspace(instance)
+            if not workspace:
+                result.error_message = "Failed to setup workspace"
+                result.duration_seconds = time.time() - start_time
+                return result
+
+            config_path = self.create_instance_config(instance, workspace)
+
         self.log(f"  Created config: {config_path}")
+        self.log(f"  Workspace: {workspace}")
 
         # Run agent
         self.log(f"  Running SWE-agent...")
@@ -395,13 +566,6 @@ sweagent run --config {config_path} \\
             self.log(f"  Agent failed or timed out")
             result.error_message = "Agent run failed"
 
-        # Compare patches
-        expert_diff = instance.get("diff", "")
-        overlap, expert_files, agent_files = self.compare_patches(expert_diff, agent_patch)
-
-        result.file_overlap = overlap
-        result.agent_files_changed = agent_files
-
         # Count agent insertions/deletions
         for line in agent_patch.split("\n"):
             if line.startswith("+") and not line.startswith("+++"):
@@ -409,17 +573,27 @@ sweagent run --config {config_path} \\
             elif line.startswith("-") and not line.startswith("---"):
                 result.agent_deletions += 1
 
-        # Calculate patch similarity
-        if expert_diff and agent_patch:
-            result.patch_similarity = difflib.SequenceMatcher(
-                None, expert_diff, agent_patch
-            ).ratio()
+        if not self.base_mode:
+            # Compare patches (only in benchmark mode)
+            expert_diff = instance.get("diff", "")
+            overlap, expert_files, agent_files = self.compare_patches(expert_diff, agent_patch)
 
-        self.log(f"  Comparison:")
-        self.log(f"    File overlap: {overlap*100:.1f}%")
-        self.log(f"    Patch similarity: {result.patch_similarity*100:.1f}%")
-        self.log(f"    Expert: +{result.expert_insertions}/-{result.expert_deletions} in {len(expert_files)} files")
-        self.log(f"    Agent:  +{result.agent_insertions}/-{result.agent_deletions} in {len(agent_files)} files")
+            result.file_overlap = overlap
+            result.agent_files_changed = agent_files
+
+            # Calculate patch similarity
+            if expert_diff and agent_patch:
+                result.patch_similarity = difflib.SequenceMatcher(
+                    None, expert_diff, agent_patch
+                ).ratio()
+
+            self.log(f"  Comparison:")
+            self.log(f"    File overlap: {overlap*100:.1f}%")
+            self.log(f"    Patch similarity: {result.patch_similarity*100:.1f}%")
+            self.log(f"    Expert: +{result.expert_insertions}/-{result.expert_deletions} in {len(expert_files)} files")
+            self.log(f"    Agent:  +{result.agent_insertions}/-{result.agent_deletions} in {len(agent_files)} files")
+        else:
+            self.log(f"  Agent changes: +{result.agent_insertions}/-{result.agent_deletions} lines")
 
         # Save agent patch
         patch_file = self.output_dir / f"{instance_id}_agent.patch"
@@ -427,6 +601,47 @@ sweagent run --config {config_path} \\
             f.write(agent_patch)
 
         return result
+
+    def create_base_config(self, repo_name: str, instance_id: str, workspace: Optional[Path] = None) -> Path:
+        """Create a config file for base mode (using test repo or isolated workspace)"""
+        base_config = self.repo_configs[repo_name]["config_template"].format(
+            profiling=self.profiling
+        )
+
+        # Read base config
+        base_config_path = self.sweagent_root / base_config
+        with open(base_config_path) as f:
+            config_content = f.read()
+
+        # If workspace provided, substitute repo paths to use isolated copy
+        if workspace is not None:
+            original_path = str(self.sweagent_root / f"{repo_name.capitalize()}_test")
+            config_content = config_content.replace(original_path, str(workspace))
+
+            root_var = f"{repo_name.upper()}_ROOT"
+            config_content = config_content.replace(
+                f"{root_var}: {original_path}",
+                f"{root_var}: {workspace}"
+            )
+
+        # Inject SWE_AGENT_ROOT so tools can find pristine repos
+        config_content = self._inject_sweagent_root(config_content)
+
+        # Override api_base to point to the (possibly remote) vLLM server
+        config_content = config_content.replace(
+            'api_base: "http://127.0.0.1:8008/v1"',
+            f'api_base: "http://{self.vllm_host}:{self.vllm_port}/v1"'
+        )
+
+        # Override model name and cost limit for external APIs
+        config_content = self._apply_model_overrides(config_content)
+
+        # Write modified config
+        instance_config = self.output_dir / f"{instance_id}_config.yaml"
+        with open(instance_config, "w") as f:
+            f.write(config_content)
+
+        return instance_config
 
     def run_all(
         self,
@@ -437,16 +652,20 @@ sweagent run --config {config_path} \\
     ) -> None:
         """Run benchmarks for all instances with filtering"""
 
-        # Filter by instance_ids if specified
-        if instance_ids:
+        # In base mode, generate instances if none provided
+        if self.base_mode and not instances:
+            instances = self.generate_base_instances(apps)
+
+        # Filter by instance_ids if specified (not applicable in base mode)
+        if instance_ids and not self.base_mode:
             instances = [i for i in instances if i["instance_id"] in instance_ids]
 
         # Filter by app names if specified
         if apps:
             instances = [i for i in instances if i["repo_name"] in apps]
 
-        # Limit number of problems per app if specified
-        if num_probs is not None:
+        # Limit number of problems per app if specified (not applicable in base mode)
+        if num_probs is not None and not self.base_mode:
             # Group by repo_name and take first num_probs from each
             by_repo = defaultdict(list)
             for inst in instances:
@@ -457,7 +676,9 @@ sweagent run --config {config_path} \\
                 limited_instances.extend(repo_instances[:num_probs])
             instances = limited_instances
 
-        self.log(f"Starting benchmark run {self.run_number}: {len(instances)} instances")
+        mode_str = "base run" if self.base_mode else "benchmark run"
+        self.log(f"Starting {mode_str} {self.run_number}: {len(instances)} instances")
+        self.log(f"  Profiling: {self.profiling}")
 
         for i, instance in enumerate(instances):
             self.log(f"\nProgress: {i+1}/{len(instances)}")
@@ -511,6 +732,11 @@ def main():
         description="Run HPC benchmark comparing agent vs expert patches"
     )
     parser.add_argument(
+        "--base",
+        action="store_true",
+        help="Run on current state of test repos (skip dataset/git checkout)"
+    )
+    parser.add_argument(
         "--dataset",
         type=Path,
         default=Path("dataset/curated_perf_commits.json"),
@@ -559,18 +785,40 @@ def main():
         default=1,
         help="Run number (for multiple runs)"
     )
+    parser.add_argument(
+        "--vllm-host",
+        type=str,
+        default="127.0.0.1",
+        help="vLLM server host (default: 127.0.0.1)"
+    )
+    parser.add_argument(
+        "--vllm-port",
+        type=int,
+        default=8008,
+        help="vLLM server port (default: 8008)"
+    )
+    parser.add_argument(
+        "--model-name",
+        type=str,
+        default=None,
+        help="Override model name (e.g., openai/gpt-5.1). Also enables $1 cost limit."
+    )
 
     args = parser.parse_args()
 
-    # Load dataset
-    if not args.dataset.exists():
-        print(f"ERROR: Dataset not found: {args.dataset}")
-        sys.exit(1)
+    # Load dataset (unless in base mode)
+    instances = []
+    if args.base:
+        print("Running in BASE mode (current state of test repos)")
+    else:
+        if not args.dataset.exists():
+            print(f"ERROR: Dataset not found: {args.dataset}")
+            sys.exit(1)
 
-    with open(args.dataset) as f:
-        instances = json.load(f)
+        with open(args.dataset) as f:
+            instances = json.load(f)
 
-    print(f"Loaded {len(instances)} instances from {args.dataset}")
+        print(f"Loaded {len(instances)} instances from {args.dataset}")
 
     # Setup output directory
     if args.output_dir:
@@ -590,7 +838,11 @@ def main():
         output_dir,
         trajectory_dir,
         args.profiling,
-        args.run_number
+        args.run_number,
+        base_mode=args.base,
+        vllm_host=args.vllm_host,
+        vllm_port=args.vllm_port,
+        model_name=args.model_name
     )
     runner.run_all(
         instances,

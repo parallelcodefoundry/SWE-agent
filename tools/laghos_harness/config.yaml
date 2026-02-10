@@ -1,3 +1,5 @@
+execution_timeout: 600  # 10 minutes for build/run operations
+
 tools:
   laghos_build:
     signature: "laghos_build [<clean>] [<setup>]"
@@ -74,7 +76,7 @@ tools:
         required: false
         argument_format: "--rs {{value}}"
       - name: tf
-        type: float
+        type: number
         description: "Final simulation time"
         required: false
         argument_format: "--tf {{value}}"

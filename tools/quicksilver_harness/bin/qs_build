@@ -25,7 +25,16 @@ def parse_makefile_flags(makefile_path):
     custom_flags = {
         'extra_cxxflags': [],
         'extra_ldflags': [],
+        'filtered_flags': [],  # Flags that were removed (for user feedback)
+        'ignored_flags': [],   # Flags that don't match our allowlist
     }
+
+    # Flags that can cause runtime crashes with CUDA
+    DANGEROUS_FLAGS = ('-fno-exceptions', '-fno-rtti', '-fno-asynchronous-unwind-tables')
+
+    # Flags we recognize and can pass through
+    ALLOWED_PREFIXES = ('-O', '-funroll', '-ffast-math', '-march', '-mtune',
+                        '-fvect', '-ftree-vectorize', '-fno-', '-finline')
 
     if not os.path.isfile(makefile_path):
         return custom_flags
@@ -40,15 +49,20 @@ def parse_makefile_flags(makefile_path):
         cxxflags_pattern = r'^\s*C(?:XX)?FLAGS\s*[+:]?=\s*(.+)$'
         for match in re.finditer(cxxflags_pattern, content, re.MULTILINE):
             flags_line = match.group(1).strip()
-            # Extract optimization flags that are safe to pass through
-            # These get passed to host compiler via -Xcompiler
-            safe_flags = []
             for flag in flags_line.split():
-                # Allow optimization levels, unrolling, vectorization, march, mtune
-                if flag.startswith(('-O', '-funroll', '-ffast-math', '-march', '-mtune',
-                                   '-fvect', '-ftree-vectorize', '-fno-', '-finline')):
-                    safe_flags.append(flag)
-            custom_flags['extra_cxxflags'].extend(safe_flags)
+                # Skip non-flag tokens (like variable references)
+                if not flag.startswith('-'):
+                    continue
+
+                if flag.startswith(ALLOWED_PREFIXES):
+                    # Check if it's a dangerous flag
+                    if flag.startswith(DANGEROUS_FLAGS):
+                        custom_flags['filtered_flags'].append(flag)
+                    else:
+                        custom_flags['extra_cxxflags'].append(flag)
+                else:
+                    # Flag doesn't match our allowlist
+                    custom_flags['ignored_flags'].append(flag)
 
         # Look for LDFLAGS
         ldflags_pattern = r'^\s*LDFLAGS\s*[+:]?=\s*(.+)$'
@@ -104,16 +118,10 @@ def main():
     # Try environment variable first, then common locations
     qs_root = os.environ.get('QUICKSILVER_ROOT')
     if not qs_root:
-        # Try relative to SWE-agent
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        candidate_paths = [
-            os.path.join(script_dir, '..', '..', '..', 'Quicksilver'),
-            '/global/u2/k/krydzy/SWE-agent/Quicksilver_test',
-        ]
-        for path in candidate_paths:
-            if os.path.isdir(path):
-                qs_root = os.path.abspath(path)
-                break
+        candidate = os.path.join(script_dir, '..', '..', '..', 'Quicksilver')
+        if os.path.isdir(candidate):
+            qs_root = os.path.abspath(candidate)
 
     if not qs_root or not os.path.isdir(qs_root):
         print(json.dumps({
@@ -183,6 +191,28 @@ def main():
         makefile_path = os.path.join(src_dir, 'Makefile')
         custom_flags = parse_makefile_flags(makefile_path)
 
+        # IMPORTANT: Warn about flags that were filtered or ignored
+        # This feedback helps the agent understand what changes actually took effect
+        if custom_flags['filtered_flags']:
+            print("=" * 60)
+            print("WARNING: The following flags were REMOVED because they cause")
+            print("runtime crashes with CUDA (exceptions/RTTI required by CUDA runtime):")
+            for flag in custom_flags['filtered_flags']:
+                print(f"  - {flag} (REMOVED - not applied)")
+            print("These flags have NO EFFECT on the build.")
+            print("=" * 60)
+            result["filtered_flags"] = custom_flags['filtered_flags']
+
+        if custom_flags['ignored_flags']:
+            print("=" * 60)
+            print("NOTE: The following Makefile flags were IGNORED (not recognized):")
+            for flag in custom_flags['ignored_flags']:
+                print(f"  - {flag} (IGNORED - not applied)")
+            print("Only optimization flags (-O, -f*, -march, -mtune) are passed through.")
+            print("The build always uses: nvcc with CUDA, -O3, -DHAVE_CUDA")
+            print("=" * 60)
+            result["ignored_flags"] = custom_flags['ignored_flags']
+
         # Build the -Xcompiler flags string for host compiler options
         # Start with required flags, then add user customizations
         xcompiler_flags = ['-fopenmp']
@@ -191,7 +221,7 @@ def main():
             user_flags = [f for f in custom_flags['extra_cxxflags'] if not f.startswith('-O')]
             xcompiler_flags.extend(user_flags)
             if user_flags:
-                print(f"User Makefile flags (host compiler): {' '.join(user_flags)}")
+                print(f"User Makefile flags APPLIED (host compiler): {' '.join(user_flags)}")
                 result["user_cxxflags"] = user_flags
 
         xcompiler_str = ','.join(xcompiler_flags)
@@ -201,6 +231,15 @@ def main():
         # -lineinfo enables source line mapping for GPU code (needed for profiling)
         # Base CXXFLAGS - always use CUDA with -O3
         cxxflags = f'-DHAVE_CUDA -std=c++11 -O3 -lineinfo -Xptxas -v -gencode=arch=compute_80,code=sm_80 --compiler-bindir={host_compiler} -Xcompiler {xcompiler_str}'
+
+        # Inform about build configuration (CXX in Makefile is ALWAYS overridden)
+        print("")
+        print("BUILD CONFIGURATION (these settings OVERRIDE Makefile):")
+        print(f"  CXX = {nvcc}  (Makefile CXX setting is ignored)")
+        print(f"  Optimization: -O3 (always, -O flags in Makefile are ignored)")
+        print(f"  GPU: CUDA sm_80 (A100)")
+        print(f"  Host compiler flags: {xcompiler_str}")
+        print("")
 
         # LDFLAGS - base + any user customizations
         ldflags = f'-L{cuda_path}/lib64 -lcudart -lcuda -lgomp'

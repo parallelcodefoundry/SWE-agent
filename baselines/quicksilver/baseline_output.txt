@@ -1,0 +1,103 @@
+MPI Initialized         : MPI_THREAD_FUNNELED
+Copyright (c) 2016
+Lawrence Livermore National Security, LLC
+All Rights Reserved
+Quicksilver Version     : 2023-Aug-18-15:12:10
+Quicksilver Git Hash    : eb68bb8d6fc53de1f65011d4e79ff2ed0dd60f3b
+MPI Version             : 3.1
+Number of MPI ranks     : 4
+Number of OpenMP Threads: 8
+Number of OpenMP CPUs   : 128
+
+Simulation:
+   dt: 1e-08
+   fMax: 0.1
+   inputFile: 
+   energySpectrum: 
+   boundaryCondition: reflect
+   loadBalance: 0
+   cycleTimers: 0
+   debugThreads: 0
+   lx: 20
+   ly: 20
+   lz: 20
+   nParticles: 100000
+   batchSize: 0
+   nBatches: 10
+   nSteps: 10
+   nx: 20
+   ny: 20
+   nz: 20
+   seed: 1029384756
+   xDom: 0
+   yDom: 0
+   zDom: 0
+   eMax: 20
+   eMin: 1e-09
+   nGroups: 230
+   lowWeightCutoff: 0.001
+   bTally: 1
+   fTally: 1
+   cTally: 1
+   coralBenchmark: 0
+   crossSectionsOut:
+
+Geometry:
+   material: sourceMaterial
+   shape: brick
+   xMax: 20
+   xMin: 0
+   yMax: 20
+   yMin: 0
+   zMax: 20
+   zMin: 0
+
+Material:
+   name: sourceMaterial
+   mass: 1000
+   nIsotopes: 10
+   nReactions: 9
+   sourceRate: 1e+10
+   totalCrossSection: 1
+   absorptionCrossSection: flat
+   fissionCrossSection: flat
+   scatteringCrossSection: flat
+   absorptionCrossSectionRatio: 1
+   fissionCrossSectionRatio: 0.1
+   scatteringCrossSectionRatio: 1
+
+CrossSection:
+   name: flat
+   A: 0
+   B: 0
+   C: 0
+   D: 0
+   E: 1
+   nuBar: 2.4
+Building partition 0
+done building
+Building MC_Domain 0
+Finished initMesh
+cycle           start       source           rr        split       absorb      scatter      fission      produce      collisn       escape       census      num_seg   scalar_flux      cycleInit  cycleTracking  cycleFinalize
+       0            0         8000            0        92051       107902       107067        10781        25891       225750            0         7259       574034  1.452786e+06   1.320140e-01   9.040600e-01   3.335000e-03
+       1         7259         8000            0        84743       111264       111529        11172        26894       233965            0         4460       590572  1.549854e+06   9.114600e-02   8.675990e-01   8.000000e-06
+       2         4460         8000            0        87525       107847       107961        10614        25442       226422            0         6966       571484  1.557640e+06   3.469000e-02   9.153050e-01   6.368000e-03
+       3         6966         8000        12429        85052        95535        94768         9433        22535       199736            0         5156       502918  1.562333e+06   4.455000e-02   8.260290e-01   1.010300e-02
+       4         5156         8000         5854        86864       102437       102759        10223        24522       215419            0         6028       548789  1.589363e+06   6.441700e-02   9.049490e-01   8.000000e-06
+       5         6028         8000         8339        85972       100138       100733        10010        23977       210881            0         5490       532513  1.578278e+06   7.845200e-02   9.428060e-01   4.714000e-02
+       6         5490         8000         9648        86438        98872        98755        10054        24136       207681            0         5490       524385  1.563516e+06   7.129400e-02   8.096630e-01   1.855800e-02
+       7         5490         8000         5779        86460       103304       103452        10385        24944       217141            0         5426       545169  1.559033e+06   8.201300e-02   9.371480e-01   3.356300e-02
+       8         5426         8000         5558        86524       102550       102226        10455        25058       215231            0         6445       546956  1.556177e+06   7.218500e-02   7.598610e-01   3.901500e-02
+       9         6445         8000        11987        85547        95941        96722         9361        22437       202024            0         5140       510523  1.563374e+06   4.133000e-02   8.789330e-01   1.258300e-02
+
+Timer                       Cumulative   Cumulative   Cumulative   Cumulative   Cumulative   Cumulative
+Name                            number    microSecs    microSecs    microSecs    microSecs   Efficiency
+                              of calls          min          avg          max       stddev       Rating
+main                                 1    9.704e+06    9.747e+06    9.796e+06    3.315e+04        99.50
+cycleInit                           10    6.376e+05    6.748e+05    7.121e+05    2.660e+04        94.76
+cycleTracking                       10    8.676e+06    8.717e+06    8.746e+06    2.778e+04        99.67
+cycleTracking_Kernel              2230    6.872e+05    2.842e+06    4.710e+06    1.436e+06        60.33
+cycleTracking_MPI                 2453    3.788e+06    5.685e+06    7.867e+06    1.459e+06        72.27
+cycleTracking_Test_Done            233    3.931e+06    5.822e+06    8.022e+06    1.459e+06        72.57
+cycleFinalize                       20    1.202e+05    1.628e+05    2.185e+05    3.690e+04        74.48
+Figure Of Merit              6.228e+05 [Num Segments / Cycle Tracking Time]

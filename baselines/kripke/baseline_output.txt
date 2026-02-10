@@ -1,0 +1,148 @@
+
+   _  __       _         _
+  | |/ /      (_)       | |
+  | ' /  _ __  _  _ __  | | __ ___
+  |  <  | '__|| || '_ \ | |/ // _ \ 
+  | . \ | |   | || |_) ||   <|  __/
+  |_|\_\|_|   |_|| .__/ |_|\_\\___|
+                 | |
+                 |_|        Version 1.2.5-dev
+
+LLNL-CODE-775068
+
+Copyright (c) 2014-25, Lawrence Livermore National Security, LLC
+
+Kripke is released under the BSD 3-Clause License, please see the
+LICENSE file for the full license
+
+This work was produced under the auspices of the U.S. Department of
+Energy by Lawrence Livermore National Laboratory under Contract
+DE-AC52-07NA27344.
+
+Author: Adam J. Kunen <kunen1@llnl.gov>
+
+Compilation Options:
+  Architecture:           OpenMP
+  Compiler:               /global/common/software/nersc/pe/gpu/gnu/openmpi/5.0.7/bin/mpicxx
+  Compiler Flags:         "    "
+  Linker Flags:           " "
+  CHAI Enabled:           No
+  CUDA Enabled:           No
+  MPI Enabled:            Yes
+  OpenMP Enabled:         Yes
+  Caliper Enabled:        No
+
+OpenMP Thread->Core mapping for 8 threads on rank 0
+    0->  0    1->  8    2-> 16    3-> 24    4-> 32    5-> 40    6-> 48    7-> 56
+
+Input Parameters
+================
+
+  Problem Size:
+    Zones:                 32 x 32 x 32  (32768 total)
+    Groups:                32
+    Legendre Order:        4
+    Quadrature Set:        Dummy S2 with 96 points
+
+  Physical Properties:
+    Total X-Sec:           sigt=[0.100000, 0.000100, 0.100000]
+    Scattering X-Sec:      sigs=[0.050000, 0.000050, 0.050000]
+
+  Solver Options:
+    Number iterations:     10
+
+  MPI Decomposition Options:
+    Total MPI tasks:       4
+    Spatial decomp:        2 x 2 x 1 MPI tasks
+    Block solve method:    Sweep
+
+  Per-Task Options:
+    DirSets/Directions:    8 sets, 12 directions/set
+    GroupSet/Groups:       2 sets, 16 groups/set
+    Zone Sets:             1 x 1 x 1
+    Architecture:          OpenMP
+    Data Layout:           DGZ
+
+Generating Problem
+==================
+
+  Decomposition Space:   Procs:      Subdomains (local/global):
+  ---------------------  ----------  --------------------------
+  (P) Energy:            1           2 / 2
+  (Q) Direction:         1           8 / 8
+  (R) Space:             4           1 / 4
+  (Rx,Ry,Rz) R in XYZ:   2x2x1       1x1x1 / 2x2x1
+  (PQR) TOTAL:           4           16 / 64
+
+  Material Volumes=[9.305420e+03, 1.299133e+05, 2.740781e+06]
+
+  Memory breakdown of Field variables:
+  Field Variable            Num Elements    Megabytes
+  --------------            ------------    ---------
+  data/sigs                        15360        0.117
+  dx                                  32        0.000
+  dy                                  32        0.000
+  dz                                  32        0.000
+  ell                               2400        0.018
+  ell_plus                          2400        0.018
+  i_plane                        3145728       24.000
+  j_plane                        3145728       24.000
+  k_plane                        3145728       24.000
+  mixelem_to_fraction              33992        0.259
+  phi                           26214400      200.000
+  phi_out                       26214400      200.000
+  psi                          100663296      768.000
+  quadrature/w                        96        0.001
+  quadrature/xcos                     96        0.001
+  quadrature/ycos                     96        0.001
+  quadrature/zcos                     96        0.001
+  rhs                          100663296      768.000
+  sigt_zonal                     1048576        8.000
+  volume                           32768        0.250
+  --------                  ------------    ---------
+  TOTAL                        264328552     2016.667
+
+  Generation Complete!
+
+Steady State Solve
+==================
+
+  iter 0: particle count=4.290953e+07, change=1.000000e+00
+  iter 1: particle count=6.393344e+07, change=3.288406e-01
+  iter 2: particle count=7.428598e+07, change=1.393606e-01
+  iter 3: particle count=7.938537e+07, change=6.423592e-02
+  iter 4: particle count=8.189377e+07, change=3.062984e-02
+  iter 5: particle count=8.312515e+07, change=1.481356e-02
+  iter 6: particle count=8.372825e+07, change=7.203074e-03
+  iter 7: particle count=8.402294e+07, change=3.507241e-03
+  iter 8: particle count=8.416660e+07, change=1.706874e-03
+  iter 9: particle count=8.423648e+07, change=8.296252e-04
+  Solver terminated
+
+Timers
+======
+
+  Timer                    Count       Seconds
+  ----------------  ------------  ------------
+  Generate                     1       0.95485
+  LPlusTimes                  10       5.45870
+  LTimes                      10       3.81090
+  Population                  10       3.29698
+  Scattering                  10       2.22256
+  Solve                        1      21.80968
+  Source                      10       0.39890
+  SweepSolver                 10       5.72834
+  SweepSubdomain             160       3.13745
+
+TIMER_NAMES:Generate,LPlusTimes,LTimes,Population,Scattering,Solve,Source,SweepSolver,SweepSubdomain
+TIMER_DATA:0.954846,5.458701,3.810902,3.296976,2.222560,21.809679,0.398899,5.728337,3.137455
+
+Figures of Merit
+================
+
+  Throughput:         4.615533e+07 [unknowns/(second/iteration)]
+  Grind time :        2.166597e-08 [(seconds/iteration)/unknowns]
+  Sweep efficiency :  54.77077 [100.0 * SweepSubdomain time / SweepSolver time]
+  Number of unknowns: 100663296
+
+END

@@ -34,18 +34,18 @@ class BuildVerifier:
 
     # Test repository paths
     TEST_REPOS = {
-        "kripke": "/global/u2/k/krydzy/SWE-agent/Kripke_test",
-        "laghos": "/global/u2/k/krydzy/SWE-agent/Laghos_test",
-        "lulesh": "/global/u2/k/krydzy/SWE-agent/Lulesh_test",
-        "quicksilver": "/global/u2/k/krydzy/SWE-agent/Quicksilver_test",
+        "kripke": "/pscratch/sd/k/krydzy/SWE-agent/Kripke_test",
+        "laghos": "/pscratch/sd/k/krydzy/SWE-agent/Laghos_test",
+        "lulesh": "/pscratch/sd/k/krydzy/SWE-agent/Lulesh_test",
+        "quicksilver": "/pscratch/sd/k/krydzy/SWE-agent/Quicksilver_test",
     }
 
     # Pristine repository paths
     PRISTINE_REPOS = {
-        "kripke": "/global/u2/k/krydzy/SWE-agent/Kripke",
-        "laghos": "/global/u2/k/krydzy/SWE-agent/Laghos",
-        "lulesh": "/global/u2/k/krydzy/SWE-agent/Lulesh",
-        "quicksilver": "/global/u2/k/krydzy/SWE-agent/Quicksilver",
+        "kripke": "/pscratch/sd/k/krydzy/SWE-agent/Kripke",
+        "laghos": "/pscratch/sd/k/krydzy/SWE-agent/Laghos",
+        "lulesh": "/pscratch/sd/k/krydzy/SWE-agent/Lulesh",
+        "quicksilver": "/pscratch/sd/k/krydzy/SWE-agent/Quicksilver",
     }
 
     def __init__(self, sweagent_root: Path):

@@ -23,7 +23,13 @@ def _find_pristine_lulesh():
     candidate = os.path.join(script_dir, '..', '..', '..', 'Lulesh', 'cuda')
     if os.path.isdir(candidate):
         return os.path.abspath(candidate)
-    return "/global/u2/k/krydzy/SWE-agent/Lulesh/cuda"
+    swe_root = os.environ.get('SWE_AGENT_ROOT')
+    if swe_root:
+        candidate = os.path.join(swe_root, 'Lulesh', 'cuda')
+        if os.path.isdir(candidate):
+            return os.path.abspath(candidate)
+    print("ERROR: Pristine Lulesh not found. Set PRISTINE_LULESH_ROOT or run setup_apps.sh.", file=sys.stderr)
+    return None
 
 PRISTINE_LULESH_ROOT = _find_pristine_lulesh()
 
@@ -34,8 +40,8 @@ DEFAULT_ITERATIONS = 100  # Number of iterations
 # Default tolerance for correctness checking
 DEFAULT_TOLERANCE = 1e-8
 
-# GPU targeting
-TARGET_GPU = "0"
+# GPU targeting (use all available GPUs by default, can override via --gpu or CUDA_VISIBLE_DEVICES)
+TARGET_GPU = None
 
 
 def find_cuda_path():
@@ -145,7 +151,9 @@ def run_lulesh(exe_path, size, iterations, label=""):
     Returns: (total_time_seconds, final_energy, output_text) or (None, None, None) on failure
     """
     env = os.environ.copy()
-    env['CUDA_VISIBLE_DEVICES'] = TARGET_GPU
+    # Use specific GPU if set, otherwise inherit from environment (all available)
+    if TARGET_GPU is not None:
+        env['CUDA_VISIBLE_DEVICES'] = TARGET_GPU
     env['OMP_NUM_THREADS'] = '1'
 
     cmd = [exe_path, '-s', str(size), '-i', str(iterations)]
@@ -290,8 +298,8 @@ def main():
                        help=f'Problem size (elements per side, default: {DEFAULT_SIZE})')
     parser.add_argument('-i', '--iterations', type=int, default=DEFAULT_ITERATIONS,
                        help=f'Number of iterations (default: {DEFAULT_ITERATIONS})')
-    parser.add_argument('--gpu', type=str, default=TARGET_GPU,
-                       help=f'GPU device to use (default: {TARGET_GPU})')
+    parser.add_argument('--gpu', type=str, default=None,
+                       help='GPU device to use (default: all available)')
     args = parser.parse_args()
 
     TARGET_GPU = args.gpu
@@ -300,14 +308,9 @@ def main():
     lulesh_root = os.environ.get('LULESH_ROOT')
     if not lulesh_root:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        candidate_paths = [
-            os.path.join(script_dir, '..', '..', '..', 'Lulesh_test', 'cuda'),
-            '/global/u2/k/krydzy/SWE-agent/Lulesh_test/cuda',
-        ]
-        for path in candidate_paths:
-            if os.path.isdir(path):
-                lulesh_root = os.path.abspath(path)
-                break
+        candidate = os.path.join(script_dir, '..', '..', '..', 'Lulesh_test', 'cuda')
+        if os.path.isdir(candidate):
+            lulesh_root = os.path.abspath(candidate)
 
     modified_exe = os.path.join(lulesh_root, 'lulesh') if lulesh_root else None
 
@@ -328,7 +331,8 @@ def main():
 
     print("=" * 60)
     print(f"LULESH BENCHMARK: size={args.size}, iterations={args.iterations}")
-    print(f"Running on GPU {TARGET_GPU} (CUDA_VISIBLE_DEVICES={TARGET_GPU})")
+    cuda_devices = TARGET_GPU if TARGET_GPU is not None else os.environ.get('CUDA_VISIBLE_DEVICES', 'all available')
+    print(f"Using GPUs: {cuda_devices}")
     print("=" * 60)
 
     # Run baseline

@@ -1,3 +1,5 @@
+execution_timeout: 600  # 10 minutes for build/run operations
+
 tools:
   qs_build:
     signature: "qs_build [<clean>]"
@@ -70,40 +72,3 @@ tools:
         required: true
         argument_format: "{{value}}"
 
-  qs_check_correct:
-    signature: "qs_check_correct [<nParticles>] [<nSteps>] [<tolerance>]"
-    docstring: |
-      (OPTIONAL) Standalone correctness verification tool.
-
-      NOTE: qs_run already checks correctness automatically! You only need
-      this tool if you want to run a quick correctness check with smaller
-      parameters (faster) before running the full qs_run benchmark.
-
-      This tool runs BOTH pristine and modified Quicksilver with identical
-      parameters, then compares SCIENTIFIC values (scalar_flux, particle
-      counts) to ensure correctness is preserved.
-
-      Uses small default parameters (10x10x10 domain, 10000 particles, 5 steps)
-      for quick checking.
-
-      Example usage:
-        qs_check_correct                    # Quick check with defaults
-        qs_check_correct --nSteps 20        # More thorough check
-
-      Returns JSON with 'correct' (bool) and details of any differences.
-    arguments:
-      - name: nParticles
-        type: integer
-        description: "Number of particles (default: 10000 for quick check)"
-        required: false
-        argument_format: "--nParticles {{value}}"
-      - name: nSteps
-        type: integer
-        description: "Number of steps (default: 5 for quick check)"
-        required: false
-        argument_format: "--nSteps {{value}}"
-      - name: tolerance
-        type: float
-        description: "Relative error tolerance (default: 1e-6)"
-        required: false
-        argument_format: "--tolerance {{value}}"

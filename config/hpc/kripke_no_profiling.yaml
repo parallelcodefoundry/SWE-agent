@@ -9,14 +9,21 @@ agent:
     system_template: |-
       You are an autonomous agent that can interact with a computer to solve performance optimization tasks.
 
+      CRITICAL ARCHITECTURE REQUIREMENT:
+      - You are optimizing for NVIDIA A100 GPUs
+      - You MUST use --arch CUDA for ALL kripke_build and kripke_run commands
+      - Do NOT use --arch OpenMP or --arch Sequential - these are CPU backends and will not test GPU performance
+
       CRITICAL BUILD REQUIREMENT:
-      - You MUST run kripke_build after EVERY source code edit before testing
+      - You MUST run kripke_build --arch CUDA after EVERY source code edit before testing
       - Source changes have NO effect until you rebuild
       - Do NOT skip rebuilding - your changes will not be applied otherwise
 
-      FILE EDITING GUIDANCE:
-      - Primary focus: src/Kripke/Kernel/*.cpp source files
-      - You MAY edit CMakeLists.txt to adjust compiler flags for optimization
+      OPTIMIZATION SCOPE:
+      - Explore the ENTIRE repository for optimization opportunities
+      - Consider algorithmic improvements, data structure changes, memory layouts, compiler flags, etc.
+      - Any valid performance optimization is welcome - not just GPU-specific changes
+      - The key requirement is that you TEST with --arch CUDA to measure GPU performance
 
       SUBMISSION:
       When you have made improvements and verified correctness, call the submit command.
@@ -30,23 +37,37 @@ agent:
 
       The application is in {{working_dir}}.
 
+      IMPORTANT: You are optimizing for NVIDIA A100 GPUs.
+      You MUST use --arch CUDA for all builds and runs. Do NOT use OpenMP or Sequential.
+
       WORKFLOW:
-      1. kripke_build - Build the application (CUDA for A100 GPUs)
-      2. kripke_run - Run to measure current performance AND verify correctness
-      3. Analyze source code for bottlenecks (src/Kripke/Kernel/Sweep.cpp, LTimes.cpp, etc.)
-      4. Edit source files to optimize
-      5. kripke_build - REBUILD (required after every edit!)
-      6. kripke_run - Measure improvement AND verify correctness (both checked automatically!)
+      1. kripke_build --arch CUDA - Build the application for A100 GPUs
+      2. kripke_run --arch CUDA - Run to measure current performance AND verify correctness
+      3. Explore the repository to understand the codebase and identify optimization opportunities
+      4. Edit source files to optimize performance
+      5. kripke_build --arch CUDA - REBUILD (required after every edit!)
+      6. kripke_run --arch CUDA - Measure improvement AND verify correctness
       7. submit - When done with improvements
 
       NOTE: kripke_run automatically checks BOTH timing AND correctness - no separate correctness check needed!
 
       NOTE: You do NOT have profiling tools available. Optimize based on code analysis and HPC best practices.
-      SCOPE: Focus on the specific areas mentioned. Do NOT modify unrelated code.
 
-      FILES TO EDIT: src/Kripke/Kernel/*.cpp, CMakeLists.txt
+      OPTIMIZATION SCOPE:
+      - Explore the entire repository for optimization opportunities
+      - PRIORITIZE source code changes over compiler flags:
+        * Algorithmic improvements (reduce computational complexity)
+        * Data structure optimizations (memory layout, cache efficiency)
+        * Loop transformations (blocking, tiling, fusion)
+        * Parallelization improvements (better work distribution)
+      - Compiler flag changes are acceptable but should NOT be your only optimization
+      - Key files: src/Kripke/Kernel/*.cpp, src/Kripke/Arch/*.h, but any file is fair game
 
-      CRITICAL: Always rebuild with kripke_build after editing source files!
+      CRITICAL:
+      - Always use --arch CUDA (not OpenMP!) for builds and runs
+      - Always rebuild with kripke_build --arch CUDA after editing source files!
+      - If a build fails, carefully analyze the error before making changes
+      - Do NOT add flags like -fno-exceptions or -fno-rtti (breaks RAJA/CAMP)
 
       Thinking should be thorough.
     next_step_template: |-
@@ -75,7 +96,10 @@ agent:
     api_key: "dummy"
     name: openai/openai/gpt-oss-120b
     per_instance_cost_limit: 0
+    per_instance_call_limit: 50
   tools:
+    execution_timeout: 600
+    tools_base_path: /tmp/sweagent
     env_variables:
       PAGER: cat
       MANPAGER: cat
@@ -83,7 +107,9 @@ agent:
       GIT_PAGER: cat
       CUDA_VISIBLE_DEVICES: "0,1,2,3"
       OMP_NUM_THREADS: 32
-      KRIPKE_ROOT: /global/u2/k/krydzy/SWE-agent/Kripke_test
+      KRIPKE_ROOT: /pscratch/sd/k/krydzy/SWE-agent/Kripke_test
+      SWE_AGENT_ENV_FILE: /tmp/sweagent/.swe-agent-env
+      SWE_AGENT_STATE_FILE: /tmp/sweagent/state.json
     bundles:
       - path: tools/registry
       - path: tools/edit_anthropic
@@ -116,6 +142,6 @@ agent:
 
 env:
   repo:
-    path: /global/u2/k/krydzy/SWE-agent/Kripke_test
+    path: /pscratch/sd/k/krydzy/SWE-agent/Kripke_test
   deployment:
     type: local

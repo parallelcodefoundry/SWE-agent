@@ -29,7 +29,13 @@ def _find_pristine_laghos():
     candidate = os.path.join(script_dir, '..', '..', '..', 'Laghos')
     if os.path.isdir(candidate):
         return os.path.abspath(candidate)
-    return "/global/u2/k/krydzy/SWE-agent/Laghos"
+    swe_root = os.environ.get('SWE_AGENT_ROOT')
+    if swe_root:
+        candidate = os.path.join(swe_root, 'Laghos')
+        if os.path.isdir(candidate):
+            return os.path.abspath(candidate)
+    print("ERROR: Pristine Laghos not found. Set PRISTINE_LAGHOS_ROOT or run setup_apps.sh.", file=sys.stderr)
+    return None
 
 PRISTINE_LAGHOS_ROOT = _find_pristine_laghos()
 
@@ -145,7 +151,7 @@ def run_laghos(exe_path, problem, dim, rs, tf, device, use_pa=True, label=""):
     Returns: (elapsed_time, final_energy, step, dt, output_text) or None on failure
     """
     env = os.environ.copy()
-    env['CUDA_VISIBLE_DEVICES'] = '0'
+    # Use all available GPUs (inherit CUDA_VISIBLE_DEVICES from environment)
     env['OMP_NUM_THREADS'] = '1'
 
     cmd = [
@@ -316,14 +322,9 @@ def main():
     laghos_root = os.environ.get('LAGHOS_ROOT')
     if not laghos_root:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        candidate_paths = [
-            os.path.join(script_dir, '..', '..', '..', 'Laghos_test'),
-            '/global/u2/k/krydzy/SWE-agent/Laghos_test',
-        ]
-        for path in candidate_paths:
-            if os.path.isdir(path):
-                laghos_root = os.path.abspath(path)
-                break
+        candidate = os.path.join(script_dir, '..', '..', '..', 'Laghos_test')
+        if os.path.isdir(candidate):
+            laghos_root = os.path.abspath(candidate)
 
     modified_exe = os.path.join(laghos_root, 'laghos') if laghos_root else None
 
@@ -390,10 +391,10 @@ def main():
     # Correctness
     if correctness.get('correct'):
         print(f"CORRECTNESS:  PASSED ({correctness.get('matched', 0)} values verified)")
-        if baseline_energy is not None:
+        if baseline_energy is not None and modified_energy is not None:
             print(f"  Final Energy |e|: {baseline_energy:.10e} (baseline)")
             print(f"  Final Energy |e|: {modified_energy:.10e} (modified)")
-        if baseline_step is not None:
+        if baseline_step is not None and modified_step is not None:
             print(f"  Final Step: {baseline_step} (baseline), {modified_step} (modified)")
     else:
         print(f"CORRECTNESS:  FAILED ({correctness.get('total_differences', 0)} values differ!)")
@@ -425,10 +426,16 @@ def main():
         ref_step, ref_dt, ref_energy = REFERENCE_VALUES[ref_key]
         print("Reference Values (from Laghos documentation):")
         print(f"  Expected: step={ref_step}, dt={ref_dt:.6f}, |e|={ref_energy:.10e}")
-        if modified_energy is not None:
+        if modified_energy is not None and modified_dt is not None and modified_step is not None:
             energy_err = abs(modified_energy - ref_energy) / ref_energy
             print(f"  Got:      step={modified_step}, dt={modified_dt:.6f}, |e|={modified_energy:.10e}")
             print(f"  Energy relative error: {energy_err:.2e}")
+        elif modified_energy is not None:
+            energy_err = abs(modified_energy - ref_energy) / ref_energy
+            print(f"  Got:      step={modified_step}, dt={modified_dt}, |e|={modified_energy:.10e}")
+            print(f"  Energy relative error: {energy_err:.2e}")
+        else:
+            print("  Got:      (values not available in output)")
         print("=" * 60)
 
     # Determine exit status

@@ -6,8 +6,7 @@ Uses the Coral2_P2_1 benchmark (low variance, ~50s runtime) for consistent resul
 Reports only total runtime and speedup/slowdown - detailed timing is abstracted away
 to simulate real-world optimization where profiling tools are needed for deeper analysis.
 
-Runs on GPU 3 only (via CUDA_VISIBLE_DEVICES=3) to allow other GPUs to be used
-for model serving (vLLM on GPUs 0-2).
+Uses all available GPUs (inherits CUDA_VISIBLE_DEVICES from environment).
 """
 import subprocess
 import os
@@ -24,7 +23,13 @@ def _find_pristine_qs():
     candidate = os.path.join(script_dir, '..', '..', '..', 'Quicksilver')
     if os.path.isdir(candidate):
         return os.path.abspath(candidate)
-    return "/global/u2/k/krydzy/SWE-agent/Quicksilver"
+    swe_root = os.environ.get('SWE_AGENT_ROOT')
+    if swe_root:
+        candidate = os.path.join(swe_root, 'Quicksilver')
+        if os.path.isdir(candidate):
+            return os.path.abspath(candidate)
+    print("ERROR: Pristine Quicksilver not found. Set PRISTINE_QS_ROOT or run setup_apps.sh.", file=sys.stderr)
+    return None
 
 PRISTINE_QS_ROOT = _find_pristine_qs()
 
@@ -36,9 +41,6 @@ DEFAULT_TOLERANCE = 1e-6
 
 # OpenMP configuration
 OMP_THREADS = 8
-
-# GPU targeting - run Quicksilver on GPU 3 (GPUs 0-2 reserved for vLLM model serving)
-TARGET_GPU = "3"
 
 
 def get_pristine_executable():
@@ -72,8 +74,7 @@ def run_quicksilver(exe_path, input_file, label=""):
     env['OMP_NUM_THREADS'] = str(OMP_THREADS)
     env['OMP_PROC_BIND'] = 'spread'
     env['OMP_PLACES'] = 'threads'
-    # Target specific GPU (GPU 3, leaving GPUs 0-2 for vLLM model serving)
-    env['CUDA_VISIBLE_DEVICES'] = TARGET_GPU
+    # Use all available GPUs (inherit CUDA_VISIBLE_DEVICES from environment)
 
     cmd = [exe_path, '-i', input_file]
 
@@ -198,14 +199,9 @@ def main():
     qs_root = os.environ.get('QUICKSILVER_ROOT')
     if not qs_root:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        candidate_paths = [
-            os.path.join(script_dir, '..', '..', '..', 'Quicksilver'),
-            '/global/u2/k/krydzy/SWE-agent/Quicksilver_test',
-        ]
-        for path in candidate_paths:
-            if os.path.isdir(path):
-                qs_root = os.path.abspath(path)
-                break
+        candidate = os.path.join(script_dir, '..', '..', '..', 'Quicksilver')
+        if os.path.isdir(candidate):
+            qs_root = os.path.abspath(candidate)
 
     modified_exe = os.path.join(qs_root, 'src', 'qs') if qs_root else None
 
@@ -228,7 +224,8 @@ def main():
 
     print("=" * 60)
     print("QUICKSILVER BENCHMARK: Coral2_P2_1")
-    print(f"Running on GPU {TARGET_GPU} (CUDA_VISIBLE_DEVICES={TARGET_GPU})")
+    cuda_devices = os.environ.get('CUDA_VISIBLE_DEVICES', 'all available')
+    print(f"Using GPUs: {cuda_devices}")
     print("=" * 60)
 
     # Run baseline

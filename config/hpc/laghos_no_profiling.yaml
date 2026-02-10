@@ -78,6 +78,7 @@ agent:
     api_key: "dummy"
     name: openai/openai/gpt-oss-120b
     per_instance_cost_limit: 0
+    per_instance_call_limit: 50
   tools:
     execution_timeout: 150
     tools_base_path: /tmp/sweagent
@@ -88,7 +89,7 @@ agent:
       GIT_PAGER: cat
       CUDA_VISIBLE_DEVICES: "0,1,2,3"
       OMP_NUM_THREADS: 32
-      LAGHOS_ROOT: /global/u2/k/krydzy/SWE-agent/Laghos_test
+      LAGHOS_ROOT: /pscratch/sd/k/krydzy/SWE-agent/Laghos_test
       SWE_AGENT_ENV_FILE: /tmp/sweagent/.swe-agent-env
       SWE_AGENT_STATE_FILE: /tmp/sweagent/state.json
     bundles:
@@ -123,6 +124,6 @@ agent:
 
 env:
   repo:
-    path: /global/u2/k/krydzy/SWE-agent/Laghos_test
+    path: /pscratch/sd/k/krydzy/SWE-agent/Laghos_test
   deployment:
     type: local

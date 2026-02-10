@@ -1,0 +1,19 @@
+{
+  "main_avg_s": 9.747,
+  "main_max_s": 9.796,
+  "cycleInit_avg_s": 0.6748,
+  "cycleInit_max_s": 0.7121,
+  "cycleTracking_avg_s": 8.717,
+  "cycleTracking_max_s": 8.746,
+  "cycleTracking_Kernel_avg_s": 2.842,
+  "cycleTracking_Kernel_max_s": 4.71,
+  "cycleTracking_MPI_avg_s": 5.685,
+  "cycleTracking_MPI_max_s": 7.867,
+  "cycleTracking_Test_Done_avg_s": 5.822,
+  "cycleTracking_Test_Done_max_s": 8.022,
+  "cycleFinalize_avg_s": 0.1628,
+  "cycleFinalize_max_s": 0.2185,
+  "figure_of_merit": 622800.0,
+  "cycleTracking_seconds": 8.746,
+  "total_seconds": 9.796
+}

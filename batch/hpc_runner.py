@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -53,6 +54,7 @@ class BatchConfig:
     runs: int
     profiling_configs: list[str]  # ["with_profiling", "no_profiling"]
     output_dir: Path
+    trajectory_dir: Path
     full_metrics: bool = False
     sweagent_root: Path = field(default_factory=lambda: Path(__file__).parent.parent)
     vllm_host: str = "127.0.0.1"
@@ -83,12 +85,27 @@ class HPCBatchRunner:
         self.results: list[RunResult] = []
         self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Setup output directory
-        job_id = os.environ.get("SLURM_JOB_ID", "local")
-        self.output_dir = config.output_dir / f"{self.run_id}_{job_id}"
+        # Setup output directory (use as-is if provided, otherwise create timestamped subdir)
+        # When called from hpc_batch_runner.sh, output_dir already includes timestamp/jobid
+        if config.output_dir.name.startswith("batch_") or "batch_results" not in str(config.output_dir):
+            # Already a specific output dir (from shell script) - use directly
+            self.output_dir = config.output_dir
+        else:
+            # Default batch_results dir - create timestamped subdir
+            job_id = os.environ.get("SLURM_JOB_ID", "local")
+            self.output_dir = config.output_dir / f"{self.run_id}_{job_id}"
+
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.runs_dir = self.output_dir / "runs"
         self.runs_dir.mkdir(exist_ok=True)
+
+        # Setup trajectory directory
+        self.trajectory_dir = config.trajectory_dir
+        self.trajectory_dir.mkdir(parents=True, exist_ok=True)
+
+        # Directory for modified configs
+        self.configs_dir = self.output_dir / "configs"
+        self.configs_dir.mkdir(exist_ok=True)
 
         # Setup logging
         self.log_file = self.output_dir / "batch.log"
@@ -147,9 +164,114 @@ class HPCBatchRunner:
         config_name = f"{app}_{profiling}.yaml"
         return self.config.sweagent_root / "config" / "hpc" / config_name
 
+    def create_run_config(self, app: str, profiling: str, run_num: int) -> Path:
+        """Create a modified config file with run-specific trajectory directory"""
+        base_config_path = self.get_config_path(app, profiling)
+        run_name = f"{app}_{profiling}_run{run_num}"
+
+        # Read base config
+        with open(base_config_path) as f:
+            config_content = f.read()
+
+        # Create run-specific trajectory directory
+        run_traj_dir = self.trajectory_dir / run_name
+        run_traj_dir.mkdir(parents=True, exist_ok=True)
+
+        # Replace trajectory output directory in config
+        # Look for common patterns in SWE-agent configs
+        # Pattern 1: trajectories/krydzy or similar
+        config_content = re.sub(
+            r'trajectories/[^"\'\s]+',
+            str(run_traj_dir),
+            config_content
+        )
+
+        # Pattern 2: output_dir or trajectory_dir settings
+        config_content = re.sub(
+            r'(output_dir:\s*)[^\n]+',
+            f'\\1{run_traj_dir}',
+            config_content
+        )
+
+        # Override api_base to point to the (possibly remote) vLLM server
+        config_content = config_content.replace(
+            'api_base: "http://127.0.0.1:8008/v1"',
+            f'api_base: "http://{self.config.vllm_host}:{self.config.vllm_port}/v1"'
+        )
+
+        # Write modified config
+        run_config_path = self.configs_dir / f"{run_name}_config.yaml"
+        with open(run_config_path, "w") as f:
+            f.write(config_content)
+
+        return run_config_path
+
+    def create_workspace_copy(self, app: str, run_name: str) -> Optional[Path]:
+        """Create an isolated workspace copy from the test repo"""
+        test_repo = self.config.sweagent_root / self.TEST_REPOS[app]
+        if not test_repo.exists():
+            self.log(f"  ERROR: Test repo not found: {test_repo}")
+            return None
+
+        workspace_dir = self.output_dir / "workspaces"
+        workspace_dir.mkdir(exist_ok=True)
+        workspace = workspace_dir / run_name
+
+        if workspace.exists():
+            shutil.rmtree(workspace)
+
+        self.log(f"  Creating isolated workspace: {workspace}")
+        try:
+            # Use rsync instead of shutil.copytree to skip heavy git internals
+            # .git/modules contains submodule git databases (massive for Kripke's 44+ submodules)
+            # build/ contains stale build artifacts (agent will rebuild)
+            rsync_cmd = [
+                "rsync", "-a", "--delete",
+                "--exclude=.git/modules",
+                "--exclude=build",
+                f"{test_repo}/", f"{workspace}/"
+            ]
+            rsync_result = subprocess.run(rsync_cmd, capture_output=True, text=True, timeout=120)
+            if rsync_result.returncode != 0:
+                self.log(f"  ERROR: rsync failed: {rsync_result.stderr}")
+                return None
+        except Exception as e:
+            self.log(f"  ERROR copying test repo: {e}")
+            return None
+
+        # Apply Kripke git config fixes if needed
+        if app == "kripke" and (workspace / ".git").exists():
+            subprocess.run(["git", "config", "--local", "status.submodulesummary", "false"], cwd=workspace, capture_output=True)
+            subprocess.run(["git", "config", "--local", "submodule.recurse", "false"], cwd=workspace, capture_output=True)
+            subprocess.run(["git", "config", "--local", "diff.ignoreSubmodules", "all"], cwd=workspace, capture_output=True)
+
+        return workspace
+
+    def create_run_config_with_workspace(self, app: str, profiling: str, run_num: int, workspace: Path) -> Path:
+        """Create a modified config file pointing to an isolated workspace"""
+        run_name = f"{app}_{profiling}_run{run_num}"
+        config_path = self.create_run_config(app, profiling, run_num)
+
+        # Read the already-created config and substitute workspace paths
+        with open(config_path) as f:
+            config_content = f.read()
+
+        original_path = str(self.config.sweagent_root / f"{app.capitalize()}_test")
+        config_content = config_content.replace(original_path, str(workspace))
+
+        root_var = f"{app.upper()}_ROOT"
+        config_content = config_content.replace(
+            f"{root_var}: {original_path}",
+            f"{root_var}: {workspace}"
+        )
+
+        with open(config_path, "w") as f:
+            f.write(config_content)
+
+        return config_path
+
     def run_sweagent(self, app: str, profiling: str, run_num: int) -> RunResult:
         """Execute a single SWE-agent run"""
-        config_path = self.get_config_path(app, profiling)
         run_name = f"{app}_{profiling}_run{run_num}"
         run_output_dir = self.runs_dir / run_name
         run_output_dir.mkdir(exist_ok=True)
@@ -161,50 +283,87 @@ class HPCBatchRunner:
             success=False
         )
 
-        if not config_path.exists():
-            self.log(f"ERROR: Config not found: {config_path}")
-            result.error_message = f"Config not found: {config_path}"
+        # Create isolated workspace copy
+        workspace = self.create_workspace_copy(app, run_name)
+        if workspace is None:
+            result.error_message = "Failed to create workspace copy"
             return result
 
+        # Create run-specific config pointing to workspace
+        config_path = self.create_run_config_with_workspace(app, profiling, run_num, workspace)
         self.log(f"Starting run: {run_name}")
+        self.log(f"  Config: {config_path}")
+        self.log(f"  Workspace: {workspace}")
         start_time = time.time()
 
-        # Build shell script that replicates manual workflow:
-        # 1. cd to SWE-agent directory
-        # 2. Activate venv
-        # 3. Run sweagent with config
+        # Get environment settings
         sweagent_venv = os.environ.get(
             "SWEAGENT_VENV",
-            "/global/u2/k/krydzy/envs/sweagent"
+            os.path.join(os.environ.get("HOME", ""), "envs", "sweagent")
         )
+        home_dir = os.environ.get("HOME", str(Path.home()))
 
-        # Use relative config path from SWE-agent root
-        config_rel_path = config_path.relative_to(self.config.sweagent_root)
-
+        # Build shell script with full HPC environment setup (matching hpc_benchmark_runner.py)
         shell_script = f"""
 cd {self.config.sweagent_root}
 source {sweagent_venv}/bin/activate
-export OPENAI_API_KEY=dummy
-export OPENAI_BASE_URL=http://{self.config.vllm_host}:{self.config.vllm_port}/v1
-sweagent run --config {config_rel_path}
+
+# Load modules for HPC environment
+module load openmpi/5.0.7 2>/dev/null || true
+module load cudatoolkit/12.4 2>/dev/null || true
+module load python 2>/dev/null || true
+
+# Setup spack and HPCToolkit for profiling tools
+if [ -f "{home_dir}/spack/share/spack/setup-env.sh" ]; then
+    source "{home_dir}/spack/share/spack/setup-env.sh"
+    spack load hpctoolkit 2>/dev/null || true
+fi
+
+# Setup podman wrapper to use podman-hpc
+unalias podman 2>/dev/null || true
+hash -r
+mkdir -p "{home_dir}/bin"
+cat > "{home_dir}/bin/podman" <<'SH'
+#!/usr/bin/env bash
+real=/usr/bin/podman
+hpc=/usr/bin/podman-hpc
+case "$1" in
+  -h|--help|help|version|--version) exec "$real" "$@";;
+  *) if command -v "$hpc" >/dev/null 2>&1; then exec "$hpc" "$@"; else exec "$real" "$@"; fi ;;
+esac
+SH
+chmod +x "{home_dir}/bin/podman"
+export PATH="{home_dir}/bin:$PATH"
+hash -r
+
+export OPENAI_API_BASE=http://{self.config.vllm_host}:{self.config.vllm_port}/v1
+export OPENAI_API_KEY="dummy-key-ok"
+
+sweagent run --config {config_path} \\
+    --agent.model.max_input_tokens=120000 \\
+    --agent.model.max_output_tokens=120000
 """
 
+        # Save shell script for debugging
+        script_path = run_output_dir / "run_script.sh"
+        with open(script_path, "w") as f:
+            f.write(shell_script)
+
+        # Write real-time agent log
+        agent_realtime_log = run_output_dir / "agent_realtime.log"
+
         try:
-            # Run SWE-agent through bash to properly activate venv
-            proc = subprocess.run(
-                ["bash", "-c", shell_script],
-                capture_output=True,
-                text=True,
-                timeout=3600  # 1 hour timeout per run
-            )
+            # Run SWE-agent through bash — stream output to file in real-time
+            with open(agent_realtime_log, "w") as log_fh:
+                proc = subprocess.run(
+                    ["bash", "-c", shell_script],
+                    stdout=log_fh,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=3600  # 1 hour timeout per run
+                )
 
             result.duration_seconds = time.time() - start_time
-
-            # Save stdout/stderr
-            with open(run_output_dir / "stdout.txt", "w") as f:
-                f.write(proc.stdout)
-            with open(run_output_dir / "stderr.txt", "w") as f:
-                f.write(proc.stderr)
 
             # Check for success (return code 0)
             if proc.returncode == 0:
@@ -219,12 +378,12 @@ sweagent run --config {config_rel_path}
             self._extract_metrics(result, combined_output)
 
             # Find and save trajectory file
-            trajectory_file = self._find_latest_trajectory(app)
+            trajectory_file = self._find_latest_trajectory(run_name)
             if trajectory_file:
                 result.trajectory_file = str(trajectory_file)
                 # Copy trajectory to run output
                 subprocess.run(
-                    ["cp", str(trajectory_file), str(run_output_dir / "trajectory.json")],
+                    ["cp", str(trajectory_file), str(run_output_dir / "trajectory.traj")],
                     capture_output=True
                 )
 
@@ -259,19 +418,23 @@ sweagent run --config {config_rel_path}
                 elif metric == "speedup":
                     result.speedup = float(value)
 
-    def _find_latest_trajectory(self, app: str) -> Optional[Path]:
-        """Find the most recent trajectory file for an app"""
-        # SWE-agent stores trajectories in trajectories/ directory
-        traj_dir = self.config.sweagent_root / "trajectories"
-        if not traj_dir.exists():
-            return None
+    def _find_latest_trajectory(self, run_name: str) -> Optional[Path]:
+        """Find the most recent trajectory file for a run"""
+        # First check run-specific trajectory directory
+        run_traj_dir = self.trajectory_dir / run_name
+        if run_traj_dir.exists():
+            traj_files = list(run_traj_dir.glob("**/*.traj"))
+            if traj_files:
+                return max(traj_files, key=lambda p: p.stat().st_mtime)
 
-        # Find most recent .traj file
-        traj_files = list(traj_dir.glob("**/*.traj"))
-        if not traj_files:
-            return None
+        # Fallback to default SWE-agent trajectory directory
+        default_traj_dir = self.config.sweagent_root / "trajectories"
+        if default_traj_dir.exists():
+            traj_files = list(default_traj_dir.glob("**/*.traj"))
+            if traj_files:
+                return max(traj_files, key=lambda p: p.stat().st_mtime)
 
-        return max(traj_files, key=lambda p: p.stat().st_mtime)
+        return None
 
     def _extract_trajectory_metrics(self, result: RunResult, traj_file: Path) -> None:
         """Extract additional metrics from trajectory file"""
@@ -311,6 +474,7 @@ sweagent run --config {config_rel_path}
         self.log(f"  Configs: {', '.join(self.config.profiling_configs)}")
         self.log(f"  Runs per config: {self.config.runs}")
         self.log(f"  Output directory: {self.output_dir}")
+        self.log(f"  Trajectory directory: {self.trajectory_dir}")
 
         batch_start = time.time()
 
@@ -457,6 +621,12 @@ Examples:
         help="Output directory for results"
     )
     parser.add_argument(
+        "--trajectory-dir", "-t",
+        type=str,
+        default=None,
+        help="Directory for trajectory files (enables real-time monitoring)"
+    )
+    parser.add_argument(
         "--full-metrics",
         action="store_true",
         help="Collect additional metrics (token counts, API calls)"
@@ -508,12 +678,19 @@ Examples:
     else:
         output_dir = sweagent_root / "batch_results"
 
+    # Determine trajectory directory
+    if args.trajectory_dir:
+        trajectory_dir = Path(args.trajectory_dir)
+    else:
+        trajectory_dir = sweagent_root / "trajectories" / "batch_runs"
+
     # Create configuration
     config = BatchConfig(
         apps=apps,
         runs=args.runs,
         profiling_configs=profiling_configs,
         output_dir=output_dir,
+        trajectory_dir=trajectory_dir,
         full_metrics=args.full_metrics,
         sweagent_root=sweagent_root,
         vllm_host=args.vllm_host,
@@ -530,9 +707,12 @@ Examples:
     runner = HPCBatchRunner(config)
     runner.run_batch()
 
-    # Generate reports
-    from report_generator import generate_reports
-    generate_reports(runner.output_dir, runner.results)
+    # Generate reports (optional, don't fail if not available)
+    try:
+        from report_generator import generate_reports
+        generate_reports(runner.output_dir, runner.results)
+    except ImportError:
+        print("Note: report_generator not available, skipping report generation")
 
 
 if __name__ == "__main__":
