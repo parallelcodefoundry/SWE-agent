@@ -2,9 +2,8 @@
 """
 qs_build - Build Quicksilver Monte Carlo transport proxy application.
 
-Builds with CUDA + OpenMP for single-GPU execution on NVIDIA GPUs.
-MPI is not used - designed for running on one GPU while other GPUs
-are used for model serving (vLLM).
+Builds with MPI + CUDA + OpenMP for multi-GPU execution on NVIDIA GPUs.
+Each MPI rank gets one GPU; use mpirun to launch across GPUs.
 
 Respects user customizations in Makefile while ensuring CUDA/GPU support
 is always enabled.
@@ -108,9 +107,73 @@ def find_cuda_path():
 
     return None
 
+
+def find_mpi_flags():
+    """Detect MPI compiler/linker flags using mpicxx --showme.
+
+    Returns: dict with 'include_flags', 'lib_flags', or None if MPI not found.
+    """
+    try:
+        # Try mpicxx --showme:compile for include flags
+        compile_result = subprocess.run(
+            ['mpicxx', '--showme:compile'],
+            capture_output=True, text=True, timeout=10
+        )
+        link_result = subprocess.run(
+            ['mpicxx', '--showme:link'],
+            capture_output=True, text=True, timeout=10
+        )
+        if compile_result.returncode == 0 and link_result.returncode == 0:
+            # Filter/convert flags for nvcc compatibility:
+            # - Remove -pthread, -fPIC (gcc-only, not understood by nvcc)
+            # - Convert -Wl,X to -Xlinker X (nvcc linker pass-through)
+            raw_compile = compile_result.stdout.strip()
+            raw_link = link_result.stdout.strip()
+            nvcc_incompatible = {'-pthread', '-fPIC'}
+            include_flags = ' '.join(
+                f for f in raw_compile.split() if f not in nvcc_incompatible
+            )
+            # Convert link flags for nvcc
+            link_tokens = []
+            for f in raw_link.split():
+                if f in nvcc_incompatible:
+                    continue
+                elif f.startswith('-Wl,'):
+                    # Convert -Wl,opt to -Xlinker opt for nvcc
+                    for part in f[4:].split(','):
+                        link_tokens.extend(['-Xlinker', part])
+                else:
+                    link_tokens.append(f)
+            lib_flags = ' '.join(link_tokens)
+            return {
+                'include_flags': include_flags,
+                'lib_flags': lib_flags,
+            }
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # Fallback: check MPI_DIR environment variable
+    mpi_dir = os.environ.get('MPI_DIR') or os.environ.get('OPENMPI_DIR')
+    if mpi_dir and os.path.isdir(mpi_dir):
+        include_dir = os.path.join(mpi_dir, 'include')
+        lib_dir = os.path.join(mpi_dir, 'lib')
+        flags = {}
+        if os.path.isdir(include_dir):
+            flags['include_flags'] = f'-I{include_dir}'
+        else:
+            flags['include_flags'] = ''
+        if os.path.isdir(lib_dir):
+            flags['lib_flags'] = f'-L{lib_dir} -lmpi'
+        else:
+            flags['lib_flags'] = '-lmpi'
+        return flags
+
+    return None
+
+
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description='Build Quicksilver (CUDA + OpenMP, single GPU)')
+    parser = argparse.ArgumentParser(description='Build Quicksilver (MPI + CUDA + OpenMP, multi-GPU)')
     parser.add_argument('--clean', action='store_true', help='Force clean rebuild')
     args = parser.parse_args()
 
@@ -151,8 +214,8 @@ def main():
             print(f"Cleaning {src_dir}...")
             subprocess.run(['make', 'clean'], cwd=src_dir, capture_output=True)
 
-        # Build for CUDA + OpenMP (no MPI, single GPU)
-        print(f"Building Quicksilver (CUDA + OpenMP, single GPU) in {src_dir}...")
+        # Build for MPI + CUDA + OpenMP (multi-GPU)
+        print(f"Building Quicksilver (MPI + CUDA + OpenMP) in {src_dir}...")
 
         build_env = os.environ.copy()
 
@@ -182,10 +245,26 @@ def main():
         if not host_compiler:
             host_compiler = 'g++'
 
+        # Detect MPI
+        mpi_flags = find_mpi_flags()
+        if not mpi_flags:
+            print("WARNING: MPI not found. Building without MPI (single GPU mode).")
+            print("Load an MPI module (e.g., module load openmpi) for multi-GPU support.")
+            mpi_include = ''
+            mpi_link = ''
+            mpi_defines = ''
+        else:
+            mpi_include = mpi_flags['include_flags']
+            mpi_link = mpi_flags['lib_flags']
+            mpi_defines = '-DHAVE_MPI'
+
         print(f"Using CUDA: {cuda_path}")
         print(f"Using nvcc: {nvcc}")
         print(f"Host compiler: {host_compiler}")
-        print("Building without MPI (single GPU mode)")
+        if mpi_flags:
+            print(f"MPI: enabled (multi-GPU mode)")
+        else:
+            print("MPI: disabled (single GPU mode)")
 
         # Parse Makefile for user-customized flags
         makefile_path = os.path.join(src_dir, 'Makefile')
@@ -227,7 +306,7 @@ def main():
         xcompiler_str = ','.join(xcompiler_flags)
 
         # CUDA build flags for A100 (sm_80)
-        # NO MPI - just CUDA + OpenMP for single GPU execution
+        # MPI + CUDA + OpenMP for multi-GPU execution
         # -lineinfo enables source line mapping for GPU code (needed for profiling)
         # Base CXXFLAGS - always use CUDA with -O3
         cxxflags = f'-DHAVE_CUDA -std=c++11 -O3 -lineinfo -Xptxas -v -gencode=arch=compute_80,code=sm_80 --compiler-bindir={host_compiler} -Xcompiler {xcompiler_str}'
@@ -238,21 +317,31 @@ def main():
         print(f"  CXX = {nvcc}  (Makefile CXX setting is ignored)")
         print(f"  Optimization: -O3 (always, -O flags in Makefile are ignored)")
         print(f"  GPU: CUDA sm_80 (A100)")
+        print(f"  MPI: {'enabled' if mpi_flags else 'disabled'}")
         print(f"  Host compiler flags: {xcompiler_str}")
         print("")
 
-        # LDFLAGS - base + any user customizations
+        # LDFLAGS - base + MPI + any user customizations
         ldflags = f'-L{cuda_path}/lib64 -lcudart -lcuda -lgomp'
+        if mpi_link:
+            ldflags += f' {mpi_link}'
         if custom_flags['extra_ldflags']:
             ldflags += ' ' + ' '.join(custom_flags['extra_ldflags'])
             print(f"User Makefile flags (linker): {' '.join(custom_flags['extra_ldflags'])}")
             result["user_ldflags"] = custom_flags['extra_ldflags']
 
+        # CPPFLAGS: CUDA compilation flags + OpenMP + MPI defines + includes
+        cppflags = f'-x cu -dc -DHAVE_OPENMP -I{cuda_path}/include'
+        if mpi_defines:
+            cppflags += f' {mpi_defines}'
+        if mpi_include:
+            cppflags += f' {mpi_include}'
+
         build_cmd = [
             'make', '-j8',
             f'CXX={nvcc}',
             f'CXXFLAGS={cxxflags}',
-            f'CPPFLAGS=-x cu -dc -DHAVE_OPENMP -I{cuda_path}/include',
+            f'CPPFLAGS={cppflags}',
             f'LDFLAGS={ldflags}'
         ]
 

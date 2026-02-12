@@ -2,17 +2,20 @@
 """
 qs_run - Run Quicksilver benchmark and compare against baseline.
 
-Uses the Coral2_P2_1 benchmark (low variance, ~50s runtime) for consistent results.
-Reports only total runtime and speedup/slowdown - detailed timing is abstracted away
+Uses the Coral2_P2_1 benchmark for consistent results.
+Reports total runtime and speedup/slowdown - detailed timing is abstracted away
 to simulate real-world optimization where profiling tools are needed for deeper analysis.
 
-Uses all available GPUs (inherits CUDA_VISIBLE_DEVICES from environment).
+Runs with MPI across multiple GPUs (one rank per GPU).
+Uses mpirun for execution (avoids nested srun hangs in batch mode).
 """
 import subprocess
 import os
 import sys
 import json
 import re
+import argparse
+import tempfile
 
 # Pristine Quicksilver source (unmodified baseline)
 def _find_pristine_qs():
@@ -33,14 +36,29 @@ def _find_pristine_qs():
 
 PRISTINE_QS_ROOT = _find_pristine_qs()
 
-# Fixed benchmark configuration - Coral2_P2_1 (low variance ~1.8%)
+# Fixed benchmark configuration - Coral2 Problem 2 single-node
 BENCHMARK_INPUT = "Examples/CORAL2_Benchmark/Problem2/Coral2_P2_1.inp"
 
 # Default tolerance for correctness checking
 DEFAULT_TOLERANCE = 1e-6
 
-# OpenMP configuration
-OMP_THREADS = 8
+
+def compute_domain_decomposition(np_ranks):
+    """Compute xDom, yDom, zDom for a given number of MPI ranks.
+
+    QS requires xDom * yDom * zDom == nRanks.
+    """
+    if np_ranks == 1:
+        return 1, 1, 1
+    elif np_ranks == 2:
+        return 2, 1, 1
+    elif np_ranks == 4:
+        return 2, 2, 1
+    elif np_ranks == 8:
+        return 2, 2, 2
+    else:
+        # Linear decomposition in x
+        return np_ranks, 1, 1
 
 
 def get_pristine_executable():
@@ -65,22 +83,59 @@ def get_pristine_executable():
     return exe_path
 
 
-def run_quicksilver(exe_path, input_file, label=""):
-    """Run Quicksilver with the benchmark input file.
+def make_input_file_for_ranks(input_file, np_ranks):
+    """Create a temporary input file with domain decomposition matching np_ranks.
+
+    QS parses the input file AFTER CLI args, so CLI -I/-J/-K get overridden.
+    We must modify the input file directly to set xDom/yDom/zDom.
+    """
+    xDom, yDom, zDom = compute_domain_decomposition(np_ranks)
+
+    with open(input_file, 'r') as f:
+        content = f.read()
+
+    # Replace xDom/yDom/zDom values in the input file
+    content = re.sub(r'(xDom:\s*)\d+', rf'\g<1>{xDom}', content)
+    content = re.sub(r'(yDom:\s*)\d+', rf'\g<1>{yDom}', content)
+    content = re.sub(r'(zDom:\s*)\d+', rf'\g<1>{zDom}', content)
+
+    # Write to a temp file in the same directory (so relative paths still work)
+    input_dir = os.path.dirname(input_file)
+    fd, tmp_path = tempfile.mkstemp(suffix='.inp', dir=input_dir, prefix='qs_bench_')
+    with os.fdopen(fd, 'w') as f:
+        f.write(content)
+
+    return tmp_path, xDom, yDom, zDom
+
+
+def run_quicksilver(exe_path, input_file, np_ranks, omp_threads, label=""):
+    """Run Quicksilver with the benchmark input file using MPI.
 
     Returns: (total_time_seconds, output_text) or (None, None) on failure
     """
     env = os.environ.copy()
-    env['OMP_NUM_THREADS'] = str(OMP_THREADS)
+    env['OMP_NUM_THREADS'] = str(omp_threads)
     env['OMP_PROC_BIND'] = 'spread'
     env['OMP_PLACES'] = 'threads'
-    # Use all available GPUs (inherit CUDA_VISIBLE_DEVICES from environment)
 
-    cmd = [exe_path, '-i', input_file]
+    # Create modified input file with correct domain decomposition
+    tmp_input, xDom, yDom, zDom = make_input_file_for_ranks(input_file, np_ranks)
 
     try:
+        qs_cmd = [exe_path, '-i', tmp_input]
+
+        # Always use mpirun for MPI execution (avoids nested srun hangs in batch mode).
+        # --oversubscribe: PRRTE/OpenMPI 5 may see only 1 slot from SLURM srun;
+        #   this allows launching more ranks than detected slots.
+        # --bind-to none: let CUDA_VISIBLE_DEVICES handle GPU assignment.
+        # Even for np=1, use mpirun to handle MPI-linked binaries that hang on MPI_Init().
+        cmd = ['mpirun', '-np', str(np_ranks), '--bind-to', 'none', '--oversubscribe'] + qs_cmd
+
         if label:
             print(f"Running {label}...")
+            print(f"  Command: {' '.join(cmd)}", file=sys.stderr)
+            print(f"  OMP_NUM_THREADS={omp_threads}, MPI ranks={np_ranks}", file=sys.stderr)
+            print(f"  Domain decomposition: {xDom}x{yDom}x{zDom}", file=sys.stderr)
             sys.stdout.flush()
 
         proc = subprocess.run(
@@ -106,7 +161,7 @@ def run_quicksilver(exe_path, input_file, label=""):
             print("Warning: Could not parse timing from output")
             return None, proc.stdout
         else:
-            print(f"Run failed: {proc.stderr[-500:]}")
+            print(f"Run failed (exit code {proc.returncode}): {proc.stderr[-500:]}")
             return None, None
 
     except subprocess.TimeoutExpired:
@@ -115,6 +170,12 @@ def run_quicksilver(exe_path, input_file, label=""):
     except Exception as e:
         print(f"Run error: {e}")
         return None, None
+    finally:
+        # Clean up temp input file
+        try:
+            os.unlink(tmp_input)
+        except OSError:
+            pass
 
 
 def extract_scientific_values(output_text):
@@ -195,6 +256,11 @@ def check_correctness(baseline_output, modified_output, tolerance=DEFAULT_TOLERA
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Run Quicksilver benchmark (MPI + CUDA, multi-GPU)')
+    parser.add_argument('--np', type=int, default=4, help='Number of MPI ranks (default: 4, one per GPU)')
+    parser.add_argument('--omp-threads', type=int, default=8, help='OpenMP threads per rank (default: 8)')
+    args = parser.parse_args()
+
     # Find modified Quicksilver executable
     qs_root = os.environ.get('QUICKSILVER_ROOT')
     if not qs_root:
@@ -221,16 +287,27 @@ def main():
         sys.exit(1)
 
     input_file = os.path.join(PRISTINE_QS_ROOT, BENCHMARK_INPUT)
+    if not os.path.isfile(input_file):
+        print("=" * 60)
+        print(f"ERROR: Benchmark input file not found: {input_file}")
+        print("=" * 60)
+        sys.exit(1)
+
+    xDom, yDom, zDom = compute_domain_decomposition(args.np)
 
     print("=" * 60)
     print("QUICKSILVER BENCHMARK: Coral2_P2_1")
     cuda_devices = os.environ.get('CUDA_VISIBLE_DEVICES', 'all available')
     print(f"Using GPUs: {cuda_devices}")
+    print(f"MPI ranks: {args.np}, OMP threads: {args.omp_threads}")
+    print(f"Domain decomposition: {xDom}x{yDom}x{zDom}")
     print("=" * 60)
     sys.stdout.flush()
 
     # Run baseline
-    baseline_time, baseline_output = run_quicksilver(pristine_exe, input_file, "baseline (unmodified)")
+    baseline_time, baseline_output = run_quicksilver(
+        pristine_exe, input_file, args.np, args.omp_threads, "baseline (unmodified)"
+    )
     if baseline_time is None:
         print("=" * 60)
         print("ERROR: Baseline run failed.")
@@ -238,7 +315,9 @@ def main():
         sys.exit(1)
 
     # Run modified version
-    modified_time, modified_output = run_quicksilver(modified_exe, input_file, "modified version")
+    modified_time, modified_output = run_quicksilver(
+        modified_exe, input_file, args.np, args.omp_threads, "modified version"
+    )
     if modified_time is None:
         print("=" * 60)
         print("ERROR: Modified version run failed.")
