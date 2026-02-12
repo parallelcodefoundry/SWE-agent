@@ -42,12 +42,14 @@ class CodexLauncher(FrameworkLauncher):
 
         # Write a metadata file with the -c config flags for the launch command
         if self.model_name:
-            # External model
+            # External model — use custom provider name to avoid collision
+            # with Codex built-in "openai" provider (or_insert semantics
+            # in config/mod.rs silently drops user overrides for built-ins).
             if "/" in self.model_name:
-                provider_id, model_id = self.model_name.split("/", 1)
+                _, model_id = self.model_name.split("/", 1)
             else:
-                provider_id = "openai"
                 model_id = self.model_name
+            provider_id = "ext"
             api_base = os.environ.get("OPENAI_API_BASE", "")
             wire_api = "responses"  # External OpenAI uses Responses API
         else:
@@ -58,11 +60,12 @@ class CodexLauncher(FrameworkLauncher):
             wire_api = "responses"
 
         config_flags = [
+            f"model_provider={provider_id}",
             f"model_providers.{provider_id}.name={provider_id}",
             f"model_providers.{provider_id}.base_url={api_base}",
             f"model_providers.{provider_id}.env_key=OPENAI_API_KEY",
             f"model_providers.{provider_id}.wire_api={wire_api}",
-            f"model={provider_id}/{model_id}",
+            f"model={model_id}",
             "web_search=disabled",
         ]
 
@@ -93,13 +96,14 @@ class CodexLauncher(FrameworkLauncher):
         with open(prompt_file, "w") as f:
             f.write(prompt)
 
-        # Build -c config flags
+        # Build -c config flags — use custom provider name "ext" for external
+        # models to avoid Codex built-in "openai" provider shadow (or_insert).
         if self.model_name:
             if "/" in self.model_name:
-                provider_id, model_id = self.model_name.split("/", 1)
+                _, model_id = self.model_name.split("/", 1)
             else:
-                provider_id = "openai"
                 model_id = self.model_name
+            provider_id = "ext"
             api_base = os.environ.get("OPENAI_API_BASE", "")
             wire_api = "responses"
         else:
@@ -109,11 +113,12 @@ class CodexLauncher(FrameworkLauncher):
             wire_api = "responses"
 
         c_flags = (
+            f'-c "model_provider={provider_id}" '
             f'-c "model_providers.{provider_id}.name={provider_id}" '
             f'-c "model_providers.{provider_id}.base_url={api_base}" '
             f'-c "model_providers.{provider_id}.env_key=OPENAI_API_KEY" '
             f'-c "model_providers.{provider_id}.wire_api={wire_api}" '
-            f'-c "model={provider_id}/{model_id}" '
+            f'-c "model={model_id}" '
             f'-c "web_search=disabled"'
         )
 

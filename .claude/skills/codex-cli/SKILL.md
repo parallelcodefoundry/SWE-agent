@@ -17,6 +17,8 @@ description: "Knowledge about OpenAI Codex CLI terminal agent including installa
 2. **Default: Responses API, NOT Chat Completions** — won't work with vLLM unless `wire_api = "chat"`
 3. **Project docs**: `AGENTS.md` (NOT `CLAUDE.md`). Loaded from `~/.codex/`, repo root, cwd
 4. **Agent tools**: `shell` (sandboxed bash), `apply_patch` (file editing), `web_search` (optional), MCP servers
+5. **Built-in provider "openai" uses `or_insert`** — user `-c` overrides for `model_providers.openai.*` are silently ignored. Use a custom provider name (e.g., `ext`) to override base_url.
+6. **`model` and `model_provider` are separate fields** — `model=gpt-4o-mini` (bare name sent in API request) + `model_provider=ext` (routes to provider config). Do NOT use `provider/model` format.
 
 ## Installation on Perlmutter
 
@@ -39,7 +41,7 @@ Or: download `codex-x86_64-unknown-linux-musl` from GitHub Releases, or `cargo b
 
 ```bash
 codex exec \
-  --yolo \                        # No sandbox, no approvals
+  --dangerously-bypass-approvals-and-sandbox \  # No sandbox, no approvals (replaces --yolo)
   --skip-git-repo-check \         # Don't require git repo
   --json \                        # JSONL events to stdout
   --ephemeral \                   # Don't persist session
@@ -50,7 +52,26 @@ codex exec \
 
 Other flags: `--model/-m`, `--sandbox/-s MODE`, `--cd/-C DIR`, `--add-dir DIR`, `--profile/-p NAME`, `--output-schema schema.json`. Run `codex exec --help` for full list.
 
-## vLLM Configuration (Critical)
+## External OpenAI API Configuration (Critical for Perlmutter)
+
+**IMPORTANT**: Must use a custom provider name (not `openai`) due to built-in provider shadow bug.
+
+```bash
+export OPENAI_API_KEY="sk-proj-..."
+export CODEX_API_KEY="${OPENAI_API_KEY}"
+
+codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --json --ephemeral \
+  -c "model_provider=ext" \
+  -c "model_providers.ext.name=ext" \
+  -c "model_providers.ext.base_url=https://us.api.openai.com/v1" \
+  -c "model_providers.ext.env_key=OPENAI_API_KEY" \
+  -c "model_providers.ext.wire_api=responses" \
+  -c "model=gpt-4o-mini" \
+  -c "web_search=disabled" \
+  "Your prompt here"
+```
+
+## vLLM Configuration
 
 **#1 gotcha**: Codex defaults to Responses API. vLLM only speaks Chat Completions.
 
@@ -58,20 +79,24 @@ Other flags: `--model/-m`, `--sandbox/-s MODE`, `--cd/-C DIR`, `--add-dir DIR`, 
 export OPENAI_API_KEY="dummy"
 export CODEX_API_KEY="dummy"
 
-codex exec --yolo --skip-git-repo-check --json --ephemeral \
+codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --json --ephemeral \
+  -c "model_provider=local-vllm" \
+  -c "model_providers.local-vllm.name=local-vllm" \
   -c "model_providers.local-vllm.base_url=http://127.0.0.1:8008/v1" \
   -c "model_providers.local-vllm.env_key=OPENAI_API_KEY" \
   -c "model_providers.local-vllm.wire_api=chat" \
-  -c "model=local-vllm/gpt-oss-120b" \
+  -c "model=gpt-oss-120b" \
   -c "web_search=disabled" \
   "Your prompt here"
 ```
 
 Or in `~/.codex/config.toml`:
 ```toml
-model = "local-vllm/gpt-oss-120b"
+model = "gpt-oss-120b"
+model_provider = "local-vllm"
 web_search = "disabled"
 [model_providers.local-vllm]
+name = "local-vllm"
 base_url = "http://127.0.0.1:8008/v1"
 env_key = "OPENAI_API_KEY"
 wire_api = "chat"
@@ -83,9 +108,9 @@ wire_api = "chat"
 |------|------|----------|
 | read-only | `-s read-only` | Read only; writes need approval |
 | workspace-write | `--full-auto` | Read/write in cwd; no network |
-| danger-full-access | `--yolo` | Full access, no restrictions |
+| danger-full-access | `--dangerously-bypass-approvals-and-sandbox` | Full access, no restrictions |
 
-**For benchmarks**: Use `--yolo` — SLURM provides isolation. Landlock may conflict with Lustre.
+**For benchmarks**: Use `--dangerously-bypass-approvals-and-sandbox` — SLURM provides isolation. Landlock may conflict with Lustre.
 
 ## HPC Benchmark Setup
 
@@ -96,11 +121,13 @@ export PATH="/pscratch/sd/k/krydzy/SWE-agent/tools/kripke_harness/bin:$PATH"
 export KRIPKE_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Kripke_test
 
 cd "$KRIPKE_ROOT"
-codex exec --yolo --skip-git-repo-check --json --ephemeral \
+codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --json --ephemeral \
+  -c "model_provider=local-vllm" \
+  -c "model_providers.local-vllm.name=local-vllm" \
   -c "model_providers.local-vllm.base_url=http://127.0.0.1:8008/v1" \
   -c "model_providers.local-vllm.env_key=OPENAI_API_KEY" \
   -c "model_providers.local-vllm.wire_api=chat" \
-  -c "model=local-vllm/gpt-oss-120b" \
+  -c "model=gpt-oss-120b" \
   -c "web_search=disabled" \
   "Optimize Kripke for A100. Use kripke_build --arch CUDA, kripke_run --arch CUDA" \
   > output.jsonl 2> stderr.log
@@ -127,14 +154,16 @@ For profiling tools, add to PATH: `tools/hpctoolkit/bin`, `tools/hatchet/bin`.
 - **No Jinja2 templates** — all context in prompt or AGENTS.md
 - **No submit command** — agent finishes when done
 - **Must set `wire_api=chat`** for vLLM (SWE-agent uses litellm)
-- **Sandboxed by default** — use `--yolo` for open mode
+- **Sandboxed by default** — use `--dangerously-bypass-approvals-and-sandbox` for open mode
 
 ## Common Issues
 
 1. **API 404/unsupported**: Forgot `wire_api = "chat"` for vLLM
 2. **"Not inside a trusted directory"**: Add `--skip-git-repo-check`
-3. **Sandbox blocks GPU builds**: Use `--yolo` on Perlmutter
+3. **Sandbox blocks GPU builds**: Use `--dangerously-bypass-approvals-and-sandbox` on Perlmutter
 4. **Agent never finishes**: No submit gate. Add completion instructions in prompt
 5. **Session disk bloat**: Use `--ephemeral`
 6. **`AGENTS.md` not `CLAUDE.md`**: Codex ignores CLAUDE.md
-7. **Lustre + Landlock**: `--yolo` bypasses Landlock
+7. **Lustre + Landlock**: `--dangerously-bypass-approvals-and-sandbox` bypasses Landlock
+8. **Built-in provider shadow**: User overrides for `model_providers.openai.*` are silently ignored. Use a custom provider name like `ext`
+9. **Regional API endpoint**: If your OpenAI key requires `us.api.openai.com`, you MUST use a custom provider with `base_url` set correctly

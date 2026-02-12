@@ -95,14 +95,15 @@ class OpenHandsLauncher(FrameworkLauncher):
         runner_script = f"{sweagent_root}/batch/frameworks/openhands_runner.py"
 
         shell_script = f"""\
+# Load HPC modules BEFORE venv activation so module load python doesn't shadow venv
+{self.get_module_loads()}
+
 # Activate Python venv (OpenHands SDK is pip-installed here)
+# Must come AFTER module loads so venv's Python takes precedence over module's
 source "{sweagent_venv}/bin/activate"
 
 # Add custom tmux 3.5a to PATH (system tmux 3.1c lacks -e flag needed by libtmux)
 export PATH="{home_dir}/local/bin:$PATH"
-
-# Load HPC modules
-{self.get_module_loads()}
 
 # Setup spack/HPCToolkit for profiling
 if [ -f "{home_dir}/spack/share/spack/setup-env.sh" ]; then
@@ -117,7 +118,9 @@ fi
 cd "{workspace}"
 
 # Run OpenHands via SDK runner (headless mode)
-timeout {SESSION_TIMEOUT} python3 "{runner_script}" \\
+# Use PYTHONPATH + -m to avoid openhands.py shadowing the pip openhands package
+# (running as a script adds batch/frameworks/ to sys.path, shadowing the namespace pkg)
+PYTHONPATH="{sweagent_root}:${{PYTHONPATH:-}}" timeout {SESSION_TIMEOUT} python3 -m batch.frameworks.openhands_runner \\
     --model "{model}" \\
     --workspace "{workspace}" \\
     --prompt-file "{prompt_file}" \\

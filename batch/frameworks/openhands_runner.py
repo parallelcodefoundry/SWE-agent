@@ -20,6 +20,38 @@ import os
 import sys
 
 
+# Prevent batch/frameworks/openhands.py from shadowing the pip openhands package.
+# When run directly, Python adds the script's parent directory (batch/frameworks/)
+# to sys.path[0], where our openhands.py launcher shadows the pip openhands
+# namespace package. When run as a module (-m), cwd is used instead.
+# Handle both cases by removing the script's parent dir if present.
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path = [p for p in sys.path if os.path.abspath(p) != _script_dir]
+
+
+def _clean_env_for_tmux():
+    """Remove bulky SLURM/Cray/module env vars to prevent tmux 'command too long'.
+
+    OpenHands SDK passes os.environ to tmux new_session -e flags. On Perlmutter
+    compute nodes, the environment has hundreds of SLURM_*, CRAY_*, and module
+    vars that make the tmux command line exceed the limit. We preserve only
+    the vars the agent actually needs.
+    """
+    keep_prefixes = (
+        "HOME", "USER", "PATH", "SHELL", "TERM", "LANG", "LC_",
+        "VIRTUAL_ENV", "PYTHONPATH", "PYTHON",
+        "OPENAI_", "CODEX_", "ANTHROPIC_",
+        "CUDA", "LD_LIBRARY_PATH", "LIBRARY_PATH",
+        "SWEAGENT_", "SWE_AGENT_",
+        "KRIPKE_", "LAGHOS_", "LULESH_", "QUICKSILVER_",
+        "INSIDE_BATCH_RUN", "HF_HOME", "XDG_",
+        "OPENMPI", "MPI", "OMPI_",
+    )
+    to_remove = [k for k in os.environ if not any(k.startswith(p) for p in keep_prefixes)]
+    for k in to_remove:
+        del os.environ[k]
+
+
 def main():
     parser = argparse.ArgumentParser(description="OpenHands SDK headless runner")
     parser.add_argument("--model", required=True, help="Model name (litellm format)")
@@ -30,6 +62,9 @@ def main():
     parser.add_argument("--api-base", default=None, help="API base URL (overrides env)")
     parser.add_argument("--api-key", default=None, help="API key (overrides env)")
     args = parser.parse_args()
+
+    # Clean env vars before OpenHands SDK copies them to tmux -e flags
+    _clean_env_for_tmux()
 
     # Register tools before creating agent
     from openhands.tools.terminal import TerminalTool  # noqa: F401

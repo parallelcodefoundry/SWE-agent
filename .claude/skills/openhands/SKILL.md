@@ -134,3 +134,11 @@ For programmatic evaluation, see `openhands.core.main` (`run_controller` API). F
 3. **GPU contention:** If running vLLM + benchmarks on same node, use TP=2 for vLLM to leave GPUs free.
 4. **litellm model names:** Use litellm format, e.g. `openai/gpt-4o`, `anthropic/claude-sonnet-4-5-20250929`; for local vLLM: `openai/openai/MODEL_NAME`.
 5. **V0 deprecation (April 2026):** Legacy eval APIs in `openhands.core.main` will be removed; plan migration to Agent SDK.
+
+## Perlmutter-Specific Fixes (Validated Session 9)
+
+6. **tmux 3.1c lacks `-e` flag:** System tmux is 3.1c; libtmux 0.53.0 needs `new-session -e` (added in tmux 3.2). Built tmux 3.5a at `~/local/bin/tmux`. OpenHands launcher prepends it to PATH.
+7. **tmux "command too long":** Compute nodes have hundreds of SLURM/Cray env vars. OpenHands SDK passes `os.environ` to `tmux new_session -e` flags, exceeding the command line limit. Fix: `openhands_runner.py` strips bulky env vars before SDK init.
+8. **`module load python` shadows venv:** Must load modules BEFORE activating the sweagent venv, otherwise module's Python overrides venv Python and pip packages (like openhands) aren't found.
+9. **openhands.py shadows pip openhands:** `batch/frameworks/openhands.py` conflicts with the pip `openhands` namespace package. Fix: `openhands_runner.py` is invoked via `python -m batch.frameworks.openhands_runner` (adds cwd to sys.path instead of script dir).
+10. **pip openhands v1.2.1 is SDK/TUI only:** No `openhands.core.main`. Use the SDK runner approach (`openhands_runner.py`) instead of the full framework.
