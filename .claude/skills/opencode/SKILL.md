@@ -97,7 +97,9 @@ opencode run [message..] [flags]
 | `--title "text"` | Set session title |
 | `--variant name` | Reasoning effort variant |
 
-**Critical behavior:** In `run` mode, the `question` tool is **auto-denied** (no user interaction), `plan_enter`/`plan_exit` are auto-denied, and permission requests are auto-rejected. Set `"permission": "allow"` in config for full automation.
+**Critical behavior:** In `run` mode, the `question` tool is **auto-denied** (no user interaction), `plan_enter`/`plan_exit` are auto-denied, and **all permission requests are auto-rejected** (`run.ts:512-523` publishes `permission.asked` events and auto-replies with `reply: "reject"`). Every tool permission MUST evaluate to "allow" in the ruleset — anything that evaluates to "ask" gets rejected.
+
+**CRITICAL — Permission config format:** Use `"permission": {"*": "allow"}` (object form), NOT `"permission": "allow"` (string). The `OPENCODE_CONFIG_CONTENT` env var is merged via `JSON.parse()` without Zod schema validation (`config.ts:179`), so the `permissionTransform` that converts `"allow"` → `{"*": "allow"}` never runs. The raw string `"allow"` gets split by `Object.entries()` into per-character rules with invalid action values (`"a"`, `"l"`, `"l"`, `"o"`, `"w"`), causing all tools to fail with Zod validation errors.
 
 ## JSON Output (`--format json`)
 
@@ -148,7 +150,7 @@ export OPENCODE_CONFIG_CONTENT='{
     }
   },
   "model": "local-vllm/gpt-oss-120b",
-  "permission": "allow"
+  "permission": {"*": "allow"}
 }'
 
 cd "$APP_ROOT"
@@ -161,10 +163,20 @@ Workflow: build baseline, run baseline, explore code, optimize, rebuild, test." 
 
 For SDK-based or server-attach approaches, see full docs at https://opencode.ai/docs.
 
+## Debugging Tool Errors
+
+The JSONL trajectory from `--format json` only captures model text, NOT tool call results or errors. To see actual tool errors:
+
+1. **Session storage**: `~/.local/share/opencode/storage/part/` — Full tool call details (input, output, error) stored per-part as JSON files. Look for `"status": "error"` entries.
+2. **OpenCode logs**: `~/.local/share/opencode/log/` — Contains full permission ruleset and startup diagnostics.
+
 ## Common Issues
 
 1. **Bun unavailable:** Use `module load nodejs` and install via npm.
-2. **Permission auto-reject:** Set `"permission": "allow"` in config for headless runs.
-3. **No step template:** Agent sees raw tool output; make harness scripts output clear text.
-4. **No submit command:** Use `steps` limit and check `git diff` for final state.
-5. **Bash timeout:** Set `OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS` for long builds.
+2. **Permission string bug (all tools fail with Zod errors):** `"permission": "allow"` (string) causes `Object.entries("allow")` to split into per-character rules `{action:"a"}, {action:"l"}, ...` — invalid Zod enum values. Fix: use `"permission": {"*": "allow"}` (object form). See "Critical — Permission config format" above.
+3. **Permission auto-reject in headless mode:** `opencode run` auto-rejects all `permission.asked` events at `run.ts:512-523`. ALL permissions must evaluate to "allow" in the ruleset, never "ask".
+4. **No step template:** Agent sees raw tool output; make harness scripts output clear text.
+5. **No submit command:** Use `steps` limit and check `git diff` for final state.
+6. **Bash timeout:** Set `OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS` for long builds.
+7. **Skill scanning:** OpenCode scans `EXTERNAL_DIRS = [".claude", ".agents"]` for `skills/**/SKILL.md`, adding `external_directory` permission rules per skill dir.
+8. **JSONL trajectory incomplete:** Use `~/.local/share/opencode/storage/part/` to see actual tool call errors (see "Debugging Tool Errors" above).

@@ -156,6 +156,22 @@ For profiling tools, add to PATH: `tools/hpctoolkit/bin`, `tools/hatchet/bin`.
 - **Must set `wire_api=chat`** for vLLM (SWE-agent uses litellm)
 - **Sandboxed by default** — use `--dangerously-bypass-approvals-and-sandbox` for open mode
 
+## Shell Command Timeout (Critical for HPC Benchmarks)
+
+**Default timeout: 10 seconds** (`DEFAULT_EXEC_COMMAND_TIMEOUT_MS = 10_000` in `codex-rs/core/src/exec.rs:38`). This kills any command that runs longer than 10s. HPC benchmark harnesses (`qs_run`, `lulesh_run`, `kripke_run`, `laghos_run`) need 60-120+ seconds.
+
+**Symptoms of timeout**: `aggregated_output: ""` and `exit_code: null` in the JSONL trajectory. The process is killed silently.
+
+**No CLI override exists.** The timeout can ONLY be set per-command by the model via `LocalShellExecAction.timeout_ms`. There is no CLI flag or `config.toml` field. Rebuilding from Rust source is the only other option.
+
+**Workaround**: Include explicit timeout guidance in the prompt and `AGENTS.md`:
+```
+CRITICAL: Set timeout_ms: 300000 (5 minutes) for all build/run harness commands.
+If a command returns empty output with null exit code, it was killed by timeout.
+```
+
+Also set `PYTHONUNBUFFERED=1` in the environment so harness scripts flush output immediately, giving partial output even if timeout occurs.
+
 ## Common Issues
 
 1. **API 404/unsupported**: Forgot `wire_api = "chat"` for vLLM
@@ -167,3 +183,4 @@ For profiling tools, add to PATH: `tools/hpctoolkit/bin`, `tools/hatchet/bin`.
 7. **Lustre + Landlock**: `--dangerously-bypass-approvals-and-sandbox` bypasses Landlock
 8. **Built-in provider shadow**: User overrides for `model_providers.openai.*` are silently ignored. Use a custom provider name like `ext`
 9. **Regional API endpoint**: If your OpenAI key requires `us.api.openai.com`, you MUST use a custom provider with `base_url` set correctly
+10. **Harness commands return empty output**: 10s default timeout is killing the process. See "Shell Command Timeout" section above
