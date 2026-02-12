@@ -8,7 +8,7 @@ For setup prerequisites (modules, Perlmutter, salloc), see the `perlmutter` skil
 # Build apps first (one-time, must be on compute node)
 ./scripts/setup_apps.sh
 
-# Run full benchmark (all apps, all commits, no profiling)
+# Run full benchmark (all apps, all commits, no profiling) — defaults to SWE-agent
 sbatch batch/run_benchmark.sh
 
 # Common flags
@@ -18,6 +18,11 @@ sbatch batch/run_benchmark.sh --both                      # run with AND without
 sbatch batch/run_benchmark.sh --num-probs 2 --num-runs 3  # limit commits, repeat runs
 sbatch batch/run_benchmark.sh --instance-id kripke__07b2b60d  # single commit
 sbatch batch/run_benchmark.sh --base --lulesh             # base mode (no expert comparison)
+
+# Multi-framework: specify --framework to use a different agent
+sbatch batch/run_benchmark.sh --base --lulesh --framework opencode --external-model
+sbatch batch/run_benchmark.sh --base --lulesh --framework openhands --external-model
+sbatch batch/run_benchmark.sh --base --lulesh --framework codex --external-model
 ```
 
 ## Benchmark Mode vs Base Mode
@@ -62,9 +67,9 @@ The agent never self-reports performance. Every measurement is a direct comparis
 ## Results
 
 Output lands in `batch_results/benchmark_<SLURM_JOBID>/`:
-- `benchmark_results.json` — per-instance: `instance_id`, `success`, `agent_speedup`, `agent_correctness`, `file_overlap`, `patch_similarity`, `duration_seconds`
+- `benchmark_results.json` — per-instance: `instance_id`, `framework`, `success`, `agent_speedup`, `agent_correctness`, `file_overlap`, `patch_similarity`, `duration_seconds`
 - `*_agent.patch` — the agent's generated diff
-- `*_config.yaml` — the SWE-agent config used
+- `*_config.yaml` / `*_opencode_config.json` / `*_openhands_config.toml` — framework-specific config
 - `workspaces/` — cloned repos at base_commit (benchmark mode only)
 - Trajectories in `trajectories/` (SWE-agent's step-by-step execution log)
 
@@ -82,10 +87,24 @@ Output lands in `batch_results/benchmark_<SLURM_JOBID>/`:
 3. **Orchestration**: add to `setup_apps.sh`, `reset_test_repos.sh`, `hpc_benchmark_runner.py` (`REPO_CONFIG_TEMPLATES`), `run_benchmark.sh` (CLI flag).
 4. **Dataset** (optional): add entries to `curated_perf_commits.json`.
 
+## Multi-Framework Support
+
+The `--framework` flag selects which agent framework to use. All frameworks share the same workspace setup, harness tools, patch extraction, and evaluation.
+
+| Framework | Flag | Config | Launch | Notes |
+|-----------|------|--------|--------|-------|
+| SWE-agent | `--framework sweagent` (default) | YAML from config/hpc/ | `sweagent run --config` | Has submit command, YAML tool bundles |
+| OpenCode | `--framework opencode` | JSON env var | `opencode run --format json` | Node.js (nvm), no submit |
+| OpenHands | `--framework openhands` | TOML | `openhands --headless -t` | Python, local runtime, finish action |
+| Codex CLI | `--framework codex` | `-c` flags + AGENTS.md | `codex exec --yolo` | Node.js (nvm), wire_api=chat for vLLM |
+
+Implementation: `batch/frameworks/` contains a `FrameworkLauncher` ABC and per-framework subclasses. The `HPCBenchmarkRunner` delegates config generation, launch command building, and trajectory discovery to the active launcher.
+
 ## Adding a New Framework
 
-The batch scripts will be expanded with a `--framework` flag. Each framework needs:
-1. A launch mechanism (how to start the agent — SWE-agent uses `sweagent run`, Openhands uses `openhands --headless`, etc.)
-2. Tool integration (how the framework discovers and calls harness tools — varies by framework)
-3. Patch extraction (how to get the agent's final diff — git diff, output parsing, etc.)
-4. Same evaluation: the harness tools and correctness checks are framework-agnostic, so results are directly comparable.
+To add a new agent framework:
+1. Create `batch/frameworks/myframework.py` with a subclass of `FrameworkLauncher`
+2. Implement `generate_config()`, `build_launch_command()`, `find_trajectory()`
+3. Register in `batch/frameworks/__init__.py`'s `get_launcher()` factory
+4. Add prompt completion instructions in `batch/frameworks/prompt.py`'s `COMPLETION_INSTRUCTIONS`
+5. Add choice to CLI args in `hpc_benchmark_runner.py` and `run_benchmark.sh`

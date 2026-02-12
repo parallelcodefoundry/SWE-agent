@@ -43,6 +43,14 @@ config/hpc/
 batch/
   run_benchmark.sh                              # SLURM entrypoint (vLLM + benchmark orchestration)
   hpc_benchmark_runner.py                       # Both modes: benchmark (agent vs expert) and base (--base)
+  frameworks/                                   # Multi-framework support
+    __init__.py                                 # get_launcher() factory
+    base.py                                     # FrameworkLauncher ABC + shared helpers
+    prompt.py                                   # Per-app prompt templates for all frameworks
+    sweagent.py                                 # SWE-agent launcher (YAML configs)
+    opencode.py                                 # OpenCode launcher (JSON config, opencode run)
+    openhands.py                                # OpenHands launcher (TOML config, headless mode)
+    codex.py                                    # Codex CLI launcher (AGENTS.md, codex exec)
 dataset/
   curated_perf_commits.json                     # 9 expert optimization commits across 4 apps
 scripts/
@@ -75,10 +83,36 @@ pristine repo ──clone──→ workspace (checked out to base_commit)
                     benchmark_results.json
 ```
 
+## Multi-Framework Support
+
+The benchmark pipeline supports 4 agent frameworks via `--framework`:
+
+| Framework | Config Format | Launch Command | Completion Signal |
+|-----------|--------------|----------------|-------------------|
+| SWE-agent (default) | YAML | `sweagent run --config` | `submit` command |
+| OpenCode | JSON env var | `opencode run --format json` | Stops when done |
+| OpenHands | TOML | `openhands --headless -t` | `finish` action |
+| Codex CLI | `-c` flags + AGENTS.md | `codex exec --yolo` | Stops when done |
+
+All frameworks share:
+- Same harness tools (build/run scripts in PATH)
+- Same workspace setup (rsync from test repo or git clone from pristine)
+- Same patch extraction (`git diff` from workspace)
+- Same result format (`benchmark_results.json` with `framework` field)
+- Equivalent prompts (tool names adapted per framework)
+- SWE_AGENT_ROOT env var (harness scripts need it)
+- 3600s session timeout via `timeout` command
+
+```bash
+# Cross-framework comparison
+bash batch/run_benchmark.sh --base --lulesh --framework sweagent
+bash batch/run_benchmark.sh --base --lulesh --framework opencode --external-model
+bash batch/run_benchmark.sh --base --lulesh --framework openhands --external-model
+bash batch/run_benchmark.sh --base --lulesh --framework codex --external-model
+```
+
 ## Expansion Plan
 
 **More applications**: GPA-Benchmark (20+ GPU anti-pattern benchmarks) and SWE-fficiency (498 Python optimization tasks) will be added as additional task sources. Each needs harnesses following the same build/run/correctness pattern.
 
-**More frameworks**: Openhands, Codex CLI, OpenCode, and Cursor will be integrated into `batch/run_benchmark.sh` via framework-specific flags (e.g., `--framework openhands`). Each framework will use the same harness tools and evaluation, just invoked differently. The batch scripts will be expanded to handle framework selection, and results will be collected in a unified format for cross-framework comparison.
-
-**Unified benchmark**: The end state is a single `run_benchmark.sh` invocation that can run any combination of framework × application × profiling variant, producing directly comparable results.
+**Unified benchmark**: The pipeline can now run any combination of framework × application × profiling variant, producing directly comparable results.
