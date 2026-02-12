@@ -24,6 +24,13 @@ CRITICAL BUILD REQUIREMENT:
 - Do NOT edit CMakeLists.txt or build configuration. The build harness handles all compiler flags and CUDA setup. Focus ONLY on optimizing source code (.cpp, .h files).
 - If the build fails, call kripke_build --clean --arch CUDA for a clean rebuild. Do NOT try to fix build issues manually.
 
+FORBIDDEN ACTIONS (will break the build permanently):
+- NEVER delete, rename, or move any Makefile, CMakeLists.txt, or build configuration file
+- NEVER delete or rewrite entire source files — make targeted edits only
+- NEVER remove #include directives, class definitions, or function signatures that other files depend on
+- NEVER disable or remove CUDA/GPU code paths
+- Keep changes small and incremental. Test after EVERY edit.
+
 OPTIMIZATION SCOPE:
 - Explore the ENTIRE repository for optimization opportunities
 - Consider algorithmic improvements, data structure changes, memory layouts, etc.
@@ -41,7 +48,14 @@ CRITICAL BUILD REQUIREMENT:
 FILE EDITING GUIDANCE:
 - Primary focus: laghos.cpp, laghos_solver.cpp, laghos_assembly.cpp
 - Do NOT edit Makefiles, CMakeLists.txt, or build configuration. The build harness handles all compiler flags and CUDA setup. Focus ONLY on optimizing source code (.cpp, .cu, .cc, .hh files).
-- Do NOT disable CUDA/GPU support - the goal is GPU performance optimization""",
+- Do NOT disable CUDA/GPU support - the goal is GPU performance optimization
+
+FORBIDDEN ACTIONS (will break the build permanently):
+- NEVER delete, rename, or move any Makefile, CMakeLists.txt, or build configuration file
+- NEVER delete or rewrite entire source files — make targeted edits only
+- NEVER remove #include directives, class definitions, or function signatures that other files depend on
+- NEVER disable or remove CUDA/GPU code paths
+- Keep changes small and incremental. Test after EVERY edit.""",
 
     "lulesh": """\
 CRITICAL BUILD REQUIREMENT:
@@ -54,7 +68,14 @@ CRITICAL BUILD REQUIREMENT:
 FILE EDITING GUIDANCE:
 - Primary focus: cuda/src/lulesh.cu, cuda/src/allocator.cu
 - Do NOT edit Makefiles or build configuration. The build harness handles all compiler flags and CUDA setup. Focus ONLY on optimizing source code (.cu, .cpp files).
-- Do NOT disable CUDA/GPU support - the goal is GPU performance optimization""",
+- Do NOT disable CUDA/GPU support - the goal is GPU performance optimization
+
+FORBIDDEN ACTIONS (will break the build permanently):
+- NEVER delete, rename, or move any Makefile, CMakeLists.txt, or build configuration file
+- NEVER delete or rewrite entire source files — make targeted edits only
+- NEVER remove #include directives, class definitions, or function signatures that other files depend on
+- NEVER disable or remove CUDA/GPU code paths
+- Keep changes small and incremental. Test after EVERY edit.""",
 
     "quicksilver": """\
 CRITICAL BUILD REQUIREMENT:
@@ -67,7 +88,14 @@ CRITICAL BUILD REQUIREMENT:
 FILE EDITING GUIDANCE:
 - Primary focus: src/*.cc and src/*.hh source files
 - Do NOT edit Makefiles or build configuration. The build harness always overrides CXX and CXXFLAGS. Makefile edits to compiler settings have no effect. Focus ONLY on optimizing source code (.cc, .hh files).
-- Do NOT disable CUDA/GPU support - the goal is GPU performance optimization""",
+- Do NOT disable CUDA/GPU support - the goal is GPU performance optimization
+
+FORBIDDEN ACTIONS (will break the build permanently):
+- NEVER delete, rename, or move any Makefile, CMakeLists.txt, or build configuration file
+- NEVER delete or rewrite entire source files — make targeted edits only
+- NEVER remove #include directives, class definitions, or function signatures that other files depend on
+- NEVER disable or remove CUDA/GPU code paths
+- Keep changes small and incremental. Test after EVERY edit.""",
 }
 
 # =============================================================================
