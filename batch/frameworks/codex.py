@@ -1,7 +1,7 @@
 """Codex CLI framework launcher.
 
 OpenAI Codex CLI uses `codex exec` for non-interactive mode.
-CRITICAL: Must set wire_api=chat for vLLM (defaults to Responses API).
+CRITICAL: wire_api=chat is no longer supported; use wire_api=responses always.
 Config via -c flags. Project context via AGENTS.md in workspace.
 """
 
@@ -16,7 +16,7 @@ class CodexLauncher(FrameworkLauncher):
     """Launcher for the Codex CLI framework.
 
     Generates AGENTS.md for project context, builds shell script that runs
-    `codex exec --yolo` with config overrides via -c flags.
+    `codex exec --dangerously-bypass-approvals-and-sandbox` with config overrides via -c flags.
     """
 
     name = "codex"
@@ -51,13 +51,14 @@ class CodexLauncher(FrameworkLauncher):
             api_base = os.environ.get("OPENAI_API_BASE", "")
             wire_api = "responses"  # External OpenAI uses Responses API
         else:
-            # Local vLLM — MUST use wire_api=chat
+            # Local vLLM
             provider_id = "local-vllm"
             model_id = "gpt-oss-120b"
             api_base = f"http://{self.vllm_host}:{self.vllm_port}/v1"
-            wire_api = "chat"
+            wire_api = "responses"
 
         config_flags = [
+            f"model_providers.{provider_id}.name={provider_id}",
             f"model_providers.{provider_id}.base_url={api_base}",
             f"model_providers.{provider_id}.env_key=OPENAI_API_KEY",
             f"model_providers.{provider_id}.wire_api={wire_api}",
@@ -105,9 +106,10 @@ class CodexLauncher(FrameworkLauncher):
             provider_id = "local-vllm"
             model_id = "gpt-oss-120b"
             api_base = f"http://{self.vllm_host}:{self.vllm_port}/v1"
-            wire_api = "chat"
+            wire_api = "responses"
 
         c_flags = (
+            f'-c "model_providers.{provider_id}.name={provider_id}" '
             f'-c "model_providers.{provider_id}.base_url={api_base}" '
             f'-c "model_providers.{provider_id}.env_key=OPENAI_API_KEY" '
             f'-c "model_providers.{provider_id}.wire_api={wire_api}" '

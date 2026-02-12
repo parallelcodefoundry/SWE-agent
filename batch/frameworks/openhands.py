@@ -1,7 +1,8 @@
 """OpenHands framework launcher.
 
-OpenHands (formerly OpenDevin) uses a CodeActAgent with SDK-based headless mode.
+OpenHands (formerly OpenDevin) uses the SDK for headless batch execution.
 The openhands CLI is a TUI; for batch execution we use the SDK via openhands_runner.py.
+Requires tmux >= 3.2 (installed at ~/local/bin/tmux for Perlmutter compatibility).
 """
 
 import os
@@ -15,7 +16,8 @@ class OpenHandsLauncher(FrameworkLauncher):
     """Launcher for the OpenHands framework.
 
     Uses the OpenHands SDK (LocalConversation + Agent) for headless execution.
-    The openhands CLI only supports interactive TUI mode.
+    Requires custom tmux 3.5a at ~/local/bin/ since Perlmutter system tmux 3.1c
+    doesn't support the -e flag needed by libtmux.
     """
 
     name = "openhands"
@@ -95,6 +97,9 @@ class OpenHandsLauncher(FrameworkLauncher):
         shell_script = f"""\
 # Activate Python venv (OpenHands SDK is pip-installed here)
 source "{sweagent_venv}/bin/activate"
+
+# Add custom tmux 3.5a to PATH (system tmux 3.1c lacks -e flag needed by libtmux)
+export PATH="{home_dir}/local/bin:$PATH"
 
 # Load HPC modules
 {self.get_module_loads()}
