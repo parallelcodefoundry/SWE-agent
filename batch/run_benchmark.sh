@@ -22,10 +22,13 @@
 #   BENCHMARK MODE (default): Runs on curated commits, compares agent vs expert patches
 #   BASE MODE (--base):       Runs on current test repo state, no expert comparison
 #
+# Multi-framework support:
+#   --framework {sweagent,opencode,openhands,codex}  (default: sweagent)
+#
 # Multi-node execution:
 #   Automatically allocates N+1 nodes (1 for vLLM, 1 per app).
 #   With --external-model, allocates N nodes (no vLLM node needed).
-#   All SWE-agent instances run in parallel on dedicated nodes.
+#   All agent instances run in parallel on dedicated nodes.
 #
 # This script:
 # 1. Auto-calculates required nodes and self-submits via sbatch (if not already in a job)
@@ -62,7 +65,7 @@ DATASET="${SWEAGENT_ROOT}/dataset/curated_perf_commits.json"
 #===============================================================================
 show_help() {
     cat << EOF
-HPC Benchmark Runner - Compare SWE-agent patches vs expert optimizations
+HPC Benchmark Runner - Compare agent patches vs expert optimizations
 
 Usage: $(basename "$0") [OPTIONS]
 
@@ -72,6 +75,10 @@ Application Filters (combine multiple to run subset):
   --kripke              Include Kripke instances
   --laghos              Include Laghos instances
   (If none specified, all applications are included)
+
+Framework Selection:
+  --framework NAME      Agent framework: sweagent, opencode, openhands, codex
+                        (default: sweagent)
 
 Run Configuration:
   --base                Run on current state of test repos (skip dataset/git checkout)
@@ -126,6 +133,12 @@ Examples:
 
   # Use existing vLLM server (single-node, legacy mode)
   bash run_benchmark.sh --skip-vllm --quicksilver
+
+  # Run with OpenCode framework
+  bash run_benchmark.sh --base --lulesh --framework opencode --external-model
+
+  # Run with Codex CLI framework
+  bash run_benchmark.sh --base --kripke --framework codex --external-model
 EOF
 }
 
@@ -140,6 +153,7 @@ NUM_RUNS=1
 NUM_PROBS=""
 PROFILING="no_profiling"
 MODEL_NAME=""
+FRAMEWORK="sweagent"
 APPS=()
 INSTANCE_IDS=()
 
@@ -188,6 +202,15 @@ while [[ $# -gt 0 ]]; do
             ;;
         --model-name)
             MODEL_NAME="$2"
+            shift 2
+            ;;
+        --framework)
+            FRAMEWORK="$2"
+            if [[ ! "$FRAMEWORK" =~ ^(sweagent|opencode|openhands|codex)$ ]]; then
+                echo "ERROR: Unknown framework: $FRAMEWORK"
+                echo "  Valid values: sweagent, opencode, openhands, codex"
+                exit 1
+            fi
             shift 2
             ;;
         --instance-id)
@@ -321,6 +344,7 @@ for app in "${APPS[@]}"; do
 done
 echo ""
 echo "Configuration:"
+echo "  Framework: ${FRAMEWORK}"
 echo "  SWE-Agent root: ${SWEAGENT_ROOT}"
 if [[ "$BASE_MODE" == "true" ]]; then
     echo "  Mode: BASE (run on current test repos)"
@@ -578,6 +602,7 @@ build_runner_args() {
         "--app" "${app}"
         "--vllm-host" "${VLLM_HOST}"
         "--vllm-port" "${VLLM_PORT}"
+        "--framework" "${FRAMEWORK}"
     )
 
     if [[ -n "$MODEL_NAME" ]]; then
@@ -660,6 +685,14 @@ for run_num in $(seq 1 $NUM_RUNS); do
                     module load cudatoolkit/12.4 2>/dev/null || true
                     module load python 2>/dev/null || true
 
+                    # Setup Node.js via nvm (needed for opencode/codex frameworks)
+                    if [[ '${FRAMEWORK}' == 'opencode' ]] || [[ '${FRAMEWORK}' == 'codex' ]]; then
+                        if [ -f \"${HOME}/.nvm/nvm.sh\" ]; then
+                            source \"${HOME}/.nvm/nvm.sh\"
+                            nvm use 22 2>/dev/null || echo 'Warning: Node 22 not available'
+                        fi
+                    fi
+
                     # Setup spack/HPCToolkit
                     if [ -f \"${HOME}/spack/share/spack/setup-env.sh\" ]; then
                         source \"${HOME}/spack/share/spack/setup-env.sh\"
@@ -680,6 +713,7 @@ for run_num in $(seq 1 $NUM_RUNS); do
                     export SWEAGENT_VENV='${SWEAGENT_VENV}'
                     export SWEAGENT_ROOT='${SWEAGENT_ROOT}'
                     export HF_HOME='${HF_HOME}'
+                    export FRAMEWORK='${FRAMEWORK}'
 
                     python3 batch/hpc_benchmark_runner.py ${RUNNER_ARGS_STR}
                 " > "${RUN_OUTPUT_DIR}/agent.log" 2>&1 &

@@ -2,13 +2,15 @@
 """
 HPC Benchmark Runner - Compares agent patches vs expert patches
 
-Runs SWE-agent on pre-optimization commits from the curated dataset,
-then compares the agent's solution with the expert's actual optimization.
+Runs an agent framework (SWE-agent, OpenCode, OpenHands, or Codex CLI) on
+pre-optimization commits from the curated dataset, then compares the agent's
+solution with the expert's actual optimization.
 
 Usage:
     python3 batch/hpc_benchmark_runner.py --dataset dataset/curated_perf_commits.json
     python3 batch/hpc_benchmark_runner.py --app quicksilver --num-probs 2
     python3 batch/hpc_benchmark_runner.py --instance-id kripke__07b2b60d
+    python3 batch/hpc_benchmark_runner.py --base --lulesh --framework opencode
 """
 
 import argparse
@@ -33,6 +35,7 @@ class BenchmarkResult:
     instance_id: str
     repo_name: str
     optimization_type: str
+    framework: str = "sweagent"
     run_number: int = 1
 
     # Run status
@@ -105,7 +108,8 @@ class HPCBenchmarkRunner:
         base_mode: bool = False,
         vllm_host: str = "127.0.0.1",
         vllm_port: int = 8008,
-        model_name: Optional[str] = None
+        model_name: Optional[str] = None,
+        framework: str = "sweagent",
     ):
         self.output_dir = output_dir
         self.trajectory_dir = trajectory_dir
@@ -115,8 +119,20 @@ class HPCBenchmarkRunner:
         self.vllm_host = vllm_host
         self.vllm_port = vllm_port
         self.model_name = model_name
+        self.framework = framework
         self.sweagent_root = Path(__file__).parent.parent
         self.results: list[BenchmarkResult] = []
+
+        # Create framework launcher
+        from batch.frameworks import get_launcher
+        self.launcher = get_launcher(
+            framework=framework,
+            sweagent_root=self.sweagent_root,
+            vllm_host=vllm_host,
+            vllm_port=vllm_port,
+            model_name=model_name,
+            profiling=profiling,
+        )
 
         # Build repo configs with absolute pristine and test paths
         self.repo_configs = {}
@@ -297,141 +313,34 @@ class HPCBenchmarkRunner:
             self.log(f"  ERROR setting up workspace: {e.stderr.decode() if e.stderr else str(e)}")
             return None
 
-    def _apply_model_overrides(self, config_content: str) -> str:
-        """Override model name and cost limit when using an external model"""
-        if self.model_name:
-            config_content = config_content.replace(
-                'name: openai/openai/gpt-oss-120b',
-                f'name: {self.model_name}'
-            )
-            # Enable cost limit for external (paid) APIs
-            config_content = config_content.replace(
-                'per_instance_cost_limit: 0',
-                'per_instance_cost_limit: 1.0'
-            )
-            # Remove api_base and api_key so LiteLLM uses env vars
-            import re
-            config_content = re.sub(
-                r'^\s*api_base:.*$\n?', '', config_content, flags=re.MULTILINE
-            )
-            config_content = re.sub(
-                r'^\s*api_key:.*$\n?', '', config_content, flags=re.MULTILINE
-            )
-        return config_content
-
-    def _inject_sweagent_root(self, config_content: str) -> str:
-        """Inject SWE_AGENT_ROOT into config env_variables.
-
-        SWE-agent copies tools to /tmp/sweagent/, so script-relative paths
-        can't find pristine repos. This env var lets tools locate them.
-        """
-        import re
-        sweagent_root_line = f"      SWE_AGENT_ROOT: {self.sweagent_root}"
-        # Insert after the env_variables: block header
-        config_content = re.sub(
-            r'(env_variables:\n)',
-            f'\\1{sweagent_root_line}\n',
-            config_content,
-            count=1
-        )
-        return config_content
-
     def create_instance_config(self, instance: dict, workspace: Path) -> Path:
-        """Create a temporary config file for this specific instance"""
-        repo_name = instance["repo_name"]
-        instance_id = instance["instance_id"]
-        base_config = self.repo_configs[repo_name]["config_template"].format(
-            profiling=self.profiling
+        """Create framework-specific config for a benchmark instance.
+
+        Delegates to the framework launcher's generate_config().
+        """
+        return self.launcher.generate_config(
+            repo_name=instance["repo_name"],
+            workspace=workspace,
+            instance_id=instance["instance_id"],
+            output_dir=self.output_dir,
         )
-
-        # Read base config
-        base_config_path = self.sweagent_root / base_config
-        with open(base_config_path) as f:
-            config_content = f.read()
-
-        # Modify to use the workspace
-        # Replace the repo path with workspace (derive from sweagent_root, not hardcoded)
-        original_path = str(self.sweagent_root / f"{repo_name.capitalize()}_test")
-        config_content = config_content.replace(original_path, str(workspace))
-
-        # Also update ROOT environment variable
-        root_var = f"{repo_name.upper()}_ROOT"
-        config_content = config_content.replace(
-            f"{root_var}: {original_path}",
-            f"{root_var}: {workspace}"
-        )
-
-        # Inject SWE_AGENT_ROOT so tools can find pristine repos
-        config_content = self._inject_sweagent_root(config_content)
-
-        # Override api_base to point to the (possibly remote) vLLM server
-        config_content = config_content.replace(
-            'api_base: "http://127.0.0.1:8008/v1"',
-            f'api_base: "http://{self.vllm_host}:{self.vllm_port}/v1"'
-        )
-
-        # Override model name and cost limit for external APIs
-        config_content = self._apply_model_overrides(config_content)
-
-        # Write modified config
-        instance_config = self.output_dir / f"{instance_id}_config.yaml"
-        with open(instance_config, "w") as f:
-            f.write(config_content)
-
-        return instance_config
 
     def run_agent(self, instance: dict, workspace: Path, config_path: Path) -> tuple[bool, str, Optional[str]]:
-        """Run SWE-agent on the workspace and capture the patch"""
+        """Run the agent framework on the workspace and capture the patch.
+
+        Delegates to the framework launcher's build_launch_command(),
+        extract_patch(), and find_trajectory().
+        """
         instance_id = instance["instance_id"]
-        sweagent_venv = os.environ.get(
-            "SWEAGENT_VENV",
-            os.path.join(os.environ.get("HOME", ""), "envs", "sweagent")
+
+        shell_script = self.launcher.build_launch_command(
+            repo_name=instance["repo_name"],
+            workspace=workspace,
+            config_path=config_path,
+            output_dir=self.output_dir,
+            trajectory_dir=self.trajectory_dir,
+            instance_id=instance_id,
         )
-        vllm_host = self.vllm_host
-        vllm_port = self.vllm_port
-        home_dir = os.environ.get("HOME", str(Path.home()))
-
-        # Build shell script with podman wrapper setup and HPCToolkit
-        shell_script = f"""
-cd {self.sweagent_root}
-source {sweagent_venv}/bin/activate
-
-# Load modules for HPC environment
-module load openmpi/5.0.7 2>/dev/null || true
-module load cudatoolkit/12.4 2>/dev/null || true
-module load python 2>/dev/null || true
-
-# Setup spack and HPCToolkit for profiling tools
-if [ -f "{home_dir}/spack/share/spack/setup-env.sh" ]; then
-    source "{home_dir}/spack/share/spack/setup-env.sh"
-    spack load hpctoolkit 2>/dev/null || true
-fi
-
-# Setup podman wrapper to use podman-hpc
-unalias podman 2>/dev/null || true
-hash -r
-mkdir -p "{home_dir}/bin"
-cat > "{home_dir}/bin/podman" <<'SH'
-#!/usr/bin/env bash
-real=/usr/bin/podman
-hpc=/usr/bin/podman-hpc
-case "$1" in
-  -h|--help|help|version|--version) exec "$real" "$@";;
-  *) if command -v "$hpc" >/dev/null 2>&1; then exec "$hpc" "$@"; else exec "$real" "$@"; fi ;;
-esac
-SH
-chmod +x "{home_dir}/bin/podman"
-export PATH="{home_dir}/bin:$PATH"
-hash -r
-
-# Use real API credentials for external models, vLLM dummy key otherwise
-export OPENAI_API_BASE="{os.environ.get('OPENAI_API_BASE', f'http://{vllm_host}:{vllm_port}/v1')}"
-export OPENAI_API_KEY="{os.environ.get('OPENAI_API_KEY', 'dummy-key-ok')}"
-sweagent run --config {config_path} \\
-    --agent.model.max_input_tokens=120000 \\
-    --agent.model.max_output_tokens=120000 \\
-    --output_dir {self.trajectory_dir / instance_id}
-"""
 
         # Write real-time agent log alongside benchmark.log
         agent_realtime_log = self.output_dir / f"{instance_id}_agent_realtime.log"
@@ -444,30 +353,14 @@ sweagent run --config {config_path} \\
                     stdout=log_fh,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    timeout=3600
+                    timeout=3900  # slightly beyond SESSION_TIMEOUT to allow cleanup
                 )
 
             success = proc.returncode == 0
-
-            # Get the agent's patch (diff from base_commit)
-            patch_result = subprocess.run(
-                ["git", "diff", "HEAD"],
-                cwd=workspace,
-                capture_output=True,
-                text=True
+            agent_patch = self.launcher.extract_patch(workspace)
+            traj_file = self.launcher.find_trajectory(
+                self.output_dir, self.trajectory_dir, instance_id
             )
-            agent_patch = patch_result.stdout
-
-            # Find trajectory file in our custom trajectory directory
-            traj_instance_dir = self.trajectory_dir / instance_id
-            traj_files = list(traj_instance_dir.glob("**/*.traj")) if traj_instance_dir.exists() else []
-
-            # Fallback to default location
-            if not traj_files:
-                traj_dir = self.sweagent_root / "trajectories"
-                traj_files = list(traj_dir.glob("**/*.traj"))
-
-            traj_file = str(max(traj_files, key=lambda p: p.stat().st_mtime)) if traj_files else None
 
             return success, agent_patch, traj_file
 
@@ -527,6 +420,7 @@ sweagent run --config {config_path} \\
             instance_id=instance_id,
             repo_name=repo_name,
             optimization_type=instance["optimization_type"],
+            framework=self.framework,
             run_number=self.run_number,
             success=False,
             expert_commit=instance.get("commit_hash", ""),
@@ -598,7 +492,7 @@ sweagent run --config {config_path} \\
         self.log(f"  Workspace: {workspace}")
 
         # Run agent
-        self.log(f"  Running SWE-agent...")
+        self.log(f"  Running {self.framework} agent...")
         success, agent_patch, traj_file = self.run_agent(instance, workspace, config_path)
 
         result.duration_seconds = time.time() - start_time
@@ -649,45 +543,17 @@ sweagent run --config {config_path} \\
         return result
 
     def create_base_config(self, repo_name: str, instance_id: str, workspace: Optional[Path] = None) -> Path:
-        """Create a config file for base mode (using test repo or isolated workspace)"""
-        base_config = self.repo_configs[repo_name]["config_template"].format(
-            profiling=self.profiling
+        """Create framework-specific config for base mode.
+
+        Delegates to the framework launcher's generate_config().
+        """
+        ws = workspace or Path(self.repo_configs[repo_name]["test"])
+        return self.launcher.generate_config(
+            repo_name=repo_name,
+            workspace=ws,
+            instance_id=instance_id,
+            output_dir=self.output_dir,
         )
-
-        # Read base config
-        base_config_path = self.sweagent_root / base_config
-        with open(base_config_path) as f:
-            config_content = f.read()
-
-        # If workspace provided, substitute repo paths to use isolated copy
-        if workspace is not None:
-            original_path = str(self.sweagent_root / f"{repo_name.capitalize()}_test")
-            config_content = config_content.replace(original_path, str(workspace))
-
-            root_var = f"{repo_name.upper()}_ROOT"
-            config_content = config_content.replace(
-                f"{root_var}: {original_path}",
-                f"{root_var}: {workspace}"
-            )
-
-        # Inject SWE_AGENT_ROOT so tools can find pristine repos
-        config_content = self._inject_sweagent_root(config_content)
-
-        # Override api_base to point to the (possibly remote) vLLM server
-        config_content = config_content.replace(
-            'api_base: "http://127.0.0.1:8008/v1"',
-            f'api_base: "http://{self.vllm_host}:{self.vllm_port}/v1"'
-        )
-
-        # Override model name and cost limit for external APIs
-        config_content = self._apply_model_overrides(config_content)
-
-        # Write modified config
-        instance_config = self.output_dir / f"{instance_id}_config.yaml"
-        with open(instance_config, "w") as f:
-            f.write(config_content)
-
-        return instance_config
 
     def run_all(
         self,
@@ -728,6 +594,7 @@ sweagent run --config {config_path} \\
 
         mode_str = "base run" if self.base_mode else "benchmark run"
         self.log(f"Starting {mode_str} {self.run_number}: {len(instances)} instances")
+        self.log(f"  Framework: {self.framework}")
         self.log(f"  Profiling: {self.profiling}")
 
         for i, instance in enumerate(instances):
@@ -853,6 +720,13 @@ def main():
         default=None,
         help="Override model name (e.g., openai/gpt-5.1). Also enables $1 cost limit."
     )
+    parser.add_argument(
+        "--framework",
+        type=str,
+        choices=["sweagent", "opencode", "openhands", "codex"],
+        default="sweagent",
+        help="Agent framework to use (default: sweagent)"
+    )
 
     args = parser.parse_args()
 
@@ -892,7 +766,8 @@ def main():
         base_mode=args.base,
         vllm_host=args.vllm_host,
         vllm_port=args.vllm_port,
-        model_name=args.model_name
+        model_name=args.model_name,
+        framework=args.framework,
     )
     runner.run_all(
         instances,
