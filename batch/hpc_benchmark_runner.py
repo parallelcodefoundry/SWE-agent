@@ -137,6 +137,43 @@ class HPCBenchmarkRunner:
         # Setup logging
         self.log_file = self.output_dir / "benchmark.log"
 
+    def verify_pristine_builds(self, apps: list[str]) -> None:
+        """Verify all required pristine executables exist before launching agents."""
+        checks = {
+            'kripke': 'Kripke/build/kripke.exe',
+            'laghos': 'Laghos/laghos',
+            'lulesh': 'Lulesh/cuda/lulesh',
+            'quicksilver': 'Quicksilver/src/qs',
+        }
+        missing = []
+        for app, rel_path in checks.items():
+            if app in apps:
+                exe = self.sweagent_root / rel_path
+                if not exe.exists():
+                    missing.append(f"  {app}: {exe}")
+        if missing:
+            raise RuntimeError(
+                "Pristine executables missing (run setup_apps.sh first):\n"
+                + "\n".join(missing)
+            )
+
+    def _symlink_laghos_deps(self, workspace: Path) -> None:
+        """Create symlinks for Laghos shared dependencies (mfem, hypre, metis).
+
+        Laghos's makefile uses relative paths like ../mfem/libmfem.a, so these
+        deps must be siblings of the workspace directory.
+        """
+        workspace_parent = workspace.parent
+        for dep in ['mfem', 'hypre', 'hypre-2.11.2', 'metis-4.0', 'metis-4.0.3', 'metis']:
+            dep_source = self.sweagent_root / dep
+            dep_link = workspace_parent / dep
+            if dep_source.exists() and not dep_link.exists():
+                try:
+                    dep_link.symlink_to(dep_source)
+                    self.log(f"  Symlinked {dep} -> {dep_source}")
+                except OSError as e:
+                    self.log(f"  Warning: Could not symlink {dep}: {e}")
+
     def generate_base_instances(self, apps: Optional[list[str]] = None) -> list[dict]:
         """Generate instances for base mode (current state of test repos)"""
         instances = []
@@ -249,6 +286,11 @@ class HPCBenchmarkRunner:
             )
 
             self.log(f"  Checked out base commit: {base_commit[:8]}")
+
+            # Symlink Laghos shared dependencies into workspace parent
+            if repo_name == "laghos":
+                self._symlink_laghos_deps(workspace)
+
             return workspace
 
         except subprocess.CalledProcessError as e:
@@ -530,6 +572,10 @@ sweagent run --config {config_path} \\
                 result.duration_seconds = time.time() - start_time
                 return result
 
+            # Symlink Laghos shared dependencies into workspace parent
+            if repo_name == "laghos":
+                self._symlink_laghos_deps(workspace)
+
             # Apply Kripke git config fixes if needed
             if repo_name == "kripke" and (workspace / ".git").exists():
                 subprocess.run(["git", "config", "--local", "status.submodulesummary", "false"], cwd=workspace, capture_output=True)
@@ -651,6 +697,10 @@ sweagent run --config {config_path} \\
         num_probs: Optional[int] = None
     ) -> None:
         """Run benchmarks for all instances with filtering"""
+
+        # Pre-flight check: verify pristine executables exist
+        check_apps = apps if apps else list(self.REPO_CONFIG_TEMPLATES.keys())
+        self.verify_pristine_builds(check_apps)
 
         # In base mode, generate instances if none provided
         if self.base_mode and not instances:

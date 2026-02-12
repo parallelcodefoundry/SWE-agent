@@ -145,23 +145,12 @@ def run_baseline(args, env):
         '--procs', args.procs
     ]
 
-    # If already inside an srun step (e.g., multi-node batch mode), run directly
-    # to avoid nested srun hanging on GPU gres allocation.
-    if os.environ.get('SLURM_STEP_ID'):
-        print("  (Inside srun step — running directly without srun wrapper)", file=sys.stderr)
-        cmd = kripke_cmd
-    elif args.arch.upper() == 'CUDA':
-        cmd = [
-            'srun', '-N', '1',
-            f'--ntasks-per-node={args.np}',
-            f'--gpus-per-task=1',
-            '--gpu-bind=closest'
-        ] + kripke_cmd
+    # Always use mpirun for MPI execution (avoids nested srun hangs in batch mode).
+    # OpenMPI auto-detects SLURM and handles GPU binding via CUDA_VISIBLE_DEVICES.
+    if args.np > 1:
+        cmd = ['mpirun', '-np', str(args.np), '--bind-to', 'none'] + kripke_cmd
     else:
-        cmd = [
-            'srun', '-N', '1',
-            f'--ntasks-per-node={args.np}'
-        ] + kripke_cmd
+        cmd = kripke_cmd
 
     try:
         proc = subprocess.run(
@@ -480,23 +469,12 @@ def main():
         '--procs', args.procs
     ]
 
-    # If already inside an srun step (e.g., multi-node batch mode), run directly
-    # to avoid nested srun hanging on GPU gres allocation.
-    if os.environ.get('SLURM_STEP_ID'):
-        print("  (Inside srun step — running directly without srun wrapper)", file=sys.stderr)
-        cmd = kripke_cmd
-    elif args.arch.upper() == 'CUDA':
-        cmd = [
-            'srun', '-N', '1',
-            f'--ntasks-per-node={args.np}',
-            f'--gpus-per-task=1',
-            '--gpu-bind=closest'
-        ] + kripke_cmd
+    # Always use mpirun for MPI execution (avoids nested srun hangs in batch mode).
+    # OpenMPI auto-detects SLURM and handles GPU binding via CUDA_VISIBLE_DEVICES.
+    if args.np > 1:
+        cmd = ['mpirun', '-np', str(args.np), '--bind-to', 'none'] + kripke_cmd
     else:
-        cmd = [
-            'srun', '-N', '1',
-            f'--ntasks-per-node={args.np}'
-        ] + kripke_cmd
+        cmd = kripke_cmd
 
     try:
         print(f"Running: {' '.join(cmd)}", file=sys.stderr)

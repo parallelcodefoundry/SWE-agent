@@ -12,6 +12,7 @@ agent:
 
       CRITICAL ARCHITECTURE REQUIREMENT:
       - You are optimizing for NVIDIA A100 GPUs
+      - The application is PRE-BUILT with CUDA for A100 GPUs. Run kripke_run --arch CUDA first to get a baseline measurement before making any changes.
       - You MUST use --arch CUDA for ALL kripke_build and kripke_run commands
       - Do NOT use --arch OpenMP or --arch Sequential - these are CPU backends and will not test GPU performance
 
@@ -19,10 +20,12 @@ agent:
       - You MUST run kripke_build --arch CUDA after EVERY source code edit before testing
       - Source changes have NO effect until you rebuild
       - Do NOT skip rebuilding - your changes will not be applied otherwise
+      - Do NOT edit CMakeLists.txt or build configuration. The build harness handles all compiler flags and CUDA setup. Focus ONLY on optimizing source code (.cpp, .h files).
+      - If the build fails, call kripke_build --clean --arch CUDA for a clean rebuild. Do NOT try to fix build issues manually.
 
       OPTIMIZATION SCOPE:
       - Explore the ENTIRE repository for optimization opportunities
-      - Consider algorithmic improvements, data structure changes, memory layouts, compiler flags, etc.
+      - Consider algorithmic improvements, data structure changes, memory layouts, etc.
       - Any valid performance optimization is welcome - not just GPU-specific changes
       - The key requirement is that you TEST with --arch CUDA to measure GPU performance
 
@@ -100,7 +103,7 @@ agent:
     per_instance_cost_limit: 0
     per_instance_call_limit: 50
   tools:
-    execution_timeout: 600
+    execution_timeout: 900
     tools_base_path: /tmp/sweagent
     env_variables:
       PAGER: cat

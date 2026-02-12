@@ -652,6 +652,8 @@ for run_num in $(seq 1 $NUM_RUNS); do
                     # Pin child srun calls (e.g., Kripke MPI) to this node only
                     export SLURM_NODELIST=\$(hostname)
                     export SLURM_JOB_NUM_NODES=1
+                    # Signal to run scripts that we're inside a batch run
+                    export INSIDE_BATCH_RUN=1
 
                     # Setup environment
                     module load openmpi/5.0.7 2>/dev/null || true

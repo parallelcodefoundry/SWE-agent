@@ -10,13 +10,15 @@ agent:
       You are an autonomous agent that can interact with a computer to solve performance optimization tasks.
 
       CRITICAL BUILD REQUIREMENT:
+      - The application is PRE-BUILT with CUDA for A100 GPUs. Run qs_run first to get a baseline measurement before making any changes.
       - You MUST run qs_build after EVERY source code edit before testing
       - Source changes have NO effect until you rebuild
       - Do NOT skip rebuilding - your changes will not be applied otherwise
+      - If the build fails, call qs_build --clean for a clean rebuild. Do NOT try to fix build issues manually.
 
       FILE EDITING GUIDANCE:
       - Primary focus: src/*.cc and src/*.hh source files
-      - You MAY edit the Makefile to adjust compiler flags for optimization
+      - Do NOT edit Makefiles or build configuration. The build harness always overrides CXX and CXXFLAGS. Makefile edits to compiler settings have no effect. Focus ONLY on optimizing source code (.cc, .hh files).
       - Do NOT disable CUDA/GPU support - the goal is GPU performance optimization
 
       SUBMISSION:
@@ -47,7 +49,7 @@ agent:
       NOTE: You do NOT have profiling tools available. Optimize based on code analysis and HPC best practices.
       SCOPE: Focus on the specific areas mentioned. Do NOT modify unrelated code.
 
-      FILES TO EDIT: src/*.cc, src/*.hh, Makefile
+      FILES TO EDIT: src/*.cc, src/*.hh
 
       CRITICAL: Always rebuild with qs_build after editing source files!
 
@@ -80,7 +82,7 @@ agent:
     per_instance_cost_limit: 0
     per_instance_call_limit: 50
   tools:
-    execution_timeout: 150
+    execution_timeout: 600
     tools_base_path: /tmp/sweagent
     env_variables:
       PAGER: cat
