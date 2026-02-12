@@ -141,9 +141,9 @@ export CODEX_API_KEY="${{OPENAI_API_KEY}}"
 
 cd "{workspace}"
 
-# Run Codex CLI in exec mode (--yolo = no sandbox, no approvals)
+# Run Codex CLI in exec mode (no sandbox, no approvals)
 timeout {SESSION_TIMEOUT} codex exec \\
-    --yolo \\
+    --dangerously-bypass-approvals-and-sandbox \\
     --skip-git-repo-check \\
     --json \\
     --ephemeral \\

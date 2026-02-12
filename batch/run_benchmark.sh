@@ -509,6 +509,8 @@ else
         podman-hpc run --rm --gpu --net host --ipc=host \
         -e HF_HOME \
         -e HF_HUB_ENABLE_HF_TRANSFER \
+        -e HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-0} \
+        -e HF_TOKEN="${HF_TOKEN:-}" \
         -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
         -v "${HF_HOME}:${HF_HOME}" \
         "${VLLM_IMAGE}" \

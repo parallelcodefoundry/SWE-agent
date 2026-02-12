@@ -1,7 +1,7 @@
 """OpenHands framework launcher.
 
-OpenHands (formerly OpenDevin) uses a CodeActAgent with local runtime on Perlmutter.
-Config is TOML format. Headless mode via `openhands --headless -t "PROMPT"`.
+OpenHands (formerly OpenDevin) uses a CodeActAgent with SDK-based headless mode.
+The openhands CLI is a TUI; for batch execution we use the SDK via openhands_runner.py.
 """
 
 import os
@@ -14,8 +14,8 @@ from batch.frameworks.base import FrameworkLauncher, SESSION_TIMEOUT
 class OpenHandsLauncher(FrameworkLauncher):
     """Launcher for the OpenHands framework.
 
-    Generates TOML config with local runtime (no Docker on Perlmutter),
-    builds shell script that runs `openhands --headless`.
+    Uses the OpenHands SDK (LocalConversation + Agent) for headless execution.
+    The openhands CLI only supports interactive TUI mode.
     """
 
     name = "openhands"
@@ -27,15 +27,12 @@ class OpenHandsLauncher(FrameworkLauncher):
         instance_id: str,
         output_dir: Path,
     ) -> Path:
-        """Generate OpenHands config.toml.
+        """Generate OpenHands config metadata.
 
-        Key settings:
-        - runtime = "local" (no Docker/podman on Perlmutter compute nodes)
-        - max_iterations = 50 (matches SWE-agent per_instance_call_limit)
-        - Model in litellm format
+        Unlike SWE-agent YAML, OpenHands SDK config is passed as CLI args
+        to openhands_runner.py. This generates a metadata file for reference.
         """
         if self.model_name:
-            # External model (already in litellm format)
             model = self.model_name
             api_key = os.environ.get("OPENAI_API_KEY", "")
             base_url = os.environ.get("OPENAI_API_BASE", "")
@@ -45,35 +42,18 @@ class OpenHandsLauncher(FrameworkLauncher):
             api_key = "dummy-key-ok"
             base_url = f"http://{self.vllm_host}:{self.vllm_port}/v1"
 
-        # Build TOML config
+        # Write config metadata for reference
         config_lines = [
-            "[core]",
-            'default_agent = "CodeActAgent"',
-            'runtime = "local"',
+            f"model = {model}",
+            f"api_base = {base_url}",
             f"max_iterations = 50",
-            f'workspace_base = "{workspace}"',
-            "",
-            "[llm]",
-            f'model = "{model}"',
-            f'api_key = "{api_key}"',
-            f'base_url = "{base_url}"',
-            "max_input_tokens = 120000",
-            "max_output_tokens = 120000",
-            "native_tool_calling = true",
-            "",
-            "[agent]",
-            "enable_browsing = false",
-            "enable_jupyter = false",
-            "enable_cmd = true",
-            "enable_editor = true",
-            "enable_think = true",
+            f"workspace = {workspace}",
+            f"tools = terminal, file_editor",
         ]
-
-        config_content = "\n".join(config_lines) + "\n"
 
         config_path = output_dir / f"{instance_id}_openhands_config.toml"
         with open(config_path, "w") as f:
-            f.write(config_content)
+            f.write("\n".join(config_lines) + "\n")
 
         return config_path
 
@@ -86,10 +66,14 @@ class OpenHandsLauncher(FrameworkLauncher):
         trajectory_dir: Path,
         instance_id: str,
     ) -> str:
-        """Build shell script to run OpenHands in headless mode."""
+        """Build shell script to run OpenHands via SDK runner."""
         sweagent_venv = os.environ.get(
             "SWEAGENT_VENV",
             os.path.join(os.environ.get("HOME", ""), "envs", "sweagent")
+        )
+        sweagent_root = os.environ.get(
+            "SWEAGENT_ROOT",
+            str(self.sweagent_root)
         )
         home_dir = os.environ.get("HOME", str(Path.home()))
         prompt = self.get_prompt(repo_name, workspace)
@@ -100,8 +84,16 @@ class OpenHandsLauncher(FrameworkLauncher):
         with open(prompt_file, "w") as f:
             f.write(prompt)
 
+        # Determine model for SDK runner
+        if self.model_name:
+            model = self.model_name
+        else:
+            model = "openai/openai/gpt-oss-120b"
+
+        runner_script = f"{sweagent_root}/batch/frameworks/openhands_runner.py"
+
         shell_script = f"""\
-# Activate Python venv (OpenHands is pip-installed here)
+# Activate Python venv (OpenHands SDK is pip-installed here)
 source "{sweagent_venv}/bin/activate"
 
 # Load HPC modules
@@ -117,16 +109,15 @@ fi
 {self.get_env_exports(repo_name, workspace)}
 {self.get_api_env_exports()}
 
-# OpenHands config
-export OPENHANDS_CONFIG="{config_path}"
-
 cd "{workspace}"
 
-# Run OpenHands in headless mode
-timeout {SESSION_TIMEOUT} openhands --headless \\
-    -t "$(cat '{prompt_file}')" \\
-    --json \\
-    > "{traj_file}" 2>&1
+# Run OpenHands via SDK runner (headless mode)
+timeout {SESSION_TIMEOUT} python3 "{runner_script}" \\
+    --model "{model}" \\
+    --workspace "{workspace}" \\
+    --prompt-file "{prompt_file}" \\
+    --trajectory-file "{traj_file}" \\
+    --max-iterations 50
 """
         return shell_script
 

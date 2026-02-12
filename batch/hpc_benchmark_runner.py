@@ -28,6 +28,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+# Ensure SWE-agent root is on sys.path so 'from batch.frameworks import ...' works
+# even when invoked as 'python3 batch/hpc_benchmark_runner.py'
+_sweagent_root = str(Path(__file__).resolve().parent.parent)
+if _sweagent_root not in sys.path:
+    sys.path.insert(0, _sweagent_root)
+
 
 @dataclass
 class BenchmarkResult:
