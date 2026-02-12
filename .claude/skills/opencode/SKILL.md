@@ -18,11 +18,16 @@ OpenCode is an open-source, provider-agnostic terminal-based AI coding agent bui
 
 ## Installation on Perlmutter
 
+Node.js is available via nvm (no system module). npm global packages install to `$HOME/.nvm/`.
+
 ```bash
-module load nodejs
+# nvm should already be sourced in ~/.bashrc
+nvm use 22                         # or: nvm install 22
 npm i -g opencode-ai@latest
 opencode --version
 ```
+
+If `nvm` is not found, source it: `source ~/.nvm/nvm.sh`
 
 ## Provider Configuration
 

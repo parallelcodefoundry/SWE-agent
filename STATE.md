@@ -40,12 +40,10 @@ Skills updated: `swe-agent-framework`, `laghos`, `quicksilver` (removed Makefile
 
 ## Uncommitted Changes
 
-On `local` branch. All session 3 + session 4 changes uncommitted.
-
-**Batch**: `run_benchmark.sh`, `hpc_benchmark_runner.py`
-**Harnesses**: `kripke_run` (mpirun fix)
-**Configs**: All 8 `config/hpc/*.yaml` (timeouts + instructions)
-**Skills**: `swe-agent-framework`, `laghos`, `quicksilver` SKILL.md files
+None. All changes committed on `local` branch:
+- `5ae747d7` — Build infrastructure fixes (6-fix plan)
+- `75b25a11` — Docs, skills, session workflow updates
+- `41b03ba8` — Perlmutter install instructions, session prompts with branches
 
 ## Open Issues
 
@@ -54,9 +52,6 @@ On `local` branch. All session 3 + session 4 changes uncommitted.
 
 ## Next Steps
 
-1. Commit all changes (session 3 + session 4)
-2. Run validation benchmark: `bash batch/run_benchmark.sh --base --lulesh` to verify fixes
-3. Test kripke_run interactively on compute node (verify mpirun works)
-4. Run GPT-5.1: `source ~/.openai_env && bash batch/run_benchmark.sh --base --external-model --model-name gpt-5.1`
-5. Analyze results across models
-6. Wire in SWE-fficiency + GPA-Benchmark
+1. Phase 1: Integrate OpenCode, OpenHands, Codex CLI (see `.planning/session-prompts.md`)
+2. Phase 2: Integrate GPA-Benchmark + SWE-fficiency
+3. Phase 3: Restructure repo with submodules

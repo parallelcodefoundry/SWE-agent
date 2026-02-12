@@ -20,11 +20,16 @@ description: "Knowledge about OpenAI Codex CLI terminal agent including installa
 
 ## Installation on Perlmutter
 
+Node.js is available via nvm (no system module). npm global packages install to `$HOME/.nvm/`.
+
 ```bash
-module load nodejs
+# nvm should already be sourced in ~/.bashrc
+nvm use 22                         # or: nvm install 22
 npm install -g @openai/codex
 codex --version
 ```
+
+If `nvm` is not found, source it: `source ~/.nvm/nvm.sh`
 
 Or: download `codex-x86_64-unknown-linux-musl` from GitHub Releases, or `cargo build --release` in `codex-rs/`.
 

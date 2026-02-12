@@ -46,7 +46,8 @@ Configuration uses TOML (`config.toml`). See `config.template.toml` in the OpenH
 ## Running OpenHands
 
 ```bash
-# Install
+# Install (use the sweagent venv on Perlmutter)
+source ~/envs/sweagent/bin/activate
 pip install openhands          # or: uv tool install openhands --python 3.12
 
 # Interactive GUI (port 3000)
