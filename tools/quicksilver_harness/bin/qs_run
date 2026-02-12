@@ -227,6 +227,7 @@ def main():
     cuda_devices = os.environ.get('CUDA_VISIBLE_DEVICES', 'all available')
     print(f"Using GPUs: {cuda_devices}")
     print("=" * 60)
+    sys.stdout.flush()
 
     # Run baseline
     baseline_time, baseline_output = run_quicksilver(pristine_exe, input_file, "baseline (unmodified)")

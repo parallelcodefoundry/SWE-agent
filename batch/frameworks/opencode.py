@@ -55,7 +55,13 @@ class OpenCodeLauncher(FrameworkLauncher):
                     }
                 },
                 "model": f"{provider_id}/{model_id}",
-                "permission": "allow",
+                # CRITICAL: Use object form {"*": "allow"}, NOT string "allow".
+                # OpenCode's OPENCODE_CONFIG_CONTENT is merged via JSON.parse()
+                # without Zod schema validation, so the permissionTransform that
+                # converts "allow" → {"*": "allow"} never runs. The raw string
+                # "allow" gets split by Object.entries() into per-character rules
+                # with invalid action values ("a", "l", "l", "o", "w").
+                "permission": {"*": "allow"},
             }
         else:
             # Local vLLM
@@ -69,7 +75,8 @@ class OpenCodeLauncher(FrameworkLauncher):
                     }
                 },
                 "model": "local-vllm/gpt-oss-120b",
-                "permission": "allow",
+                # See comment above — must use object form, not string "allow"
+                "permission": {"*": "allow"},
             }
 
         config_path = output_dir / f"{instance_id}_opencode_config.json"

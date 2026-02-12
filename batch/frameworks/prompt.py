@@ -182,6 +182,19 @@ COMPLETION_INSTRUCTIONS = {
     "codex": "When you have made improvements and verified correctness, stop working. Ensure all file changes are saved.",
 }
 
+# =============================================================================
+# Codex-specific shell timeout guidance
+# =============================================================================
+
+CODEX_TIMEOUT_GUIDANCE = """\
+CRITICAL - SHELL COMMAND TIMEOUT:
+The default shell command timeout is 10 seconds. The benchmark commands ({run_cmd}, {build_cmd})
+take 60-120 seconds to complete. You MUST set timeout_ms to 300000 (5 minutes) when executing
+these commands to prevent premature timeout. Example:
+  Set timeout_ms: 300000 in your shell tool call for {run_cmd} and {build_cmd}.
+If a command returns with no output and null exit code, it was killed by timeout.
+Retry with timeout_ms: 300000."""
+
 
 # =============================================================================
 # Main prompt builder
@@ -244,6 +257,14 @@ def build_prompt(
 
     workflow = "\n".join(workflow_lines)
 
+    # Codex-specific timeout guidance
+    codex_section = ""
+    if framework == "codex":
+        codex_section = CODEX_TIMEOUT_GUIDANCE.format(
+            run_cmd=tools["run"],
+            build_cmd=tools["build"],
+        )
+
     # Assemble the prompt
     prompt = f"""\
 You are an autonomous agent tasked with optimizing HPC application performance.
@@ -264,6 +285,8 @@ WORKFLOW:
 {profiling_section}
 
 {APP_NOTES[repo_name]}
+
+{codex_section}
 
 Thinking should be thorough."""
 

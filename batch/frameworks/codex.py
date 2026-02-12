@@ -38,7 +38,16 @@ class CodexLauncher(FrameworkLauncher):
         # Write AGENTS.md to workspace for Codex to discover
         agents_md = workspace / "AGENTS.md"
         with open(agents_md, "w") as f:
-            f.write(f"# HPC Optimization Task\n\n{prompt}\n")
+            f.write(f"# HPC Optimization Task\n\n{prompt}\n\n")
+            # Add explicit timeout guidance for AGENTS.md (Codex reads this)
+            f.write(
+                "## Shell Command Timeouts\n\n"
+                "The default shell timeout is 10 seconds. Benchmark commands take "
+                "60-120 seconds. **Always** set `timeout_ms: 300000` (5 minutes) "
+                "when calling build or run harness commands. If a command returns "
+                "empty output with null exit code, it was killed by timeout — "
+                "retry with `timeout_ms: 300000`.\n"
+            )
 
         # Write a metadata file with the -c config flags for the launch command
         if self.model_name:

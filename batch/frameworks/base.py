@@ -150,6 +150,9 @@ class FrameworkLauncher(ABC):
             f'export SWE_AGENT_ROOT="{self.sweagent_root}"',
             'export CUDA_VISIBLE_DEVICES="0,1,2,3"',
             'export OMP_NUM_THREADS=32',
+            # Unbuffered Python output ensures harness scripts flush immediately,
+            # critical for Codex which has a 10s per-command timeout.
+            'export PYTHONUNBUFFERED=1',
         ]
         return "\n".join(lines)
 
