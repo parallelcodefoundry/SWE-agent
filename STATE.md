@@ -63,19 +63,45 @@ Phase 1 framework integration is **COMPLETE**. All 4 frameworks (SWE-agent, Open
 
 None. All changes committed on `local` branch.
 
+## Agent Execution Quality (Session 10 Analysis)
+
+Phase 1 validated that frameworks integrate (plumbing works), but deeper analysis of all 4 runs reveals no framework produced actual optimizations:
+
+| Framework | App | Built? | Ran? | Code Changes? | Speedup |
+|-----------|-----|--------|------|--------------|---------|
+| **Codex** | Quicksilver | Yes | No (qs_run silent fail) | None | N/A |
+| **OpenHands** | Lulesh | Failed 8x | No | Yes (broke build) | N/A |
+| **OpenCode** | Quicksilver | No (env errors) | No | None | N/A |
+| **SWE-agent** | Lulesh | Yes | Yes | Whitespace only | -0.84% (regression) |
+
+### Issues Blocking Agent Effectiveness
+
+1. **Codex `qs_run` silent failure**: Agent built CUDA exe successfully, but all 6 `qs_run` calls returned empty output. Agent got stuck waiting. Likely Codex exec mode swallows stdout/stderr from the harness script.
+2. **OpenCode environment access failure**: Agent hit "invalid options in the ruleset configurations" immediately on `qs_build`. Could not access filesystem or run any tools. PATH/sandbox config issue.
+3. **OpenHands build breakage**: Agent deleted old Makefiles and modified allocator.cu, then `lulesh_build` failed with "No rule to make target 'src/allocator.o'". Never recovered across 8 build attempts.
+4. **SWE-agent whitespace-only changes**: 129K-line patch that's mostly reformatting. Baseline 4.159s → modified 4.194s (0.84% regression). Correctness passed but no real optimization.
+
 ## Open Issues
 
+- **Codex `qs_run` output not captured** — harness stdout swallowed by Codex exec mode (HIGH PRIORITY)
+- **OpenCode can't access harness tools** — sandbox/ruleset blocks `qs_build` (HIGH PRIORITY)
+- **OpenHands no build recovery** — agent breaks build and doesn't recover (MEDIUM — prompt/harness issue)
+- **SWE-agent whitespace patches** — agent reformats code instead of optimizing (LOW — model behavior)
 - SWE-agent doubled path bug: workspace ends in `/cuda` + git diff gives `cuda/src/...` → `cuda/cuda/src/...` (pre-existing)
 - vLLM model cache (`openai/gpt-oss-120b`) is incomplete — needs HF_TOKEN for full download
 - Agent sometimes switches GPU builds to OpenMP (model behavior, no fix yet)
 
 ## Next Steps
 
-1. **Phase 2: GPA-Benchmark + SWE-fficiency integration**
+1. **Fix agent execution issues** (before full benchmark run)
+   - Debug Codex `qs_run` output capture (check harness stdout routing in exec mode)
+   - Debug OpenCode tool access (check PATH setup, sandbox config in `batch/frameworks/opencode.py`)
+   - Consider prompt improvements to prevent build breakage and whitespace-only changes
+2. **Phase 2: GPA-Benchmark + SWE-fficiency integration**
    - GPA-Benchmark: `/pscratch/sd/k/krydzy/gpa-benchmark` — GPU anti-pattern benchmarks
    - SWE-fficiency: `/pscratch/sd/k/krydzy/swefficiency` — real-world repo optimization dataset
    - Wire these into the benchmark pipeline as additional instance sources
-2. **Phase 3: Restructure repo with submodules**
+3. **Phase 3: Restructure repo with submodules**
    - Clean up the repo structure, move proxy apps to proper submodules
-3. **Run full benchmark suite** with all 4 frameworks on all 4 apps
-4. **Fix SWE-agent Lulesh doubled path** (pre-existing config issue)
+4. **Run full benchmark suite** with all 4 frameworks on all 4 apps
+5. **Fix SWE-agent Lulesh doubled path** (pre-existing config issue)

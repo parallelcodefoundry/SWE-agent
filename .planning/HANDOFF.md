@@ -89,14 +89,49 @@ OpenHands SDK passes `os.environ` to `tmux new_session -e` flags. On compute nod
 
 `batch/frameworks/openhands.py` shadows pip `openhands` namespace package when script dir is on sys.path. Fix: invoke runner via `python -m batch.frameworks.openhands_runner` and strip script dir from sys.path in runner.
 
+## Agent Execution Quality Issues (Discovered Session 10)
+
+Phase 1 validated framework integration (plumbing), but deeper result analysis shows no agent produced real optimizations:
+
+### Issue 1: Codex `qs_run` silent failure (HIGH PRIORITY)
+- **Symptom**: Agent built CUDA exe successfully, but all 6 `qs_run` calls returned empty `aggregated_output`
+- **Impact**: Agent got stuck waiting for results, never proceeded to code exploration
+- **Likely cause**: Codex exec mode may swallow stdout/stderr from harness scripts
+- **Where to look**: `batch/frameworks/codex.py` build_launch_command(), harness script `tools/quicksilver_harness/bin/qs_run`
+- **Test**: Run `codex exec` with a simple script that prints to stdout — does output appear in trajectory?
+- **Results dir**: `batch_results/benchmark_20260212_110537_48811735/run_1/quicksilver/`
+- **Trajectory**: `trajectories/benchmark_20260212_110537_48811735/run_1/quicksilver/quicksilver__base.jsonl`
+
+### Issue 2: OpenCode environment access failure (HIGH PRIORITY)
+- **Symptom**: Agent hit "invalid options in the ruleset configurations" on first `qs_build` call, couldn't access filesystem
+- **Impact**: Zero progress — couldn't build, run, or read any files
+- **Likely cause**: OpenCode sandbox/ruleset config too restrictive, or PATH not set up for harness tools
+- **Where to look**: `batch/frameworks/opencode.py` build_launch_command(), check how PATH/env vars are passed
+- **Results dir**: `batch_results/benchmark_20260212_095958_48809130/run_1/quicksilver/`
+- **Trajectory**: `trajectories/benchmark_20260212_095958_48809130/run_1/quicksilver/quicksilver__base.jsonl`
+
+### Issue 3: OpenHands build breakage (MEDIUM)
+- **Symptom**: Agent deleted old Makefiles, modified allocator.cu, then `lulesh_build` failed 8x with "No rule to make target"
+- **Impact**: Never ran the app, no performance measurement
+- **Likely cause**: Agent made changes outside safe areas; prompt may need guardrails against Makefile deletion
+- **Where to look**: `batch/frameworks/base.py` get_prompt(), lulesh prompt template
+- **Results dir**: `batch_results/benchmark_20260212_112244_48812701/run_1/lulesh/`
+
+### Issue 4: SWE-agent whitespace patches (LOW)
+- **Symptom**: 129K-line patch of mostly reformatting, 0.84% regression
+- **Impact**: Full workflow completed but no meaningful optimization
+- **Likely cause**: gpt-4o-mini not capable enough for GPU optimization; may improve with stronger model
+- **Results dir**: `batch_results/benchmark_20260212_101846_48810087/run_1/lulesh/`
+
 ## Phase 2 Planning Notes
 
 Next steps from STATE.md:
 
-1. **GPA-Benchmark**: `/pscratch/sd/k/krydzy/gpa-benchmark` — GPU anti-pattern benchmarks. Wire into pipeline as instance source.
-2. **SWE-fficiency**: `/pscratch/sd/k/krydzy/swefficiency` — Real-world repo optimization dataset. Wire into pipeline.
-3. **Full benchmark run**: All 4 frameworks × all 4 apps with external gpt-4o-mini.
-4. **Repo restructure**: Move proxy apps to submodules.
+1. **Fix agent execution issues** (Issues 1-2 above, before full benchmark run)
+2. **GPA-Benchmark**: `/pscratch/sd/k/krydzy/gpa-benchmark` — GPU anti-pattern benchmarks. Wire into pipeline as instance source.
+3. **SWE-fficiency**: `/pscratch/sd/k/krydzy/swefficiency` — Real-world repo optimization dataset. Wire into pipeline.
+4. **Full benchmark run**: All 4 frameworks × all 4 apps with external gpt-4o-mini.
+5. **Repo restructure**: Move proxy apps to submodules.
 
 ## Key Gotchas
 
