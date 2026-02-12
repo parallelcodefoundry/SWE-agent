@@ -46,7 +46,6 @@ nvcc --compiler-bindir=$(which g++-12) \
 ### Via Harness (recommended)
 ```bash
 python3 tools/quicksilver_harness/bin/qs_run              # benchmark + correctness
-python3 tools/quicksilver_harness/bin/qs_check_correct     # quick correctness only
 ```
 
 The harness: (1) builds pristine Quicksilver if needed, (2) runs pristine with Coral2_P2_1 benchmark input as baseline, (3) runs modified version with same input, (4) compares per-cycle physics values for correctness (tolerance 1e-6), (5) compares wall-clock time using "main" timer for speedup, (6) outputs CORRECTNESS and SPEEDUP summary.
@@ -55,7 +54,7 @@ The harness: (1) builds pristine Quicksilver if needed, (2) runs pristine with C
 - Path: `Examples/CORAL2_Benchmark/Problem2/Coral2_P2_1.inp`
 - 230 energy groups, nSteps=10, dt=1e-08, nBatches=10
 
-### Default Parameters (qs_check_correct)
+### Default Parameters (qs_run)
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--lx/ly/lz` | 10 | Domain dimensions (cm) |
@@ -116,4 +115,4 @@ Config files:
 
 Key env vars: `CUDA_VISIBLE_DEVICES=0,1,2,3`, `OMP_NUM_THREADS=32`, `QUICKSILVER_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Quicksilver_test`
 
-Agent editable files: `src/CycleTracking.cc`, `src/CollisionEvent.cc`, `src/main.cc`, `src/MCT.cc`, `src/Makefile`
+Agent editable files: `src/CycleTracking.cc`, `src/CollisionEvent.cc`, `src/main.cc`, `src/MCT.cc` (NOT Makefile — build harness overrides CXX/CXXFLAGS)

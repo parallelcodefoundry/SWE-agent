@@ -118,7 +118,7 @@ Profiling bundles: `hpctoolkit` (hpc_profile), `hatchet` (hatchet_analyze), `pro
 
 ## Benchmark Pipeline
 
-Two modes. See `batch/run_benchmark.sh --help` for all arguments, `batch/hpc_benchmark_runner.py` for benchmark mode, `batch/hpc_runner.py` for base mode.
+Two modes. See `batch/run_benchmark.sh --help` for all arguments. Both modes use `batch/hpc_benchmark_runner.py`.
 
 - **Benchmark mode** (default): Checks out pre-optimization commits from `dataset/curated_perf_commits.json`, runs agent, compares agent patch vs expert patch (file overlap + patch similarity).
 - **Base mode** (`--base`): Runs agent on current `_test` repo state, no dataset checkout.
@@ -146,7 +146,7 @@ Results: `batch_results/benchmark_*/benchmark_results.json` (benchmark) or `resu
 11. **Tool schema types**: Use `number` not `float` in tool argument types — OpenAI rejects `float`, vLLM is lenient
 12. **SWE-agent copies tools to `/tmp/sweagent/`**: Script-relative paths (`__file__`) break. Use `SWE_AGENT_ROOT` env var (injected by benchmark runner) to find pristine repos
 13. **External model routing**: `run_agent()` shell script must read `OPENAI_API_BASE`/`OPENAI_API_KEY` from env (not hardcode vLLM values). Config `api_base`/`api_key` must be stripped so LiteLLM uses env vars
-14. **Nested srun**: `kripke_run` uses srun internally — blocks when already inside `srun --exclusive`. Detect via `SLURM_STEP_ID` env var
+14. **MPI execution**: `kripke_run` uses `mpirun` (not `srun`) for MPI, avoiding nested srun hangs. `INSIDE_BATCH_RUN=1` env var signals batch mode.
 
 ## Multi-Node Execution
 

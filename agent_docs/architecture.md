@@ -16,7 +16,6 @@ Agents can't just `make && ./run` — they need structured feedback. Each harnes
 
 - **`app_build`**: Wraps the build system, returns JSON success/failure with error context the agent can act on. Handles architecture selection (CUDA/OpenMP), clean rebuilds, and GPU-specific flags.
 - **`app_run`**: The core measurement tool. Automatically builds and runs the **pristine** baseline with identical parameters, then runs the agent's modified version. Returns correctness (scientific values within tolerance) and speedup (baseline_time / modified_time) in one call. This is how we get reliable, comparable measurements — the agent doesn't estimate its own performance.
-- **`app_check_correct`**: Standalone correctness checker (redundant since `app_run` does this, but available for debugging).
 
 This design means every `app_run` call produces a ground-truth measurement against an unmodified baseline, regardless of what the agent has done to the code.
 
@@ -43,8 +42,7 @@ config/hpc/
   {app}_{with|no}_profiling.yaml                # SWE-agent configs (one per app × profiling variant)
 batch/
   run_benchmark.sh                              # SLURM entrypoint (vLLM + benchmark orchestration)
-  hpc_benchmark_runner.py                       # Benchmark mode: agent vs expert commits
-  hpc_runner.py                                 # Base mode: agent on current test repos
+  hpc_benchmark_runner.py                       # Both modes: benchmark (agent vs expert) and base (--base)
 dataset/
   curated_perf_commits.json                     # 9 expert optimization commits across 4 apps
 scripts/

@@ -7,7 +7,7 @@ LLM agent benchmark for HPC code optimization. Tests whether coding agents (SWE-
 - `tools/*_harness/` — Per-app build/run/correctness harnesses (SWE-agent tool format)
 - `tools/{hatchet,hpctoolkit,nsight_*,profiling}/` — Profiling tool wrappers
 - `config/hpc/` — SWE-agent YAML configs (`{app}_{with|no}_profiling.yaml`)
-- `batch/` — `run_benchmark.sh` (entrypoint), `hpc_benchmark_runner.py`, `hpc_runner.py`
+- `batch/` — `run_benchmark.sh` (entrypoint), `hpc_benchmark_runner.py`
 - `scripts/` — `setup_apps.sh`, `reset_test_repos.sh`
 - `dataset/` — `curated_perf_commits.json` (expert optimization commits)
 - `{Kripke,Laghos,Lulesh,Quicksilver}/` — Pristine app clones (NEVER modify)

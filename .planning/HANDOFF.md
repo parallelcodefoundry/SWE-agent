@@ -1,87 +1,62 @@
-# HANDOFF.md — Monitoring Active Runs & Next Steps
+# HANDOFF.md — Session 4 Summary & Next Steps
 
-Last updated: 2026-02-10 (session 3)
+Last updated: 2026-02-12 (session 4)
 
-## What's Happening
+## What Was Done
 
-Two parallel benchmark runs are active, testing all the infrastructure fixes from this session:
+Implemented a 6-fix plan to fix agent build infrastructure. Agents were spending all 50 steps fighting builds instead of optimizing code. Root causes: nested srun hangs, missing Laghos deps in workspace, tight timeouts, and agent instructions encouraging Makefile edits.
 
-### Run 1: GPT-4o-mini (external model) — Job 48730028
-- **Nodes**: nid[001012,001032,001229,001232] (4 nodes, no vLLM)
-- **Apps**: kripke, laghos, lulesh, quicksilver
-- **Output**: `batch_results/benchmark_20260210_102538_48730028/`
-- **Last observed state** (10:25 AM):
-  - Kripke: Step 1, building with CUDA
-  - Laghos: Step 4, setting up dependencies (`make setup`)
-  - Lulesh: Step 21, optimizing (editing Makefiles)
-  - Quicksilver: Step 16, editing Makefile (agent confused by ROCm defaults, not a harness bug)
-- **What to check**: All agents should complete or hit the 50-step limit. Look for `benchmark_results.json` in each app subdir.
+### Fixes Applied (all uncommitted on `local` branch)
 
-### Run 2: vLLM gpt-oss-120b — Job 48730084
-- **Nodes**: nid[001084,001124,200373,200376] (4 nodes, 1 vLLM + 3 apps)
-- **Apps**: kripke, laghos, lulesh
-- **Output**: `batch_results/benchmark_20260210_101215_48730084/`
-- **Last observed state** (10:25 AM):
-  - Kripke: Step 2, building with `--arch CUDA --clean`
-  - Laghos: Step 2, building with `laghos_build --clean`
-  - Lulesh: Step 10+, already optimizing and running benchmarks
-- **What to check**: Same as above. This run uses the OLD code (before SWE_AGENT_ROOT fix), so pristine path issues may occur when agents call `*_run`.
+| Fix | Files | What |
+|-----|-------|------|
+| 1. srun → mpirun | `tools/kripke_harness/bin/kripke_run` | Both baseline + modified runs use `mpirun -np N --bind-to none` instead of srun branching |
+| 2. Laghos dep symlinks | `batch/hpc_benchmark_runner.py` | `_symlink_laghos_deps()` creates mfem/hypre/metis symlinks in workspace parent |
+| 3. Execution timeouts | All 8 `config/hpc/*.yaml` | Kripke 600→900s, Laghos 150→600s, Lulesh 150→300s, QS 150→600s |
+| 4. Agent instructions | All 8 `config/hpc/*.yaml` | "PRE-BUILT" note, "Do NOT edit Makefiles", clean rebuild guidance |
+| 5. INSIDE_BATCH_RUN | `batch/run_benchmark.sh` | `export INSIDE_BATCH_RUN=1` in srun bash -c block |
+| 6. Pre-flight check | `batch/hpc_benchmark_runner.py` | `verify_pristine_builds()` fails fast if pristine exes missing |
 
-## Monitoring Commands
+### Skills Updated
 
-```bash
-# Job status
-squeue -u krydzy
+- `swe-agent-framework/SKILL.md` — srun note replaced with mpirun/INSIDE_BATCH_RUN
+- `laghos/SKILL.md` — removed makefile from agent-editable files
+- `quicksilver/SKILL.md` — removed Makefile from agent-editable files
 
-# GPT-4o-mini agent progress
-for app in kripke laghos lulesh quicksilver; do
-  echo "=== $app ===" && tail -20 batch_results/benchmark_20260210_102538_48730028/run_1/$app/${app}__base_agent_realtime.log
-done
+### Docs Updated
 
-# vLLM agent progress
-for app in kripke laghos lulesh; do
-  echo "=== $app ===" && tail -20 batch_results/benchmark_20260210_101215_48730084/run_1/$app/${app}__base_agent_realtime.log
-done
-
-# Check for completed results
-ls batch_results/benchmark_20260210_102538_48730028/run_1/*/benchmark_results.json 2>/dev/null
-ls batch_results/benchmark_20260210_101215_48730084/run_1/*/benchmark_results.json 2>/dev/null
-
-# Check for agent patches
-ls batch_results/benchmark_20260210_102538_48730028/run_1/*/*_agent.patch 2>/dev/null
-ls batch_results/benchmark_20260210_101215_48730084/run_1/*/*_agent.patch 2>/dev/null
-```
+- `STATE.md` — session 4 state
+- `agent_docs/architecture.md` — removed stale `app_check_correct` reference
+- `agent_docs/experiment-workflow.md` — fixed base mode runner reference
+- `agent_docs/usage-guide.md` — removed stale `app_check_correct` reference
 
 ## What to Do Next
 
-1. **Check if jobs completed** — `squeue -u krydzy`. If done, check benchmark_results.json and agent patches.
+1. **Commit all changes** — Sessions 3 + 4 have substantial uncommitted changes on `local`:
+   ```bash
+   git add batch/ tools/kripke_harness/ config/hpc/ .claude/skills/ agent_docs/ STATE.md .planning/
+   git commit -m "Fix agent build infrastructure: mpirun, Laghos deps, timeouts, instructions"
+   ```
 
-2. **If vLLM run had pristine path errors** — Expected since it used pre-fix code. The SWE_AGENT_ROOT fix is now in place for future runs. May need to rerun.
+2. **Validate fixes on compute node**:
+   ```bash
+   salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 4 --account m2404
+   module load python cmake openmpi/5.0.7 cuda/12.4
+   # Test kripke_run with mpirun
+   source ~/envs/sweagent/bin/activate
+   python tools/kripke_harness/bin/kripke_run --arch CUDA --np 4
+   ```
 
-3. **Run GPT-5.1** — Once a slot is free:
+3. **Run validation benchmark**:
+   ```bash
+   bash batch/run_benchmark.sh --base --lulesh
+   ```
+
+4. **Run GPT-5.1**:
    ```bash
    source ~/.openai_env
    bash batch/run_benchmark.sh --base --external-model --model-name gpt-5.1
    ```
-   (4 nodes, external model, no vLLM)
-
-4. **Commit changes** — Nothing committed yet. Many files modified. See STATE.md for full list.
-
-5. **Analyze results** — Compare speedups/correctness across models and apps.
-
-## Fixes Applied This Session (for reference)
-
-All fixes are in the working tree on `local` branch, uncommitted:
-
-| Fix | Files | Issue |
-|-----|-------|-------|
-| Nested srun | `kripke_run` | `SLURM_STEP_ID` detection |
-| Pristine build path | `kripke_run` | Check `build/` before `build_cuda/` |
-| Dead check_correct | 4 scripts deleted, 3 configs | Was unused dead code |
-| Hardcoded paths | All 8 harness scripts, 2 batch runners | env var → relative → error |
-| External model routing | `hpc_benchmark_runner.py` | env var passthrough, strip api_base/api_key |
-| Tool schema float | `laghos_harness/config.yaml` | `float` → `number` |
-| Pristine path from sandbox | `hpc_benchmark_runner.py`, 4 `*_run` scripts | `SWE_AGENT_ROOT` injection + fallback |
 
 ## Key File Locations
 

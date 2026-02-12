@@ -137,4 +137,4 @@ Config files:
 
 Key env vars: `CUDA_VISIBLE_DEVICES=0,1,2,3`, `OMP_NUM_THREADS=32`, `LAGHOS_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Laghos_test`
 
-Agent editable files: `laghos.cpp`, `laghos_solver.cpp`, `laghos_assembly.cpp`, `makefile`
+Agent editable files: `laghos.cpp`, `laghos_solver.cpp`, `laghos_assembly.cpp` (NOT makefile — build harness handles flags)

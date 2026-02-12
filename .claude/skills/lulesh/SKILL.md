@@ -60,7 +60,6 @@ make -j8
 ```bash
 python3 tools/lulesh_harness/bin/lulesh_run               # benchmark + correctness
 python3 tools/lulesh_harness/bin/lulesh_run -s 30 -i 100  # custom parameters
-python3 tools/lulesh_harness/bin/lulesh_check_correct      # quick correctness only
 ```
 
 The harness: (1) builds pristine LULESH if needed, (2) runs pristine with identical parameters as baseline, (3) runs modified version, (4) compares Final Origin Energy (tolerance 1e-8), (5) compares wall-clock time for speedup, (6) outputs CORRECTNESS and SPEEDUP summary.

@@ -29,7 +29,7 @@ sbatch batch/run_benchmark.sh --base --lulesh             # base mode (no expert
 4. Extracts agent's patch, compares against the expert's known optimization
 5. Records: speedup, correctness, file overlap, patch similarity
 
-**Base mode** (`--base`) uses `hpc_runner.py`. Runs the agent on the current `*_test` repo state. No expert comparison, no workspace cloning. Useful for testing harness changes or quick iteration.
+**Base mode** (`--base`) uses `hpc_benchmark_runner.py` with the `--base` flag. Creates an isolated workspace copy from `*_test` repos (via rsync). No expert comparison, no git checkout. Useful for testing harness changes or quick iteration.
 
 ## What `run_benchmark.sh` Orchestrates
 
