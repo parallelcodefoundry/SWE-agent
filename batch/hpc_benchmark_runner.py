@@ -750,18 +750,18 @@ def main():
 
         print(f"Loaded {len(instances)} instances from {args.dataset}")
 
-    # Setup output directory
+    # Setup output directory (must be absolute — shell scripts cd to workspace)
     if args.output_dir:
-        output_dir = args.output_dir
+        output_dir = args.output_dir.resolve()
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = Path(f"batch_results/benchmark_{timestamp}")
+        output_dir = Path(f"batch_results/benchmark_{timestamp}").resolve()
 
-    # Setup trajectory directory
+    # Setup trajectory directory (must be absolute)
     if args.trajectory_dir:
-        trajectory_dir = args.trajectory_dir
+        trajectory_dir = args.trajectory_dir.resolve()
     else:
-        trajectory_dir = Path(f"trajectories/benchmark_{output_dir.name}")
+        trajectory_dir = Path(f"trajectories/{output_dir.name}").resolve()
 
     # Run benchmarks
     runner = HPCBenchmarkRunner(
