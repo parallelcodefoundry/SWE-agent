@@ -8,7 +8,7 @@ None. QS harness multi-GPU work complete. Codex shell timeout patch is next prio
 
 ## Current Focus
 
-**Codex CLI shell timeout patch** — The 10s default `DEFAULT_EXEC_COMMAND_TIMEOUT_MS` in Codex's Rust core kills all long-running commands (qs_build ~2min, qs_run ~4min). gpt-4o-mini doesn't reliably set `timeout_ms` per-command despite prompt guidance. Need to patch the Codex binary to increase the default to 300000ms.
+**Codex CLI shell timeout patch** — The 10s default `DEFAULT_EXEC_COMMAND_TIMEOUT_MS` in Codex's Rust core kills all long-running commands (qs_build ~2min, qs_run ~4min). gpt-4o-mini doesn't reliably set `timeout_ms` per-command despite prompt guidance. Approach: add `CODEX_DEFAULT_EXEC_TIMEOUT_MS` env var override to `exec.rs` with 300s fallback default. Benchmark runner exports the env var → configurable per-run. No existing config override exists (confirmed by source inspection). Local source at `/pscratch/sd/k/krydzy/codex/`.
 
 ## Last Session (Session 13)
 
@@ -78,7 +78,7 @@ None. All changes committed on `local` branch.
 
 ## Open Issues
 
-- **Codex 10s shell timeout** — `DEFAULT_EXEC_COMMAND_TIMEOUT_MS = 10_000` in `codex-rs/core/src/exec.rs:38`. gpt-4o-mini doesn't reliably set `timeout_ms`. **HIGH PRIORITY** — need to patch Codex binary.
+- **Codex 10s shell timeout** — `DEFAULT_EXEC_COMMAND_TIMEOUT_MS = 10_000` in `codex-rs/core/src/exec.rs:38`. **HIGH PRIORITY** — approach decided: add `CODEX_DEFAULT_EXEC_TIMEOUT_MS` env var override + change fallback default to 300s. 3 touch points in exec.rs + 1 in exec-server/mcp.rs. See `.planning/fix-codex-timeout.md`.
 - **OpenCode exits non-zero on normal completion** — benchmark runner marks as failed
 - **OpenHands still deletes some non-essential Makefiles** — guardrails partial
 - **SWE-agent whitespace patches** — agent reformats code instead of optimizing
@@ -87,7 +87,7 @@ None. All changes committed on `local` branch.
 
 ## Next Steps
 
-1. **Patch Codex CLI default shell timeout** — Change `DEFAULT_EXEC_COMMAND_TIMEOUT_MS` from 10,000 to 300,000 in Codex Rust source. Build and install patched version. (see `.planning/fix-codex-timeout.md`)
+1. **Patch Codex CLI shell timeout** — Add `CODEX_DEFAULT_EXEC_TIMEOUT_MS` env var override to Rust source, change fallback from 10s to 300s, rebuild binary, update benchmark runner to export env var. (see `.planning/fix-codex-timeout.md`)
 2. **Run full benchmark suite** with all 4 frameworks on all 4 apps
 3. **Phase 2: GPA-Benchmark + SWE-fficiency integration**
 4. **Phase 3: Restructure repo with submodules**

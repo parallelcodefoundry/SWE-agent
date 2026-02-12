@@ -44,18 +44,21 @@ Updated QS harnesses (`qs_build`, `qs_run`) for multi-GPU MPI+CUDA execution. Fi
 - Source: Rust crate `codex-rs/core/` — the `exec.rs` file has the hardcoded default
 - Binary: compiled Rust embedded in npm package
 
-### Approach Decided
-- Patch the Codex source to change default from 10,000 to 300,000ms
-- Requires: Rust toolchain, clone codex repo, modify constant, rebuild, install
-- Alternative: check if there's a config file or env var that can override (investigate first)
+### Approach Decided (Investigated in session 14)
+- **No existing config key or env var** — confirmed by reading `ConfigToml` struct and `config.schema.json`
+- Add `CODEX_DEFAULT_EXEC_TIMEOUT_MS` env var override to `exec.rs`, change hardcoded fallback from 10,000 to 300,000ms
+- 3 touch points in `exec.rs` (lines 38, 101, 113) + 1 in `exec-server/src/posix/mcp.rs:116`
+- Benchmark runner exports the env var before launching Codex → configurable per-run without rebuild
+- Local Codex source at `/pscratch/sd/k/krydzy/codex/`
+- Binary at `~/.nvm/versions/node/v22.19.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex/codex`
 
 ## Gotchas for Next Session
 
-1. **Codex is Rust** — needs Rust toolchain (`cargo`, `rustc`) to build. Check if available on Perlmutter or need to install.
-2. **npm package bundles compiled binary** — may need to replace the binary in-place after building
-3. **Codex version 0.99.0** — make sure to check out the matching tag/version
-4. **The 10s timeout is per-command** — affects ALL shell commands, not just builds/runs
-5. **QS harnesses are fully working** — don't touch them; they were validated this session
+1. **Codex is Rust** — needs Rust toolchain (`cargo`, `rustc`) to build. Check if available on Perlmutter or need to install via `rustup`.
+2. **npm package bundles compiled binary** — replace binary in-place at the long npm path above after building
+3. **Codex version 0.99.0** — the local source at `../codex/` should match. Verify before patching.
+4. **The constant is `pub`** — used by `exec-server` crate too. Replace with `pub fn` so external crates can still call it.
+5. **QS harnesses are fully working** — don't touch them; they were validated session 13.
 6. **Module names**: use `cudatoolkit/12.4` not `cuda/12.4` on Perlmutter
 
 ## Branch State
