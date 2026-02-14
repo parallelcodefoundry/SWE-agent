@@ -42,11 +42,10 @@ class CodexLauncher(FrameworkLauncher):
             # Add explicit timeout guidance for AGENTS.md (Codex reads this)
             f.write(
                 "## Shell Command Timeouts\n\n"
-                "The default shell timeout is 10 seconds. Benchmark commands take "
-                "60-120 seconds. **Always** set `timeout_ms: 300000` (5 minutes) "
-                "when calling build or run harness commands. If a command returns "
-                "empty output with null exit code, it was killed by timeout — "
-                "retry with `timeout_ms: 300000`.\n"
+                "The default shell timeout has been set to 300 seconds (5 minutes) "
+                "via CODEX_DEFAULT_EXEC_TIMEOUT_MS. Build and run commands may take "
+                "60-240 seconds — they will NOT be killed by the default timeout. "
+                "If you need even longer, set `timeout_ms` explicitly.\n"
             )
 
         # Write a metadata file with the -c config flags for the launch command
@@ -154,6 +153,7 @@ fi
 {self.get_env_exports(repo_name, workspace)}
 {self.get_api_env_exports()}
 export CODEX_API_KEY="${{OPENAI_API_KEY}}"
+export CODEX_DEFAULT_EXEC_TIMEOUT_MS=300000
 
 cd "{workspace}"
 
