@@ -90,9 +90,11 @@ None. All changes committed on `local` branch.
 - **SWE-agent whitespace patches** — agent reformats code instead of optimizing
 - SWE-agent doubled path bug: workspace ends in `/cuda` + git diff gives `cuda/src/...`
 - vLLM model cache incomplete — needs HF_TOKEN
+- **run_benchmark.sh only supports one framework per run** — add `--framework all` option to loop over all frameworks with test repo resets between each
 
 ## Next Steps
 
-1. **Run full benchmark suite** with all 4 frameworks on all 4 apps (curated commits)
+1. **E2E validation: all frameworks × all apps (base mode)** — Run each of the 4 frameworks on each of the 4 apps in `--base` mode to confirm the full 4×4 matrix works.
 2. **Phase 2: GPA-Benchmark + SWE-fficiency integration**
 3. **Phase 3: Restructure repo with submodules**
+4. **Curated commits benchmark** — Run the 9 curated performance commits (dataset/curated_perf_commits.json) to compare agent vs expert patches.

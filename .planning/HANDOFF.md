@@ -15,7 +15,7 @@ Patched the Codex CLI Rust binary to add `CODEX_DEFAULT_EXEC_TIMEOUT_MS` env var
 - [x] Goal 5: Update AGENTS.md guidance (300s default, no manual timeout_ms needed)
 - [x] Goal 6: E2E validation — sleep 15 test + full Codex/QS benchmark
 - [x] Goal 7: Commit and save state
-- [ ] Goal 8: Run full benchmark suite with all 4 frameworks (**NEXT SESSION**)
+- [ ] Goal 8: E2E validation — all 4 frameworks × all 4 apps, base mode (**NEXT SESSION**)
 
 ## Files Modified This Session
 
