@@ -32,7 +32,7 @@ PHASE 1 — Pre-flight checks:
 PHASE 2 — Run Codex framework first (most recently validated):
 
 5. Get interactive allocation:
-   salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m2404
+   salloc --nodes 1 --qos interactive --time 04:00:00 --constraint gpu --gpus 4 --account m2404
 6. Run Codex on all apps (curated commits, benchmark mode):
    source ~/.openai_env && source ~/envs/sweagent/bin/activate
    INSIDE_BATCH_RUN=1 srun --exclusive --gpus 4 --ntasks 1 --cpus-per-task 64 --gpu-bind=none \
@@ -60,8 +60,7 @@ PHASE 3 — Run remaining frameworks (one at a time):
     Output: batch_results/full_openhands/
     WATCH FOR: Makefile deletion guardrail issues
 
-NOTE: Each framework run needs its own salloc (interactive QOS = max 4 hrs).
-If a single run exceeds 3 hours, use sbatch with regular QOS instead.
+NOTE: Always allocate the max 4 hours for interactive QOS — just end early when done.
 Reset test repos between EVERY framework run to ensure clean state.
 
 PHASE 4 — Analyze results:
