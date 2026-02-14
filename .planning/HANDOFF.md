@@ -1,89 +1,84 @@
-# HANDOFF.md — Session 14 Summary
+# HANDOFF.md — Session 15 Summary
 
-Last updated: 2026-02-13 (session 14)
+Last updated: 2026-02-13 (session 15)
 
 ## What Was Done
 
-Patched the Codex CLI Rust binary to add `CODEX_DEFAULT_EXEC_TIMEOUT_MS` env var override. Built from source on Perlmutter, replaced npm binary, integrated with benchmark runner, validated E2E with gpt-4o-mini on Quicksilver.
+Ran the full 4×4 matrix validation: all 4 frameworks (Codex, SWE-agent, OpenCode, OpenHands) × all 4 apps (Kripke, Laghos, Lulesh, Quicksilver) in `--base` mode using gpt-4o-mini via the OpenAI API. Single 4-node interactive allocation (Job 48889171), ~2h48m total.
 
 ## Goal Progress
 
-- [x] Goal 1: Patch exec.rs — replace constant with env-var-aware function (4 touch points)
-- [x] Goal 2: Install Rust toolchain and build Codex binary on Perlmutter
-- [x] Goal 3: Replace npm-installed binary with patched one
-- [x] Goal 4: Update benchmark runner (codex.py) to export CODEX_DEFAULT_EXEC_TIMEOUT_MS
-- [x] Goal 5: Update AGENTS.md guidance (300s default, no manual timeout_ms needed)
-- [x] Goal 6: E2E validation — sleep 15 test + full Codex/QS benchmark
-- [x] Goal 7: Commit and save state
-- [ ] Goal 8: E2E validation — all 4 frameworks × all 4 apps, base mode (**NEXT SESSION**)
+- [x] Goal 1: Reset test repos and pre-flight checks
+- [x] Goal 2: Run Codex on all 4 apps (3/4 success, Lulesh failed)
+- [x] Goal 3: Run SWE-agent on all 4 apps (3/4 success, Lulesh failed)
+- [x] Goal 4: Run OpenCode on all 4 apps (4/4 success — perfect)
+- [x] Goal 5: Run OpenHands on all 4 apps (4/4 success — perfect)
+- [x] Goal 6: Compile results matrix (14/16 overall)
+- [x] Goal 7: Save state
+- [ ] Goal 8: Curated performance commits benchmark (**NEXT SESSION**)
+- [ ] Goal 9: GPA-Benchmark + SWE-fficiency integration
+- [ ] Goal 10: Investigate Lulesh failures for Codex and SWE-agent
+
+## Results Matrix
+
+| Framework | Kripke | Laghos | Lulesh | Quicksilver | Total |
+|-----------|--------|--------|--------|-------------|-------|
+| **Codex** | OK (711s) | OK (221s) | **FAIL** (1582s) | OK (360s) | 3/4 |
+| **SWE-agent** | OK (1474s) | OK (593s) | **FAIL** (1990s) | OK (2253s) | 3/4 |
+| **OpenCode** | OK (3548s) | OK (197s) | OK (554s) | OK (881s) | **4/4** |
+| **OpenHands** | OK (641s) | OK (189s) | OK (190s) | OK (2578s) | **4/4** |
 
 ## Files Modified This Session
 
-| File | Repo | Change |
-|------|------|--------|
-| `codex-rs/core/src/exec.rs` | codex | Replaced `pub const DEFAULT_EXEC_COMMAND_TIMEOUT_MS: u64 = 10_000` with `pub fn default_exec_command_timeout_ms() -> u64` that checks env var, falls back to 300_000 |
-| `codex-rs/exec-server/src/posix/mcp.rs` | codex | Updated reference from constant to function call (line 116) |
-| `batch/frameworks/codex.py` | SWE-agent | Added `export CODEX_DEFAULT_EXEC_TIMEOUT_MS=300000`, updated AGENTS.md guidance |
-| `.claude/` skills/agents/rules | SWE-agent | Reference file updates (cosmetic) |
-| `STATE.md` | SWE-agent | Updated with session 14 results |
-| `.planning/HANDOFF.md` | SWE-agent | This file |
+| File | Change |
+|------|--------|
+| `STATE.md` | Updated with session 15 results |
+| `.planning/HANDOFF.md` | This file |
+| `batch_results/run_full_matrix.sh` | Wrapper script to chain all 4 frameworks (untracked) |
 
 ## Files to Read First Next Session
 
 1. `STATE.md` — Full state overview
 2. `.planning/HANDOFF.md` — This file
-3. `batch/run_benchmark.sh` — To understand how to launch full benchmark suite
+3. `dataset/curated_perf_commits.json` — The 9 curated commits for the benchmark run
+4. `batch/run_benchmark.sh` — Benchmark runner (supports `--instance-id` for specific commits)
 
-## Key Context for Full Benchmark Suite
+## Output Data Locations
 
-### What's Ready
+All results are in `batch_results/benchmark_*_48889171/run_1/{app}/`:
+- `benchmark_results.json` — structured results (success, duration, patch, etc.)
+- `agent.log` — runner stdout (mostly NVM/setup)
+- `benchmark.log` — Python benchmark runner log
+- `{app}__base_agent_realtime.log` — agent's real-time output (verbose for SWE-agent, minimal for Codex/OpenCode)
+- `{app}__base_prompt.txt` — the prompt sent to the agent
+- `workspaces/{app}__base/` — the workspace where the agent worked
 
-All 4 frameworks have been individually validated:
-- **SWE-agent** — Baseline framework, works but has whitespace patch issues
-- **Codex CLI** — Timeout patched (session 14), E2E validated with gpt-4o-mini
-- **OpenCode** — Permission fix works (session 12), but exits non-zero on normal completion
-- **OpenHands** — Guardrails work (session 12), but still deletes some non-essential Makefiles
+Trajectories in `trajectories/benchmark_*_48889171/run_1/{app}/{app}__base.jsonl`.
 
-### Running Full Suite (Interactive — Preferred)
+## Key Observations for Next Session
+
+1. **Laghos produces no patches** — all 4 frameworks finish fast but none change code. Laghos may already be well-optimized or the prompt may not guide well enough.
+2. **Lulesh is the hardest** — only OpenCode and OpenHands succeed. Investigate Codex/SWE-agent trajectories to understand failure modes.
+3. **SWE-agent whitespace issue** — on Lulesh, SWE-agent reformats entire files (1.9M chars, 124K insertions). This is a known but unresolved issue.
+4. **OpenHands Kripke generates huge patches** — 4.5M chars with 48K insertions but 0 deletions. Likely includes build artifacts in git diff. May need to filter build directories.
+5. **OpenCode non-zero exit NOT observed** — all 4 OpenCode instances succeeded. The bug may have been fixed or is intermittent.
+
+## Running the Curated Commits Benchmark
 
 ```bash
-# 1. Get interactive allocation (starts immediately)
-salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m2404
+# Interactive — preferred
+salloc --nodes 4 --qos interactive --time 04:00:00 --constraint gpu --gpus-per-node=4 --account m2404
 
-# 2. Run benchmark interactively on compute node (single app)
+# Inside allocation:
 source ~/.openai_env && source ~/envs/sweagent/bin/activate
-INSIDE_BATCH_RUN=1 srun --exclusive --gpus 4 --ntasks 1 --cpus-per-task 64 --gpu-bind=none \
-  bash -lc "source ~/.openai_env && source ~/envs/sweagent/bin/activate && \
-  cd /pscratch/sd/k/krydzy/SWE-agent && \
-  python -m batch.hpc_benchmark_runner --app quicksilver --base --framework codex \
-  --external-model --model-name openai/gpt-4o-mini \
-  --output-dir /pscratch/sd/k/krydzy/SWE-agent/batch_results/validation_run"
-
-# All 4 frameworks need separate runs (one per framework)
-# Use perlmutter-executor agent to handle allocation + execution
+bash batch/run_benchmark.sh --framework codex --external-model --model-name openai/gpt-4o-mini
+# (no --base flag = benchmark mode = uses curated_perf_commits.json)
 ```
 
-**IMPORTANT**: Always prefer `salloc` (interactive) over `sbatch` (batch) for validation. Interactive sessions start immediately and allow real-time monitoring. Only use sbatch for runs >4 hours or multi-node jobs.
-
-### Rust Toolchain on Perlmutter
-
-Installed at `~/.cargo/bin/` with these symlinks for build tools:
-- `cc` → `/opt/cray/pe/gcc-native/13/bin/gcc`
-- `ar` → `/usr/bin/ar`
-- `pkg-config` → `/usr/bin/pkg-config`
-
-If Codex needs a rebuild: `CC=/opt/cray/pe/gcc-native/13/bin/gcc PATH="$HOME/.cargo/bin:$PATH" cargo build --release -p codex-cli --manifest-path /pscratch/sd/k/krydzy/codex/codex-rs/Cargo.toml`
-
-## Gotchas for Next Session
-
-1. **Codex version shows 0.0.0** — Expected; we built from source with workspace `version = "0.0.0"`. The npm package was 0.99.0. Functionally identical.
-2. **Original binary backed up** — At the same install path with `.bak` suffix (81MB vs patched 68MB).
-3. **Codex source is a separate git repo** — Changes committed at `/pscratch/sd/k/krydzy/codex/` (commit `272184359`), not in the SWE-agent repo.
-4. **Login node has gcc-13 but not in default PATH for cargo** — The `~/.cargo/bin/cc` symlink handles this.
-5. **OpenSSL available at `/usr`** — No special `OPENSSL_DIR` needed, just `pkg-config` in PATH.
+Note: benchmark mode checks out specific commits, runs agent, compares to expert patch. Different from base mode.
 
 ## Branch State
 
 - **Current branch**: `local`
-- **Latest commit**: `55df28a6` — WIP: Update skills, agents, and rules references
-- **Previous commit**: `7548b391` — Fix Codex 10s shell timeout
+- **Latest commit**: `c8cd35d7` — Clarify next task: E2E validation (base mode)
+- **No uncommitted tracked changes**
