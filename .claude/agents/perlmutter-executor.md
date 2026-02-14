@@ -1,6 +1,6 @@
 ---
 name: perlmutter-executor
-description: "Executor agent for compiling, building, and running code on Perlmutter compute nodes. Delegate to this agent when you need to: compile code that requires GPU, run applications on compute nodes via salloc/srun, test builds, or execute benchmark runs. This agent handles interactive allocations and module loading."
+description: "Executor agent for compiling, building, and running code on Perlmutter compute nodes. Use proactively when the task requires GPU compilation, salloc/srun execution, benchmark runs, or any operation that must happen on a compute node."
 tools:
   - Bash
   - Read

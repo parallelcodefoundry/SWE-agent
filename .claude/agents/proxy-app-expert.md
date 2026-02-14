@@ -1,6 +1,11 @@
 ---
 name: proxy-app-expert
-description: "Expert on HPC proxy applications and benchmark harnesses. Delegate to this agent for: build issues with Kripke/Laghos/Lulesh/Quicksilver, creating or modifying test harnesses, correctness validation, understanding app internals, and working with GPA-Benchmark or SWE-fficiency applications."
+description: "Expert on HPC proxy applications and benchmark harnesses. Use proactively when the task involves building, debugging, or modifying Kripke/Laghos/Lulesh/Quicksilver harnesses, creating test instances, validating correctness, or working with GPA-Benchmark or SWE-fficiency apps."
+skills:
+  - kripke
+  - laghos
+  - lulesh
+  - quicksilver
 tools:
   - Read
   - Grep

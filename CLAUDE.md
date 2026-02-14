@@ -2,6 +2,16 @@
 
 LLM agent benchmark for HPC code optimization. Tests whether coding agents (SWE-agent, Openhands, Claude Code, Codex, Cursor, OpenCode) can optimize real proxy apps on NERSC Perlmutter (A100 GPUs). Built on SWE-agent; `main` tracks upstream, `local` is our working branch. Create feature branches off `local`.
 
+## Session Workflow
+
+IMPORTANT: Follow this workflow for EVERY session.
+
+- ALWAYS run /load-state as the VERY FIRST action when starting a new session or after context reset. Do NOT start work until state is loaded.
+- Use /compact after verbose build output or every ~30 minutes. Delegate research to subagents to protect main context.
+- When context usage exceeds 70%, IMMEDIATELY run /save-state before doing anything else. Autocompact triggers at 90% — this gives a 20% buffer.
+- You MUST run /save-state before EVERY exit attempt. NEVER stop without saving state first.
+- When compacting, ALWAYS preserve: STATE.md contents, HANDOFF.md goal checklist, all file paths discussed, SLURM job IDs, and current task description.
+
 ## Project Structure
 
 - `tools/*_harness/` — Per-app build/run/correctness harnesses (SWE-agent tool format)
@@ -13,13 +23,6 @@ LLM agent benchmark for HPC code optimization. Tests whether coding agents (SWE-
 - `{Kripke,Laghos,Lulesh,Quicksilver}/` — Pristine app clones (NEVER modify)
 - `{Kripke,Laghos,Lulesh,Quicksilver}_test/` — Working copies for agent experiments
 - `mfem/`, `hypre/`, `metis-4.0.3/` — Shared Laghos dependencies
-
-## Claude Code Infrastructure
-
-- `.claude/skills/` — 15 skill files (per-app build/run guides, profiling tools, framework configs, Perlmutter reference). Loaded automatically when relevant.
-- `.claude/agents/` — 4 custom agents: `proxy-app-expert` (app harnesses), `framework-expert` (SWE-agent/Openhands/Codex/OpenCode), `perlmutter-executor` (GPU builds/runs), `profiling-expert` (HPCToolkit/Nsight/hatchet)
-- `.claude/commands/` — Slash commands: `/load-state`, `/save-state`, `/check-experiment`, `/write-plan`
-- `agent_docs/` — `architecture.md` (system design, data flow) and `experiment-workflow.md` (how to run benchmarks, modes, results format)
 
 ## Key Commands
 
@@ -56,11 +59,3 @@ source ~/envs/sweagent/bin/activate
 6. **Always reset `_test` repos** between experiment runs to ensure clean state.
 7. **If a command fails with stale Python/tools** — likely an outdated module; load a newer version.
 8. **NERSC account**: `m2404` for all SLURM jobs.
-
-## Future Work
-
-SWE-fficiency dataset (`/pscratch/sd/k/krydzy/swefficiency`) and GPA-Benchmark integration are planned but not yet wired into the benchmark pipeline.
-
-## Compaction Instructions
-
-When compacting, always preserve: the full contents of STATE.md, all file paths discussed, current experiment/benchmark names and status, any SLURM job IDs, and the current task description.

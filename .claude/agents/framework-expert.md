@@ -1,6 +1,6 @@
 ---
 name: framework-expert
-description: "Expert on agentic coding frameworks. Delegate to this agent for: configuring SWE-agent or Openhands benchmark instances, setting up sandbox environments, defining task formats, integrating applications into framework harnesses, and designing unified benchmark formats across frameworks."
+description: "Expert on agentic coding frameworks. Use proactively when configuring SWE-agent, Openhands, OpenCode, or Codex CLI for benchmarks, debugging framework-specific issues, or integrating new frameworks."
 tools:
   - Read
   - Grep
