@@ -44,17 +44,26 @@ All 4 frameworks have been individually validated:
 - **OpenCode** — Permission fix works (session 12), but exits non-zero on normal completion
 - **OpenHands** — Guardrails work (session 12), but still deletes some non-essential Makefiles
 
-### Running Full Suite
+### Running Full Suite (Interactive — Preferred)
 
 ```bash
-# All 4 apps, all curated commits, with Codex framework:
-sbatch batch/run_benchmark.sh --framework codex --external-model --model-name openai/gpt-4o-mini
+# 1. Get interactive allocation (starts immediately)
+salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m2404
 
-# Single app:
-sbatch batch/run_benchmark.sh --quicksilver --framework codex --external-model --model-name openai/gpt-4o-mini
+# 2. Run benchmark interactively on compute node (single app)
+source ~/.openai_env && source ~/envs/sweagent/bin/activate
+INSIDE_BATCH_RUN=1 srun --exclusive --gpus 4 --ntasks 1 --cpus-per-task 64 --gpu-bind=none \
+  bash -lc "source ~/.openai_env && source ~/envs/sweagent/bin/activate && \
+  cd /pscratch/sd/k/krydzy/SWE-agent && \
+  python -m batch.hpc_benchmark_runner --app quicksilver --base --framework codex \
+  --external-model --model-name openai/gpt-4o-mini \
+  --output-dir /pscratch/sd/k/krydzy/SWE-agent/batch_results/validation_run"
 
-# All 4 frameworks would need 4 separate runs (one per framework)
+# All 4 frameworks need separate runs (one per framework)
+# Use perlmutter-executor agent to handle allocation + execution
 ```
+
+**IMPORTANT**: Always prefer `salloc` (interactive) over `sbatch` (batch) for validation. Interactive sessions start immediately and allow real-time monitoring. Only use sbatch for runs >4 hours or multi-node jobs.
 
 ### Rust Toolchain on Perlmutter
 

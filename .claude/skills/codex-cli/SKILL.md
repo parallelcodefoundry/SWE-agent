@@ -1,6 +1,6 @@
 ---
 name: codex-cli
-description: "OpenAI Codex CLI terminal agent. Use when user mentions 'codex', 'codex cli', Codex shell timeout, Codex provider config, or Codex benchmark runs. CRITICAL: Codex has a 10s default shell timeout bug."
+description: "OpenAI Codex CLI terminal agent. Use when user mentions 'codex', 'codex cli', Codex shell timeout, Codex provider config, or Codex benchmark runs."
 ---
 
 # OpenAI Codex CLI
@@ -17,6 +17,8 @@ nvm use 22
 npm install -g @openai/codex
 codex --version
 ```
+
+**Note**: The npm-installed binary has been replaced with a patched build (see Shell Timeout section). Original backed up at the same path with `.bak` suffix.
 
 ## Non-Interactive Mode (`codex exec`)
 
@@ -35,16 +37,25 @@ codex exec \
 
 **IMPORTANT**: Must use a custom provider name (not `openai`) -- built-in provider uses `or_insert`, silently ignoring user overrides for `model_providers.openai.*`.
 
-## Shell Command Timeout (CRITICAL for HPC)
+## Shell Command Timeout (PATCHED)
 
-**Default timeout: 10 seconds** (`DEFAULT_EXEC_COMMAND_TIMEOUT_MS = 10_000` in `codex-rs/core/src/exec.rs:38`). This kills any command running longer than 10s. HPC harnesses need 60-120+ seconds.
+**Status: RESOLVED** (session 14, 2026-02-13)
 
-**Symptoms**: `aggregated_output: ""` and `exit_code: null` in JSONL trajectory.
+The binary has been patched to support `CODEX_DEFAULT_EXEC_TIMEOUT_MS` env var with a 300s fallback default (was hardcoded 10s).
 
-**No CLI override exists.** Timeout can ONLY be set per-command by the model via `LocalShellExecAction.timeout_ms`. Include explicit guidance in prompt and `AGENTS.md`:
+| Item | Detail |
+|------|--------|
+| Env var | `CODEX_DEFAULT_EXEC_TIMEOUT_MS` (milliseconds) |
+| Default | 300,000 (5 minutes) — was 10,000 (10 seconds) |
+| Source | `codex-rs/core/src/exec.rs:40` — `pub fn default_exec_command_timeout_ms()` |
+| Integration | `batch/frameworks/codex.py` exports `CODEX_DEFAULT_EXEC_TIMEOUT_MS=300000` |
+
+The benchmark runner handles this automatically. For manual Codex runs, export the env var:
+```bash
+export CODEX_DEFAULT_EXEC_TIMEOUT_MS=300000
 ```
-CRITICAL: Set timeout_ms: 300000 (5 minutes) for all build/run harness commands.
-```
+
+**If the binary gets overwritten** (e.g., `npm update`), rebuild from patched source — see `references/internals.md` for build instructions.
 
 ## vLLM Configuration
 
@@ -73,8 +84,7 @@ codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --js
 1. **API 404/unsupported**: Forgot `wire_api = "chat"` for vLLM
 2. **Built-in provider shadow**: Use custom provider name (not `openai`)
 3. **Sandbox blocks GPU builds**: Use `--dangerously-bypass-approvals-and-sandbox`
-4. **Harness commands return empty output**: 10s timeout killing the process
-5. **`AGENTS.md` not `CLAUDE.md`**: Codex ignores CLAUDE.md
-6. **Lustre + Landlock**: `--dangerously-bypass-approvals-and-sandbox` bypasses Landlock
+4. **`AGENTS.md` not `CLAUDE.md`**: Codex ignores CLAUDE.md
+5. **Lustre + Landlock**: `--dangerously-bypass-approvals-and-sandbox` bypasses Landlock
 
 For detailed reference, see references/ in this skill directory.

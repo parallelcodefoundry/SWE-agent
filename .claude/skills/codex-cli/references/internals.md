@@ -5,9 +5,59 @@
 The Codex CLI is a Rust binary (`codex-rs/`) wrapped by an npm package (`codex-cli/bin/codex.js`). The npm wrapper spawns the vendored Rust binary.
 
 Key source files:
-- `codex-rs/core/src/exec.rs` -- Shell command execution, contains `DEFAULT_EXEC_COMMAND_TIMEOUT_MS = 10_000`
+- `codex-rs/core/src/exec.rs` -- Shell command execution, `default_exec_command_timeout_ms()` function (was constant)
+- `codex-rs/exec-server/src/posix/mcp.rs` -- MCP exec server, references the timeout function
 - `codex-rs/core/config.schema.json` -- Full config schema
 - `codex-rs/core/src/config/mod.rs` -- Config loading, built-in provider `or_insert` at line ~1521
+
+## Shell Timeout Patch Details
+
+**Patched in session 14 (2026-02-13).** The constant `DEFAULT_EXEC_COMMAND_TIMEOUT_MS = 10_000` was replaced with a function:
+
+```rust
+pub fn default_exec_command_timeout_ms() -> u64 {
+    std::env::var("CODEX_DEFAULT_EXEC_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(300_000)
+}
+```
+
+4 touch points:
+1. `exec.rs:40` -- Function definition (was constant)
+2. `exec.rs:108` -- `ExecExpiration::wait()` DefaultTimeout arm
+3. `exec.rs:117` -- `ExecExpiration::timeout_ms()` DefaultTimeout arm
+4. `mcp.rs:116` -- MCP exec server fallback timeout
+
+## Binary Locations
+
+| Binary | Path |
+|--------|------|
+| Installed (patched) | `~/.nvm/versions/node/v22.19.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex/codex` |
+| Original backup | Same path with `.bak` suffix |
+| Built release | `/pscratch/sd/k/krydzy/codex/codex-rs/target/release/codex` |
+
+## Rebuilding on Perlmutter
+
+Rust toolchain installed at `~/.cargo/bin/` (rustc/cargo 1.93.1). Symlinks for build tools are already in place.
+
+```bash
+# Build (can run on login node — gcc-13 available)
+CC=/opt/cray/pe/gcc-native/13/bin/gcc \
+PATH="$HOME/.cargo/bin:$PATH" \
+cargo build --release -p codex-cli \
+  --manifest-path /pscratch/sd/k/krydzy/codex/codex-rs/Cargo.toml
+
+# Replace npm binary
+CODEX_BIN="$HOME/.nvm/versions/node/v22.19.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex/codex"
+cp /pscratch/sd/k/krydzy/codex/codex-rs/target/release/codex "$CODEX_BIN"
+```
+
+Build prerequisites (already set up in `~/.cargo/bin/`):
+- `cc` symlink -> `/opt/cray/pe/gcc-native/13/bin/gcc`
+- `ar` symlink -> `/usr/bin/ar`
+- `pkg-config` symlink -> `/usr/bin/pkg-config`
+- Cargo config at `codex-rs/.cargo/config.toml` sets linker to gcc-13
 
 ## API Format
 
@@ -45,6 +95,7 @@ Other flags: `--model/-m`, `--sandbox/-s MODE`, `--cd/-C DIR`, `--add-dir DIR`, 
 ```bash
 export OPENAI_API_KEY="sk-proj-..."
 export CODEX_API_KEY="${OPENAI_API_KEY}"
+export CODEX_DEFAULT_EXEC_TIMEOUT_MS=300000
 
 codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --json --ephemeral \
   -c "model_provider=ext" \
@@ -55,40 +106,6 @@ codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --js
   -c "model=gpt-4o-mini" \
   -c "web_search=disabled" \
   "Your prompt here"
-```
-
-## Config File (`~/.codex/config.toml`)
-
-```toml
-model = "gpt-oss-120b"
-model_provider = "local-vllm"
-web_search = "disabled"
-[model_providers.local-vllm]
-name = "local-vllm"
-base_url = "http://127.0.0.1:8008/v1"
-env_key = "OPENAI_API_KEY"
-wire_api = "chat"
-```
-
-## HPC Benchmark Setup (Full Example)
-
-```bash
-export PATH="/pscratch/sd/k/krydzy/SWE-agent/tools/kripke_harness/bin:$PATH"
-export KRIPKE_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Kripke_test
-
-cd "$KRIPKE_ROOT"
-codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --json --ephemeral \
-  -c "model_provider=local-vllm" \
-  -c "model_providers.local-vllm.name=local-vllm" \
-  -c "model_providers.local-vllm.base_url=http://127.0.0.1:8008/v1" \
-  -c "model_providers.local-vllm.env_key=OPENAI_API_KEY" \
-  -c "model_providers.local-vllm.wire_api=chat" \
-  -c "model=gpt-oss-120b" \
-  -c "web_search=disabled" \
-  "Optimize Kripke for A100. Use kripke_build --arch CUDA, kripke_run --arch CUDA" \
-  > output.jsonl 2> stderr.log
-
-git diff > agent_patch.diff
 ```
 
 ## Collecting Results
@@ -121,4 +138,4 @@ git diff > agent_patch.diff
 7. **Lustre + Landlock**: `--dangerously-bypass-approvals-and-sandbox` bypasses Landlock
 8. **Built-in provider shadow**: User overrides for `model_providers.openai.*` are silently ignored. Use a custom provider name like `ext`
 9. **Regional API endpoint**: If your OpenAI key requires `us.api.openai.com`, you MUST use a custom provider with `base_url` set correctly
-10. **Harness commands return empty output**: 10s default timeout is killing the process. See Shell Command Timeout section
+10. **npm update overwrites binary**: After `npm update`, re-run the rebuild steps above

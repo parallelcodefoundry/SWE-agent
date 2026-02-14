@@ -27,3 +27,14 @@ Always write a handoff file to .planning/HANDOFF.md containing:
 - Which files the next session should read first (with line ranges if relevant)
 - Any gotchas, failed approaches, or decisions the next session needs to know
 - Current validation status (which checks pass, which haven't been run yet)
+- **For validation examples in HANDOFF.md, always show interactive salloc commands (not sbatch)**. Interactive sessions start immediately and allow real-time monitoring.
+
+## Update Skills
+
+After writing STATE.md and HANDOFF.md, check if any `.claude/skills/` files need updating based on what was learned or changed this session. Common triggers:
+- A bug was fixed or a workaround discovered → update the relevant skill's "Common Issues" or main content
+- A tool was patched or reconfigured → update the skill to reflect current state (not the old bug)
+- New build/run procedures were established → add to the relevant skill's reference docs
+- A skill's description mentions a bug that's been resolved → update the description
+
+Only update skills that are directly affected by this session's work. Don't make speculative changes.
