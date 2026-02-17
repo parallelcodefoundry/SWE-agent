@@ -1116,7 +1116,7 @@ class HPCBenchmarkRunner:
                 "--spec", str(spec_path),
                 "--num-workers", "1",
                 "--instance-ids", swe_instance_id,
-                "--no-pull",  # Images pre-pulled via podman-hpc
+                "--pull-missing-images",  # Pull from ghcr.io (podman socket can't see squashfs images)
                 "--disable-cpu-pinning",  # Perlmutter CPU topology
                 "--stream-logs",  # Show container output
                 "--var", f"model_name={model}",
@@ -1195,19 +1195,39 @@ class HPCBenchmarkRunner:
             )
 
             self.log(f"  [SWE-fficiency] eval returncode={proc.returncode}")
+            if proc.returncode != 0:
+                stderr_tail = (proc.stderr or "")[-2000:]
+                if stderr_tail:
+                    self.log(f"  [SWE-fficiency] eval stderr:\n{stderr_tail}")
 
             # Step 5: Parse eval results
+            # The eval produces validation_report_*.json (not report.json)
             eval_dir = SWEFFICIENCY_ROOT / "logs" / "run_evaluation" / eval_run_id
-            report_files = list(eval_dir.rglob("report.json")) if eval_dir.exists() else []
+            report_files = (
+                list(eval_dir.rglob("validation_report_*.json"))
+                if eval_dir.exists() else []
+            )
 
             if report_files:
                 with open(report_files[0]) as f:
                     report = json.load(f)
-                self.log(f"  [SWE-fficiency] Report: {json.dumps(report, indent=2)[:500]}")
+                self.log(f"  [SWE-fficiency] Report keys: {list(report.keys())[:5]}")
+
+                # Report is keyed by instance_id
+                instance_report = report.get(swe_instance_id, {})
+                perf = instance_report.get("perf_report", {})
+                corr = instance_report.get("correctness_report", {})
+
+                speedup = perf.get("improvement", 0.0)
+                # Check if all correctness tests passed
+                test_results = corr.get("test_results", {})
+                all_passed = all(v == "PASSED" for v in test_results.values()) if test_results else False
+
+                self.log(f"  [SWE-fficiency] Speedup: {speedup:.2f}x, Tests: {len(test_results)} ({sum(1 for v in test_results.values() if v == 'PASSED')} passed)")
 
                 result.agent_builds = True
-                result.agent_correctness = report.get("resolved", False)
-                result.agent_speedup = report.get("speedup", 0.0)
+                result.agent_correctness = "passed" if all_passed else "failed"
+                result.agent_speedup = speedup
                 result.success = True
             else:
                 result.error_message = "No eval report generated after agent patch"
