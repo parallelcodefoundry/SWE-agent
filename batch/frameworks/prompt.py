@@ -255,6 +255,44 @@ def build_gpa_prompt(
     kernel_basename = Path(kernel_file).name
     completion = COMPLETION_INSTRUCTIONS.get(framework, COMPLETION_INSTRUCTIONS["opencode"])
 
+    # Build tool description based on profiling config
+    if profiling == "with_profiling":
+        tools_section = """\
+TOOLS AVAILABLE (run as bash commands):
+- gpa_test: Build, run, validate, and time your optimization. Reports speedup vs baseline.
+  Usage: gpa_test (auto-detects app from metadata)
+- compiler_analysis: Analyze register usage, shared memory, occupancy of your .cu file.
+  Usage: compiler_analysis {kernel_basename}
+- microbench_code: Compile and time a standalone .cu file in isolation.
+
+RECOMMENDED WORKFLOW:
+1. Read the kernel code and understand it
+2. Run compiler_analysis on the kernel to check register count and occupancy
+3. Identify performance bottlenecks
+4. Edit the kernel file to optimize it
+5. Run gpa_test to verify correctness and measure speedup
+6. Iterate if needed"""
+    else:
+        tools_section = f"""\
+TOOLS AVAILABLE (run as bash commands):
+- gpa_test: Build, run, validate, and time your optimization. Reports speedup vs baseline.
+  Usage: gpa_test (auto-detects app from metadata)
+
+WORKFLOW:
+1. Read the kernel code and understand it
+2. Identify performance bottlenecks
+3. Edit the kernel file to optimize it
+4. Run gpa_test to verify correctness and measure speedup
+5. Iterate if needed"""
+
+    # Codex-specific timeout guidance
+    codex_section = ""
+    if framework == "codex":
+        codex_section = """\
+
+CRITICAL - SHELL COMMAND TIMEOUT:
+gpa_test takes 30-120 seconds. Set timeout_ms to 300000 (5 minutes) for this command."""
+
     prompt = f"""\
 You are an autonomous agent tasked with optimizing GPU kernel performance.
 
@@ -268,6 +306,8 @@ KERNEL SOURCE CODE:
 ```cuda
 {kernel_source}
 ```
+
+{tools_section}
 
 INSTRUCTIONS:
 1. Read and analyze the kernel code for GPU performance issues
@@ -289,7 +329,7 @@ CONSTRAINTS:
 - Keep all #include directives and external dependencies unchanged
 
 {completion}
-
+{codex_section}
 Thinking should be thorough."""
 
     return prompt

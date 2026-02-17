@@ -147,13 +147,20 @@ class FrameworkLauncher(ABC):
     def get_env_exports(self, repo_name: str, workspace: Path) -> str:
         """Generate shell export statements for common environment variables."""
         if repo_name == "gpa":
-            return (
-                f'export SWE_AGENT_ROOT="{self.sweagent_root}"\n'
-                'export GPA_BENCHMARK_ROOT="/pscratch/sd/k/krydzy/GPA-Benchmark"\n'
-                'export CUDA_VISIBLE_DEVICES="0,1,2,3"\n'
-                'export OMP_NUM_THREADS=32\n'
-                'export PYTHONUNBUFFERED=1'
-            )
+            path_dirs = self.get_path_dirs(repo_name)
+            path_prefix = ":".join(path_dirs) if path_dirs else ""
+            lines = []
+            if path_prefix:
+                lines.append(f'export PATH="{path_prefix}:$PATH"')
+            lines.extend([
+                f'export SWE_AGENT_ROOT="{self.sweagent_root}"',
+                'export GPA_BENCHMARK_ROOT="/pscratch/sd/k/krydzy/GPA-Benchmark"',
+                f'export PYTHONPATH="/pscratch/sd/k/krydzy/GPA-Benchmark:$PYTHONPATH"',
+                'export CUDA_VISIBLE_DEVICES="0,1,2,3"',
+                'export OMP_NUM_THREADS=32',
+                'export PYTHONUNBUFFERED=1',
+            ])
+            return "\n".join(lines)
 
         root_var = APP_ROOT_VAR[repo_name]
         path_dirs = self.get_path_dirs(repo_name)

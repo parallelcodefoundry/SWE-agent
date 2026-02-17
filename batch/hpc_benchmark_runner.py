@@ -1239,9 +1239,21 @@ class HPCBenchmarkRunner:
         if self.base_mode and not instances:
             instances = self.generate_base_instances(apps)
 
+        # GPA and SWE-fficiency instances are generated dynamically (not in dataset).
+        # Add them in agent mode too when those apps are requested.
+        if not self.base_mode:
+            requested_apps = apps or []
+            if "gpa" in requested_apps:
+                instances.extend(self._generate_gpa_base_instances())
+            if "swefficiency" in requested_apps:
+                instances.extend(self._generate_swefficiency_instances())
+
         # Filter by instance_ids if specified (not applicable in base mode)
         if instance_ids and not self.base_mode:
-            instances = [i for i in instances if i["instance_id"] in instance_ids]
+            instances = [i for i in instances if
+                         i["instance_id"] in instance_ids or
+                         i.get("gpa_app_name") in instance_ids or
+                         i.get("swefficiency_instance_id") in instance_ids]
 
         # Filter by app names if specified
         if apps:
