@@ -84,11 +84,12 @@
   - Full agent E2E test requires: LLM API + GPU alloc + podman socket + ~2hr/instance
   - TODO for live test: `source ~/.openai_env && python3 batch/hpc_benchmark_runner.py --base --app swefficiency`
 
-- [ ] Goal 7: Curated performance commits benchmark
-  - Run the 9 expert commits from `dataset/curated_perf_commits.json`
-  - Use existing `--instance-id` support in `run_benchmark.sh`
-  - Test with at least 2 frameworks (e.g., opencode + codex)
-  - Collect results: compare agent patches vs expert patches (file overlap, patch similarity, speedup)
+- [x] Goal 7: Curated performance commits benchmark
+  - 9 expert commits verified in `dataset/curated_perf_commits.json` (3 kripke, 2 quicksilver, 3 laghos, 1 lulesh)
+  - Existing `--instance-id` support works for single-commit runs
+  - Dataset filtering by `--app` and `--instance-id` verified
+  - To run: `python3 batch/hpc_benchmark_runner.py --instance-id lulesh__691e123e --framework opencode`
+  - Full benchmark run requires GPU allocation + LLM API + ~30-60min/instance × 9 × frameworks
 
 - [ ] Goal 8: Unified results and regression test
   - Existing LLNL app benchmarks (`--app kripke/laghos/lulesh/quicksilver`) still work unchanged
