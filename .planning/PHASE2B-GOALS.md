@@ -12,6 +12,7 @@
 8. **Profiling tools are generic**: `hpc_profile`, `hatchet_analyze`, `compiler_analysis`, `microbench_code` all work on arbitrary CUDA code — not hardcoded to LLNL apps. They should work on GPA kernels.
 9. **Two profiling ecosystems for GPA**: Our HPCToolkit/hatchet wrappers AND the GPA driver's built-in nsys/ncu profiling (via `run_driver(nsys=True)`). Both should be available to agents.
 10. **Phase 2B, not Phase 3**: Phase 3 is reserved for repo restructuring (`agents-perf` repo with submodules).
+12. **SWE-fficiency is CPU-Python by design**: Audit of all 27 curated instances confirmed 0 GPU/CUDA, 1 parallelization (scikit-learn-13310). The full 498-instance SWE-fficiency dataset draws from Python repos (numpy, scipy, pandas, scikit-learn, matplotlib, astropy, sympy, dask, xarray) — none involve GPU. SWE-fficiency serves as a complementary "Python optimization" dimension alongside GPA (GPU kernel) and LLNL (HPC proxy app) benchmarks. This is intentional: the suite tests 3 distinct optimization skills.
 11. **GPA profiling: explore driver-integrated vs standalone tools**: The GPA driver already knows how to nsys/ncu profile each app (build paths, kernel names, validation). It may be simpler to expose this through `gpa_test --profile nsys` than to have agents run `hpc_profile` on executables they didn't build. Test both approaches in Goals 3-4 and go with what works better. This is an explicit exploration — not a premade decision.
 
 ## Operational Notes
@@ -77,14 +78,14 @@
   - If gaussian works, try 1-2 more apps (hotspot, xsbench)
   - Record results and any issues — especially which profiling approach agents find more actionable
 
-- [ ] Goal 5: E2E test SWE-fficiency with OpenCode
+- [x] Goal 5: E2E test SWE-fficiency with OpenCode
   - Pick 1 fast-passing instance from Goal 2 results (prefer numpy or dask)
   - Run: `source ~/.openai_env && python3 batch/hpc_benchmark_runner.py --app swefficiency --framework opencode --model-name gpt-4o --instance-id <instance>`
   - Verify: inference spec rendering, custom.py container launch, agent execution, patch extraction, eval pipeline, speedup reporting
   - This validates the FULL pipeline: runner -> custom.py -> container -> agent -> patch -> eval -> result
   - Record results and any issues
 
-- [ ] Goal 6: Test remaining agents (SWE-agent, Codex, OpenHands) on GPA
+- [x] Goal 6: Test remaining agents (SWE-agent, Codex, OpenHands) on GPA
   - Run gaussian with each framework (with GPA driver tool + profiling):
     - `--framework sweagent --model-name gpt-4o`
     - `--framework codex --model-name gpt-4o`
@@ -93,7 +94,18 @@
   - Record: which frameworks succeed, quality of optimizations, profiling tool usage, any framework-specific issues
   - Debug and fix any framework-specific launch/config issues
 
-- [ ] Goal 7: Test remaining agents on SWE-fficiency
+- [ ] Goal 7: Test remaining agents on SWE-fficiency + GPU/parallel instance audit
+  - **GPU/Parallel Instance Check** (COMPLETED — see findings below):
+    - Analyzed all 27 curated SWE-fficiency instances for GPU/CUDA and parallelization characteristics
+    - **Result: 0/27 GPU instances, 1/27 parallelization instance (scikit-learn-13310)**
+    - SWE-fficiency is fundamentally a Python library optimization benchmark (numpy, scipy, pandas, etc.)
+    - The full 498-instance dataset draws from the same Python ecosystem — no GPU instances exist
+    - **Decision needed**: SWE-fficiency targets a DIFFERENT optimization dimension than GPA/LLNL:
+      - GPA: GPU kernel optimization (CUDA anti-patterns)
+      - LLNL: HPC proxy app optimization (MPI+CUDA scientific codes)
+      - SWE-fficiency: Python library performance optimization (algorithmic, caching, vectorization)
+    - **Recommendation**: Keep SWE-fficiency as a complementary benchmark dimension for Python optimization skill.
+      If GPU/parallel Python tasks are needed, consider curating from repos like CuPy, PyTorch, or Numba — but these are NOT in SWE-fficiency's dataset.
   - Run 1 instance per agent (same instance from Goal 5 or another fast passer):
     - `--framework sweagent` (tests the fixed Jinja2 templates from Goal 1)
     - `--framework codex`
@@ -105,6 +117,12 @@
 - [ ] Goal 8: Fix issues and final regression
   - Fix any bugs discovered in Goals 4-7
   - Launch full 27-instance gold eval in background (if not already done in Goal 2)
+  - **Instance classification validation**: Verify benchmark suite covers 3 optimization dimensions:
+    - GPU kernel optimization (GPA): 16 CUDA anti-pattern instances
+    - HPC proxy app optimization (LLNL): 4 MPI+CUDA proxy apps (Kripke, Laghos, Lulesh, Quicksilver)
+    - Python library optimization (SWE-fficiency): 27 CPU-bound Python instances
+    - Document in architecture.md that SWE-fficiency is intentionally CPU-Python (not GPU/parallel)
+    - Total: 47 instances across 3 dimensions
   - Run regression: LLNL (4) + GPA (16) + SWE-fficiency (27) = 47 instances all generate correctly
   - Update STATE.md, architecture.md, experiment-workflow.md with validation results
   - Commit all fixes
