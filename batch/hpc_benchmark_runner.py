@@ -978,7 +978,9 @@ class HPCBenchmarkRunner:
             return
 
         self.log(f"  [GPA] Running driver with swapped code for {gpa_app}...")
-        swaps = {gpa_app: {kernel_basename: modified_code}}
+        # Driver swap protocol: first line must be a comment with the target filename
+        header_code = f"// {kernel_basename}\n{modified_code}"
+        swaps = {kernel_basename: header_code}
         self._run_gpa_driver(gpa_app, result, swaps_override=swaps)
 
     # ---------------------------------------------------------------

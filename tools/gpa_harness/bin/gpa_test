@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""
+gpa_test - Build, run, validate, and time a GPA-Benchmark CUDA kernel optimization.
+
+Reads the modified kernel file from the agent's workspace (CWD), passes it
+to the GPA driver via swaps_override, and reports build/correctness/timing.
+
+The GPA driver handles all build steps, validation, and nsys profiling internally.
+"""
+import argparse
+import json
+import os
+import sys
+import statistics
+from pathlib import Path
+
+
+def _find_gpa_root():
+    """Find the GPA-Benchmark root directory."""
+    # Check env var first
+    root = os.environ.get("GPA_BENCHMARK_ROOT")
+    if root and os.path.isdir(root):
+        return root
+    # Default location on Perlmutter
+    default = "/pscratch/sd/k/krydzy/GPA-Benchmark"
+    if os.path.isdir(default):
+        return default
+    # Try relative to SWE_AGENT_ROOT
+    swe_root = os.environ.get("SWE_AGENT_ROOT")
+    if swe_root:
+        candidate = os.path.join(os.path.dirname(swe_root), "GPA-Benchmark")
+        if os.path.isdir(candidate):
+            return candidate
+    return None
+
+
+def _load_metadata(workspace: Path):
+    """Load gpa_metadata.json from workspace."""
+    meta_path = workspace / "gpa_metadata.json"
+    if meta_path.exists():
+        with open(meta_path) as f:
+            return json.load(f)
+    return {}
+
+
+def _read_kernel_file(workspace: Path, kernel_filename: str) -> str:
+    """Read the (potentially modified) kernel file from workspace."""
+    kernel_path = workspace / kernel_filename
+    if not kernel_path.exists():
+        raise FileNotFoundError(f"Kernel file not found: {kernel_path}")
+    return kernel_path.read_text()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="GPA-Benchmark test tool")
+    parser.add_argument("--app", type=str, help="GPA app name (auto-detected if omitted)")
+    parser.add_argument("--profile", type=str, choices=["nsys", "ncu"],
+                        help="Additional profiling mode")
+    args = parser.parse_args()
+
+    workspace = Path.cwd()
+
+    # Load metadata to get app name and kernel file
+    metadata = _load_metadata(workspace)
+    app_name = args.app or metadata.get("gpa_app_name")
+    if not app_name:
+        print("ERROR: No app name specified and no gpa_metadata.json found.")
+        print("Usage: gpa_test --app <app_name>")
+        sys.exit(1)
+
+    kernel_file_rel = metadata.get("kernel_file", "")
+    kernel_filename = Path(kernel_file_rel).name if kernel_file_rel else ""
+    if not kernel_filename:
+        print(f"ERROR: No kernel_file in metadata for app '{app_name}'.")
+        sys.exit(1)
+
+    # Read the modified kernel code
+    try:
+        modified_code = _read_kernel_file(workspace, kernel_filename)
+    except FileNotFoundError as e:
+        print(f"ERROR: {e}")
+        sys.exit(1)
+
+    print(f"App: {app_name}")
+    print(f"Kernel file: {kernel_filename}")
+    print(f"Kernel size: {len(modified_code)} chars")
+    print()
+
+    # Find GPA-Benchmark root and set up imports
+    gpa_root = _find_gpa_root()
+    if not gpa_root:
+        print("ERROR: Cannot find GPA-Benchmark directory.")
+        print("Set GPA_BENCHMARK_ROOT env var or ensure it exists at the default location.")
+        sys.exit(1)
+
+    # Import the GPA driver
+    sys.path.insert(0, gpa_root)
+    saved_cwd = os.getcwd()
+    os.chdir(gpa_root)
+
+    try:
+        from gpa_bench_driver.gpa_bench_driver import run_driver
+
+        # Build the swaps_override dict
+        # The driver expects the first line to be a comment with the target filename,
+        # then strips it before using the rest as the swap code.
+        header_code = f"// {kernel_filename}\n{modified_code}"
+        swaps_override = {kernel_filename: header_code}
+
+        # Run the driver with swap and nsys profiling
+        enable_nsys = True  # Always use nsys for timing
+        enable_ncu = args.profile == "ncu"
+
+        results, operations, long_results = run_driver(
+            app=app_name,
+            sm_version=80,  # A100
+            nsys=enable_nsys,
+            ncu=enable_ncu,
+            swaps_override=swaps_override,
+        )
+    except Exception as e:
+        print(f"ERROR: GPA driver failed: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+    finally:
+        os.chdir(saved_cwd)
+
+    # Parse results
+    app_results = results.get(app_name)
+    app_long = long_results.get(app_name, [])
+
+    if not app_results:
+        print(f"ERROR: No results for app '{app_name}'")
+        sys.exit(1)
+
+    # Baseline pass is first, swap pass is second
+    baseline_pass = app_long[0] if len(app_long) > 0 else None
+    swap_pass = app_long[1] if len(app_long) > 1 else None
+
+    # Build status
+    build_ok = swap_pass and swap_pass.build if swap_pass else False
+    print(f"BUILD: {'PASSED' if build_ok else 'FAILED'}")
+
+    if not build_ok:
+        if swap_pass and hasattr(swap_pass, 'build_stderr'):
+            print(f"Build error: {swap_pass.build_stderr[:500]}")
+        sys.exit(1)
+
+    # Correctness
+    correct = swap_pass.validate if swap_pass else False
+    print(f"CORRECTNESS: {'PASSED' if correct else 'FAILED'}")
+
+    if not correct and swap_pass and hasattr(swap_pass, 'validate_reason'):
+        print(f"Validation failure: {swap_pass.validate_reason}")
+
+    # Timing from nsys
+    baseline_times = []
+    swap_times = []
+
+    if baseline_pass and hasattr(baseline_pass, 'nsys_data') and baseline_pass.nsys_data:
+        baseline_times = [d.get("exec_time", 0) for d in baseline_pass.nsys_data if "exec_time" in d]
+    if swap_pass and hasattr(swap_pass, 'nsys_data') and swap_pass.nsys_data:
+        swap_times = [d.get("exec_time", 0) for d in swap_pass.nsys_data if "exec_time" in d]
+
+    if baseline_times and swap_times:
+        baseline_mean = statistics.mean(baseline_times)
+        swap_mean = statistics.mean(swap_times)
+        speedup = baseline_mean / swap_mean if swap_mean > 0 else float('inf')
+
+        print(f"BASELINE TIME: {baseline_mean:.6f}s (mean of {len(baseline_times)} samples)")
+        print(f"OPTIMIZED TIME: {swap_mean:.6f}s (mean of {len(swap_times)} samples)")
+        print(f"SPEEDUP: {speedup:.2f}x")
+    else:
+        # Fallback: use run_stdout timing if available
+        print("TIMING: nsys data not available")
+        if baseline_pass and hasattr(baseline_pass, 'run_stdout'):
+            print(f"Baseline stdout: {baseline_pass.run_stdout[:200]}")
+        if swap_pass and hasattr(swap_pass, 'run_stdout'):
+            print(f"Optimized stdout: {swap_pass.run_stdout[:200]}")
+
+    # Additional ncu output if requested
+    if args.profile == "ncu" and swap_pass and hasattr(swap_pass, 'ncu_data') and swap_pass.ncu_data:
+        print("\n=== Nsight Compute Metrics ===")
+        for metric in swap_pass.ncu_data:
+            print(f"  {metric}")
+
+    # Summary JSON for machine parsing
+    summary = {
+        "app": app_name,
+        "build": build_ok,
+        "correctness": correct,
+        "baseline_time": statistics.mean(baseline_times) if baseline_times else None,
+        "optimized_time": statistics.mean(swap_times) if swap_times else None,
+        "speedup": (statistics.mean(baseline_times) / statistics.mean(swap_times))
+                   if baseline_times and swap_times and statistics.mean(swap_times) > 0 else None,
+    }
+    print(f"\nJSON: {json.dumps(summary)}")
+
+
+if __name__ == "__main__":
+    main()

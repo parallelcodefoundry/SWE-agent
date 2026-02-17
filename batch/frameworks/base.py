@@ -14,6 +14,7 @@ HARNESS_MAP = {
     "laghos": "laghos_harness",
     "lulesh": "lulesh_harness",
     "quicksilver": "quicksilver_harness",
+    "gpa": "gpa_harness",
 }
 
 # Profiling tool directories (added to PATH when profiling == "with_profiling")
@@ -146,9 +147,9 @@ class FrameworkLauncher(ABC):
     def get_env_exports(self, repo_name: str, workspace: Path) -> str:
         """Generate shell export statements for common environment variables."""
         if repo_name == "gpa":
-            # GPA apps don't have harness tools or app-specific root vars
             return (
                 f'export SWE_AGENT_ROOT="{self.sweagent_root}"\n'
+                'export GPA_BENCHMARK_ROOT="/pscratch/sd/k/krydzy/GPA-Benchmark"\n'
                 'export CUDA_VISIBLE_DEVICES="0,1,2,3"\n'
                 'export OMP_NUM_THREADS=32\n'
                 'export PYTHONUNBUFFERED=1'

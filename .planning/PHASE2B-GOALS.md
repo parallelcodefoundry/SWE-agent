@@ -48,7 +48,7 @@
   - Based on timing data: decide whether remaining 22 instances can fit in a single salloc or need sbatch
   - Record which instances pass and fail
 
-- [ ] Goal 3: Add GPA driver as agent-accessible harness tool + profiling config
+- [x] Goal 3: Add GPA driver as agent-accessible harness tool + profiling config
   - **GPA harness tool** — Create `tools/gpa_harness/config.yaml` defining `gpa_test` tool (build + run + validate + timing):
     - Create `tools/gpa_harness/bin/gpa_test` Python script that:
       - Reads the modified kernel file from the workspace (CWD)

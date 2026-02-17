@@ -1,5 +1,5 @@
-# GPA-Benchmark CUDA kernel optimization WITHOUT profiling tools (has gpa_test tool)
-# Generated dynamically by SweAgentLauncher._generate_gpa_config()
+# GPA-Benchmark CUDA kernel optimization WITH profiling tools
+# Has gpa_test tool (GPA driver integration) plus hpctoolkit, hatchet, and compiler_analysis
 # Placeholders __GPA_WORKSPACE__ and __GPA_INSTANCE_PROMPT__ are replaced at runtime
 
 agent:
@@ -14,6 +14,19 @@ agent:
       - Your optimized code MUST produce correct results (same output as original)
       - Do not change kernel function signatures
       - Do not modify host code unless necessary
+
+      PROFILING TOOLS AVAILABLE:
+      - gpa_test: Build, run, validate, and time your optimization (uses Nsight Systems internally)
+      - compiler_analysis: Analyze register usage, shared memory, and occupancy of your .cu file
+      - microbench_code: Compile and time a standalone .cu file in isolation
+
+      WORKFLOW:
+      1. Read the kernel code and understand it
+      2. Use compiler_analysis on the kernel .cu file to check register count and occupancy
+      3. Identify performance bottlenecks
+      4. Edit the kernel to optimize it
+      5. Use gpa_test to verify correctness and measure speedup
+      6. Iterate if needed
 
       SUBMISSION:
       When you have made improvements, call the submit command.
@@ -69,6 +82,9 @@ agent:
       - path: tools/review_on_submit_m
       - path: tools/forfeit
       - path: tools/gpa_harness
+      - path: tools/hpctoolkit
+      - path: tools/hatchet
+      - path: tools/profiling
     registry_variables:
       USE_FILEMAP: 'true'
       SUBMIT_REVIEW_MESSAGES:

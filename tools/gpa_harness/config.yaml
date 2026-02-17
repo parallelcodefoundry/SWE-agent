@@ -1,0 +1,46 @@
+execution_timeout: 600  # 10 minutes for build/run/profile operations
+
+tools:
+  gpa_test:
+    signature: "gpa_test [<app>] [<profile>]"
+    docstring: |
+      Build, run, validate, and time a GPA-Benchmark CUDA kernel optimization.
+
+      This tool takes your modified CUDA kernel file from the current workspace,
+      compiles it with the GPA driver, validates correctness against reference
+      output, and measures kernel execution time using Nsight Systems.
+
+      What it does:
+        1. Reads your modified kernel file from the workspace
+        2. Builds and runs the BASELINE (original unmodified kernel)
+        3. Builds and runs YOUR MODIFIED kernel
+        4. Validates correctness (output must match baseline)
+        5. Compares kernel timing for speedup measurement
+
+      Output shows:
+        - BUILD: PASSED/FAILED
+        - CORRECTNESS: PASSED/FAILED (validation checks)
+        - BASELINE TIME: Mean kernel execution time (seconds)
+        - OPTIMIZED TIME: Mean execution time of your version (seconds)
+        - SPEEDUP: Ratio (baseline / optimized)
+
+      The app name is auto-detected from gpa_metadata.json in your workspace.
+      You can override it with --app.
+
+      Optional --profile flag enables additional profiling output:
+        - nsys: Nsight Systems kernel timeline
+        - ncu: Nsight Compute kernel metrics (occupancy, memory throughput)
+
+      IMPORTANT: Edit the kernel .cu file in your workspace, then run gpa_test
+      to measure the effect of your changes!
+    arguments:
+      - name: app
+        type: string
+        description: "GPA app name (auto-detected from gpa_metadata.json if omitted)"
+        required: false
+        argument_format: "--app {{value}}"
+      - name: profile
+        type: string
+        description: "Additional profiling: 'nsys' for Nsight Systems, 'ncu' for Nsight Compute"
+        required: false
+        argument_format: "--profile {{value}}"
