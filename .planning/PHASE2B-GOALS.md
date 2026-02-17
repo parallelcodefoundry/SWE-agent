@@ -67,7 +67,7 @@
   - Test: `gpa_test` manually on gaussian with a trivially modified kernel, and `compiler_analysis` on a GPA .cu file
   - Commit
 
-- [ ] Goal 4: E2E test GPA with OpenCode (with profiling tool validation)
+- [x] Goal 4: E2E test GPA with OpenCode (with profiling tool validation)
   - Run gaussian twice: once WITHOUT profiling tools, once WITH them
   - Without profiling: `source ~/.openai_env && python3 batch/hpc_benchmark_runner.py --app gpa --framework opencode --model-name gpt-4o --instance-id gaussian`
   - With profiling: same but with `--profiling with_profiling` (needs gpa_with_profiling.yaml from Goal 3)
