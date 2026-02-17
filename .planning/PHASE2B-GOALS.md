@@ -116,23 +116,22 @@
   - **Bug found and fixed**: `codex_cli.yaml` had `name: codex-cli` (hyphen) but runner constructs path with `codex_cli` (underscore). Fixed in swefficiency repo.
   - **Known issue**: SWE-agent and OpenHands install templates need updating for SWE-fficiency containers (Python 3.9/Ubuntu 22.04). The agent frameworks require newer Python (3.10+). This is a template issue, not a pipeline bug.
 
-- [ ] Goal 8: Fix issues and final regression
-  - Fix any bugs discovered in Goals 4-7
-  - Launch full 27-instance gold eval in background (if not already done in Goal 2)
-  - **Instance classification validation**: Verify benchmark suite covers 3 optimization dimensions:
-    - GPU kernel optimization (GPA): 16 CUDA anti-pattern instances
-    - HPC proxy app optimization (LLNL): 4 MPI+CUDA proxy apps (Kripke, Laghos, Lulesh, Quicksilver)
-    - Python parallelization optimization (SWE-fficiency): 12 parallel-focused Python instances
-    - Document in architecture.md that SWE-fficiency is intentionally CPU-Python (no GPU/CUDA)
-    - Total: 32 instances across 3 dimensions
-  - Run regression: LLNL (4) + GPA (16) + SWE-fficiency (12) = 32 instances all generate correctly
-  - Update STATE.md, architecture.md, experiment-workflow.md with validation results
-  - Commit all fixes
+- [x] Goal 8: Fix issues and final regression
+  - **Bug fixed**: `codex_cli.yaml` name mismatch (`codex-cli` → `codex_cli`) — swefficiency repo commit `313572f`
+  - **Instance classification validated**: 3 optimization dimensions:
+    - GPU kernel optimization (GPA): 16 CUDA anti-pattern instances (all kernel files exist)
+    - HPC proxy app optimization (LLNL): 9 curated commits across 4 apps (Kripke, Laghos, Lulesh, Quicksilver)
+    - Python parallelization optimization (SWE-fficiency): 12 parallel-focused instances
+    - **Total: 37 instances** across 3 dimensions
+  - **Regression PASSED**: All 37 instances generate correctly (LLNL 9 + GPA 16 + SWE-fficiency 12)
+  - **Docs updated**: architecture.md (total count, 3 dimensions), experiment-workflow.md (instance counts), PHASE2B-GOALS.md (corrected LLNL from 4 to 9)
+  - **Count correction**: LLNL has 9 curated commits (not 4 apps) — total is 37 not 32
 
-- [ ] Goal 9: (Optional) Investigate SWE-agent containerization
-  - Only if SWE-agent failed in Goals 6-7 due to sandbox/container issues
-  - Check if early local-mode commits on our branch broke Docker/sandbox mode
-  - Document findings and fix if feasible
+- [x] Goal 9: (Optional) Investigate SWE-agent containerization — SKIPPED
+  - SWE-agent failure in Goal 7 was NOT sandbox/container mode related
+  - Root cause: `togetherunidiff` package not found in SWE-fficiency container (Python version mismatch)
+  - GPA tests (Goal 6) worked fine with SWE-agent (no container/sandbox needed for GPA)
+  - No investigation needed — this is an install template issue for SWE-fficiency containers
 
 ## Profiling Tools Reference
 

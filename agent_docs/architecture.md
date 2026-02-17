@@ -132,6 +132,8 @@ The pipeline supports three categories of optimization tasks via `--app`:
 
 **SWE-fficiency**: Agent runs inside a Docker/podman container with a Python project. Must optimize Python code to pass performance benchmarks. Eval harness measures correctness (test suite) and speedup (timing benchmarks) in isolation. Instances are curated for parallelization/concurrency optimization (joblib, threading, Cython prange, vectorization). SWE-fficiency is intentionally CPU-Python — no GPU/CUDA instances exist in the dataset.
 
+**Total: 37 benchmark instances** across 3 optimization dimensions (LLNL 9 + GPA 16 + SWE-fficiency 12).
+
 ```bash
 # Run all task sources
 python3 batch/hpc_benchmark_runner.py --base --app kripke --app gpa --app swefficiency

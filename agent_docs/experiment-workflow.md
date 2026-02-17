@@ -19,11 +19,11 @@ sbatch batch/run_benchmark.sh --num-probs 2 --num-runs 3  # limit commits, repea
 sbatch batch/run_benchmark.sh --instance-id kripke__07b2b60d  # single commit
 sbatch batch/run_benchmark.sh --base --lulesh             # base mode (no expert comparison)
 
-# GPA-Benchmark (17 GPU anti-pattern kernels)
+# GPA-Benchmark (16 GPU anti-pattern kernels)
 sbatch batch/run_benchmark.sh --gpa --base                # validate all GPA apps
 python3 batch/hpc_benchmark_runner.py --base --app gpa    # direct Python invocation
 
-# SWE-fficiency (27 curated Python optimization tasks)
+# SWE-fficiency (12 parallelization-focused Python optimization tasks)
 sbatch batch/run_benchmark.sh --swefficiency --base       # validate SWE-fficiency pipeline
 python3 batch/hpc_benchmark_runner.py --base --app swefficiency
 
