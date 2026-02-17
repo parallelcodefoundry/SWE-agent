@@ -121,6 +121,8 @@ Venv: `/pscratch/sd/k/krydzy/swefficiency/.venv` (needs jinja2 + python-dotenv i
 - **`oom_kill_disable` error**: cgroupv2 incompatible — disabled in `docker_build.py`
 - **cpu/cpuset cgroup error**: Not delegated on Perlmutter — `cpu_groups=None` when using podman
 - **`lchown` tar error**: Reset uid/gid to 0 in `docker_utils.py` for podman rootless
+- **Spec `name` field must match runner path**: The YAML `name:` becomes the output dir name. Runner uses `SWEFFICIENCY_SPEC_MAP` value. Both must match exactly (e.g., `codex_cli` not `codex-cli`). Fixed in commit `313572f`.
+- **SWE-agent/OpenHands install fails in containers**: Containers have Python 3.9 (for older scikit-learn). SWE-agent needs `togetherunidiff` (not on PyPI for 3.9), OpenHands needs 3.10+. Fix: install agent in separate Python 3.12 venv inside container.
 - **CPU pinning**: 4 vCPUs, 16 GB RAM per worker recommended
 - **Agent limits**: 3 hours wall-clock, 100 max actions per instance
 - **Timeout**: Default 2 hours per instance; configurable in eval
