@@ -1,0 +1,97 @@
+# GPA-Benchmark CUDA kernel optimization WITHOUT profiling tools
+# Generated dynamically by SweAgentLauncher._generate_gpa_config()
+# Placeholders __GPA_WORKSPACE__ and __GPA_INSTANCE_PROMPT__ are replaced at runtime
+
+agent:
+  templates:
+    system_template: |-
+      You are an autonomous agent that can interact with a computer to optimize CUDA kernel performance for NVIDIA A100 GPUs.
+
+      INSTRUCTIONS:
+      - Read the CUDA kernel source file in your workspace
+      - Identify GPU performance anti-patterns and bottlenecks
+      - Write an optimized version of the kernel in-place
+      - Your optimized code MUST produce correct results (same output as original)
+      - Do not change kernel function signatures
+      - Do not modify host code unless necessary
+
+      SUBMISSION:
+      When you have made improvements, call the submit command.
+      Reasoning: high
+    instance_template: |-
+      <uploaded_files>
+      {{working_dir}}
+      </uploaded_files>
+
+      __GPA_INSTANCE_PROMPT__
+    next_step_template: |-
+      OBSERVATION:
+      {{observation}}
+      (Open file: {{open_file}})
+      (Current directory: {{working_dir}})
+      bash-$
+    next_step_no_output_template: |-
+      Your command ran successfully and did not produce any output.
+      (Open file: {{open_file}})
+      (Current directory: {{working_dir}})
+      bash-$
+    demonstration_template: |
+      Here is a demonstration of how to correctly accomplish this task.
+      It is included to show you how to correctly use the interface.
+      You do not need to follow exactly what is done in the demonstration.
+      --- DEMONSTRATION ---
+      {{demonstration}}
+      --- END OF DEMONSTRATION ---
+    demonstrations:
+      - trajectories/demonstrations/str_replace_anthropic_demo.yaml
+    put_demos_in_history: true
+  model:
+    api_base: "http://127.0.0.1:8008/v1"
+    api_key: "dummy"
+    name: openai/openai/gpt-oss-120b
+    per_instance_cost_limit: 0
+    per_instance_call_limit: 50
+  tools:
+    execution_timeout: 300
+    tools_base_path: /tmp/sweagent
+    env_variables:
+      PAGER: cat
+      MANPAGER: cat
+      LESS: -R
+      GIT_PAGER: cat
+      CUDA_VISIBLE_DEVICES: "0,1,2,3"
+      OMP_NUM_THREADS: 32
+      SWE_AGENT_ENV_FILE: /tmp/sweagent/.swe-agent-env
+      SWE_AGENT_STATE_FILE: /tmp/sweagent/state.json
+    bundles:
+      - path: tools/registry
+      - path: tools/edit_anthropic
+      - path: tools/review_on_submit_m
+      - path: tools/forfeit
+    registry_variables:
+      USE_FILEMAP: 'true'
+      SUBMIT_REVIEW_MESSAGES:
+        - |
+          Before finalizing submission, verify:
+
+          1. You have read and analyzed the CUDA kernel code
+          2. You have identified GPU performance bottlenecks
+          3. You have written an optimized version
+          4. Your changes maintain correctness (same output as original)
+
+          Changes to be submitted:
+          <diff>
+          {{diff}}
+          </diff>
+    enable_bash_tool: true
+    parse_function:
+      type: function_calling
+  history_processors:
+    - type: last_n_observations
+      n: 5
+
+env:
+  repo:
+    path: __GPA_WORKSPACE__
+  deployment:
+    type: local

@@ -37,7 +37,7 @@
   - Support all 17 apps from `driver_apps.yaml` (iterate over app configs)
   - Read `.claude/skills/gpa-benchmark/SKILL.md` for driver API details
 
-- [ ] Goal 2: GPA-Benchmark — Agent prompt and config
+- [x] Goal 2: GPA-Benchmark — Agent prompt and config
   - Create prompt template for GPA tasks that includes:
     - The kernel source code (from `kernel_file`)
     - Baseline profiling output (nsys/ncu kernel timing) so the agent can see performance characteristics

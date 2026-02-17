@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
+import json
 import os
 import subprocess
 
@@ -125,12 +126,16 @@ class FrameworkLauncher(ABC):
 
     def get_harness_bin_path(self, repo_name: str) -> Path:
         """Get absolute path to the harness bin directory for an app."""
-        harness_name = HARNESS_MAP[repo_name]
+        harness_name = HARNESS_MAP.get(repo_name)
+        if not harness_name:
+            return Path()  # GPA apps have no harness
         return self.sweagent_root / "tools" / harness_name / "bin"
 
     def get_path_dirs(self, repo_name: str) -> list[str]:
         """Get list of directories to add to PATH for this app and profiling config."""
-        dirs = [str(self.get_harness_bin_path(repo_name))]
+        dirs = []
+        if repo_name in HARNESS_MAP:
+            dirs.append(str(self.get_harness_bin_path(repo_name)))
         if self.profiling == "with_profiling":
             for tool_dir in PROFILING_TOOL_DIRS:
                 full_path = self.sweagent_root / tool_dir
@@ -140,6 +145,15 @@ class FrameworkLauncher(ABC):
 
     def get_env_exports(self, repo_name: str, workspace: Path) -> str:
         """Generate shell export statements for common environment variables."""
+        if repo_name == "gpa":
+            # GPA apps don't have harness tools or app-specific root vars
+            return (
+                f'export SWE_AGENT_ROOT="{self.sweagent_root}"\n'
+                'export CUDA_VISIBLE_DEVICES="0,1,2,3"\n'
+                'export OMP_NUM_THREADS=32\n'
+                'export PYTHONUNBUFFERED=1'
+            )
+
         root_var = APP_ROOT_VAR[repo_name]
         path_dirs = self.get_path_dirs(repo_name)
         path_prefix = ":".join(path_dirs)
@@ -185,6 +199,24 @@ class FrameworkLauncher(ABC):
         """Get the task prompt for this framework and app.
 
         Uses the shared prompt builder with framework-specific adaptations.
+        For GPA apps, reads metadata and kernel source from the workspace.
         """
+        if repo_name == "gpa":
+            from batch.frameworks.prompt import build_gpa_prompt
+            metadata_path = workspace / "gpa_metadata.json"
+            with open(metadata_path) as f:
+                metadata = json.load(f)
+            kernel_basename = Path(metadata["kernel_file"]).name
+            kernel_source = (workspace / kernel_basename).read_text()
+            return build_gpa_prompt(
+                framework=self.name,
+                workspace=str(workspace),
+                gpa_app_name=metadata["gpa_app_name"],
+                kernel_file=metadata["kernel_file"],
+                kernel_name=metadata["kernel_name"],
+                kernel_source=kernel_source,
+                profiling=self.profiling,
+            )
+
         from batch.frameworks.prompt import build_prompt
         return build_prompt(self.name, repo_name, str(workspace), self.profiling)

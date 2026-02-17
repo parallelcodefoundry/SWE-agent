@@ -58,6 +58,9 @@ class SweAgentLauncher(FrameworkLauncher):
         Reads the base config template, substitutes workspace paths,
         injects SWE_AGENT_ROOT, and overrides model/API settings.
         """
+        if repo_name == "gpa":
+            return self._generate_gpa_config(workspace, instance_id, output_dir)
+
         tmpl = self.REPO_CONFIG_TEMPLATES[repo_name]
         base_config_rel = tmpl["config_template"].format(profiling=self.profiling)
         base_config_path = self.sweagent_root / base_config_rel
@@ -179,6 +182,51 @@ timeout {SESSION_TIMEOUT} sweagent run --config {config_path} \\
         if traj_files:
             return str(max(traj_files, key=lambda p: p.stat().st_mtime))
         return None
+
+    def _generate_gpa_config(
+        self,
+        workspace: Path,
+        instance_id: str,
+        output_dir: Path,
+    ) -> Path:
+        """Generate SWE-agent YAML config for a GPA benchmark instance.
+
+        GPA apps use a dynamically generated config since the prompt includes
+        the kernel source code, which varies per app.
+        """
+        base_config_path = self.sweagent_root / "config/hpc/gpa_no_profiling.yaml"
+        with open(base_config_path) as f:
+            config_content = f.read()
+
+        # Replace workspace placeholder
+        config_content = config_content.replace("__GPA_WORKSPACE__", str(workspace))
+
+        # Generate and inject the GPA prompt
+        prompt = self.get_prompt("gpa", workspace)
+        # Indent prompt for YAML (instance_template is indented 6 spaces)
+        indented_prompt = "\n".join(
+            f"      {line}" if line.strip() else "" for line in prompt.splitlines()
+        )
+        config_content = config_content.replace(
+            "      __GPA_INSTANCE_PROMPT__", indented_prompt
+        )
+
+        # Inject SWE_AGENT_ROOT
+        config_content = self._inject_sweagent_root(config_content)
+
+        # Apply model overrides (api_base, model name, cost limit)
+        config_content = config_content.replace(
+            'api_base: "http://127.0.0.1:8008/v1"',
+            f'api_base: "http://{self.vllm_host}:{self.vllm_port}/v1"',
+        )
+        config_content = self._apply_model_overrides(config_content)
+
+        # Write config
+        instance_config = output_dir / f"{instance_id}_config.yaml"
+        with open(instance_config, "w") as f:
+            f.write(config_content)
+
+        return instance_config
 
     def _apply_model_overrides(self, config_content: str) -> str:
         """Override model name and cost limit when using an external model."""

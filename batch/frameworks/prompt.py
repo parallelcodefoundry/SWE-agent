@@ -228,6 +228,73 @@ Retry with timeout_ms: 300000."""
 # Main prompt builder
 # =============================================================================
 
+def build_gpa_prompt(
+    framework: str,
+    workspace: str,
+    gpa_app_name: str,
+    kernel_file: str,
+    kernel_name: str,
+    kernel_source: str,
+    profiling: str = "no_profiling",
+) -> str:
+    """Build prompt for GPA benchmark CUDA kernel optimization.
+
+    Args:
+        framework: "sweagent", "opencode", "openhands", or "codex"
+        workspace: Absolute path to the workspace directory
+        gpa_app_name: Name of the GPA app (e.g., "gaussian")
+        kernel_file: Relative path to kernel file (e.g., "rodinia/gaussian/gaussian.cu")
+        kernel_name: Name of the target kernel function (e.g., "Fan2")
+        kernel_source: The actual kernel source code
+        profiling: "no_profiling" or "with_profiling"
+
+    Returns:
+        Complete prompt string.
+    """
+    from pathlib import Path
+    kernel_basename = Path(kernel_file).name
+    completion = COMPLETION_INSTRUCTIONS.get(framework, COMPLETION_INSTRUCTIONS["opencode"])
+
+    prompt = f"""\
+You are an autonomous agent tasked with optimizing GPU kernel performance.
+
+TASK: Optimize the CUDA kernel in {kernel_basename} for better GPU performance on NVIDIA A100 GPUs.
+
+The kernel to optimize is `{kernel_name}`. Your goal is to identify performance bottlenecks and apply optimizations.
+
+The workspace is at {workspace}. Your kernel file is at {workspace}/{kernel_basename}.
+
+KERNEL SOURCE CODE:
+```cuda
+{kernel_source}
+```
+
+INSTRUCTIONS:
+1. Read and analyze the kernel code for GPU performance issues
+2. Consider common GPU performance problems:
+   - Poor memory coalescing (scattered global memory access patterns)
+   - Low occupancy (excessive register or shared memory usage)
+   - Branch divergence within warps
+   - Redundant or unnecessary memory operations
+   - Missing use of shared memory for data reuse
+   - Suboptimal thread/block configuration
+   - Unnecessary synchronization barriers
+3. Write your optimized version to {kernel_basename}
+4. Focus on the kernel function `{kernel_name}` but you may also modify supporting code
+
+CONSTRAINTS:
+- The optimized kernel MUST produce correct results (same output as the original)
+- Do not change the kernel function signature
+- Do not modify host code (main function, I/O, etc.) unless necessary for the optimization
+- Keep all #include directives and external dependencies unchanged
+
+{completion}
+
+Thinking should be thorough."""
+
+    return prompt
+
+
 def build_prompt(
     framework: str,
     repo_name: str,

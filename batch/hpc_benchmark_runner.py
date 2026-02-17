@@ -730,6 +730,23 @@ class HPCBenchmarkRunner:
                 shutil.copy2(src, dst)
                 self.log(f"    Copied extra: {extra}")
 
+        # Write metadata for prompt generation (read by launcher's get_prompt())
+        metadata = {
+            "gpa_app_name": gpa_app,
+            "kernel_file": kernel_file,
+            "kernel_name": instance.get("kernel_name", ""),
+        }
+        with open(workspace / "gpa_metadata.json", "w") as f:
+            json.dump(metadata, f, indent=2)
+
+        # Initialize as git repo (SWE-agent and extract_patch() need git)
+        subprocess.run(["git", "init"], cwd=workspace, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=workspace, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initial kernel files"],
+            cwd=workspace, capture_output=True,
+        )
+
         return workspace
 
     def _run_gpa_benchmark(self, instance: dict) -> BenchmarkResult:
