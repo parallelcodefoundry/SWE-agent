@@ -8,12 +8,13 @@ None. Full 4×4 matrix validation complete.
 
 ## Current Focus
 
-**Bug fixes + post-agent validation.** Fixed SWE-agent Lulesh doubled path bug and added post-agent validation step to populate `agent_builds`, `agent_correctness`, `agent_speedup` in `BenchmarkResult`. Smoke testing on compute node.
+**Phase 2: Benchmark Expansion** — integrating GPA-Benchmark and SWE-fficiency into the runner. Phase 1 bug fixes (Lulesh path + post-agent validation) complete and verified on compute node.
 
 ## Last Session (Session 16)
 
 - Fixed Lulesh doubled path: removed `/cuda` from `env.repo.path` in lulesh YAML configs (kept in `LULESH_ROOT`)
 - Added post-agent validation: `_validate_agent_changes()` in `hpc_benchmark_runner.py` populates `agent_builds`/`agent_correctness`/`agent_speedup`
+- Smoke tested both paths on compute node (Job 49013841): no-changes skips correctly, with-changes → Build OK, Correctness: passed, Speedup: 0.94x
 
 ## Previous Session (Session 15)
 
@@ -69,6 +70,9 @@ All trajectories in corresponding `trajectories/benchmark_*_48889171/` dirs.
 
 ## Recent Decisions
 
+- 2026-02-16 (s16): Post-agent validation runs harness scripts directly (not through agent) — reuses `get_module_loads()` + `get_env_exports()` from launcher base class
+- 2026-02-16 (s16): Lulesh `env.repo.path` must NOT include `/cuda` (git root ≠ source dir); `LULESH_ROOT` keeps `/cuda`
+- 2026-02-16 (s16): `--model-name` alone is sufficient for external models (no `--external-model` flag needed)
 - 2026-02-13 (s15): Run all 4 frameworks sequentially in a single salloc (wrapper script chains them)
 - 2026-02-13 (s15): 4-node allocation for parallel per-app execution (1 app per node)
 - 2026-02-13 (s15): External model (gpt-4o-mini via OpenAI API) eliminates need for vLLM node
@@ -86,6 +90,7 @@ All trajectories in corresponding `trajectories/benchmark_*_48889171/` dirs.
 
 | Name | Job ID | Result |
 |------|--------|--------|
+| **Post-agent validation smoke test (s16)** | 49013841 | **PASS** — Both paths verified (skip + build/run/parse) |
 | **Full 4×4 matrix (s15)** | 48889171 | **14/16 PASS** — OpenCode+OpenHands 4/4, Codex+SWE-agent 3/4 (Lulesh fails) |
 | **Codex timeout E2E (s14)** | 48887817 | **PASS** — gpt-4o-mini built+ran+edited QS, 249.1s |
 | **Codex sleep 15 test (s14)** | 48887761 | **PASS** — 15s sleep survived (would die at 10s default) |
@@ -100,7 +105,7 @@ All trajectories in corresponding `trajectories/benchmark_*_48889171/` dirs.
 
 ## Uncommitted Changes
 
-None. All changes committed on `local` branch.
+Session 17 setup files (skills updates, Phase 2 goals/prompts) — to be committed.
 
 ## Open Issues
 

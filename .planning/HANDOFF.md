@@ -1,22 +1,28 @@
-# HANDOFF.md — Session 16 Summary
+# HANDOFF.md — Session State
 
-Last updated: 2026-02-16 (session 16)
+Last updated: 2026-02-16 (session 17 — Phase 2 setup)
 
-## What Was Done
+## Current Phase
 
-Fixed Lulesh doubled path bug and added post-agent validation to `hpc_benchmark_runner.py`.
+**Phase 2: Benchmark Expansion** — goals tracked in `.planning/PHASE2-GOALS.md`
 
-## Goal Progress
+## What Was Done This Session (17)
 
-- [x] Goal 1: Fix Lulesh doubled path bug in YAML configs
-- [x] Goal 2: Add post-agent validation to `hpc_benchmark_runner.py`
-- [ ] Goal 3: Smoke test validation on compute node (**IN PROGRESS**)
-- [x] Goal 4 (s15): Full 4×4 matrix validation (14/16 pass)
-- [ ] Goal 5: Curated performance commits benchmark
-- [ ] Goal 6: GPA-Benchmark + SWE-fficiency integration
-- [ ] Goal 7: Investigate Lulesh failures for Codex and SWE-agent
+- Committed session 16 uncommitted changes (Lulesh doubled path fix + post-agent validation)
+- Updated `.claude/skills/gpa-benchmark/SKILL.md` with current GPA-Benchmark repo state (17 apps, `run_driver()` API, new CLI flags)
+- Updated `.claude/skills/swefficiency/SKILL.md` with inference harness, eval pipeline, podman-hpc notes
+- Created `~/swefficiency` symlink to `/pscratch/sd/k/krydzy/swefficiency/`
+- Pulled latest changes in both GPA-Benchmark and SWE-fficiency repos
+- Created `.planning/PHASE2-GOALS.md` (Ralph loop checklist)
+- Created `.planning/RALPH-PROMPT-PHASE2.md` (combined Ralph + Phase 2 prompt)
 
-## Results Matrix
+## What Was Done Last Session (16)
+
+- Fixed Lulesh doubled path: removed `/cuda` from `env.repo.path` in lulesh YAML configs (kept in `LULESH_ROOT`)
+- Added post-agent validation: `_validate_agent_changes()` in `hpc_benchmark_runner.py` populates `agent_builds`/`agent_correctness`/`agent_speedup`
+- Smoke tested validation on compute node (Job 49013841): both paths verified (no-changes skip + build/run/parse with QS)
+
+## Phase 1 Results (Session 15) — Full 4×4 Matrix
 
 | Framework | Kripke | Laghos | Lulesh | Quicksilver | Total |
 |-----------|--------|--------|--------|-------------|-------|
@@ -25,59 +31,46 @@ Fixed Lulesh doubled path bug and added post-agent validation to `hpc_benchmark_
 | **OpenCode** | OK (3548s) | OK (197s) | OK (554s) | OK (881s) | **4/4** |
 | **OpenHands** | OK (641s) | OK (189s) | OK (190s) | OK (2578s) | **4/4** |
 
+**14/16 cells successful. Both failures on Lulesh (Codex + SWE-agent).**
+
+## Output Data Locations
+
+All Phase 1 results in `batch_results/benchmark_*_48889171/run_1/{app}/`:
+- `benchmark_results.json` — structured results
+- `agent.log` / `benchmark.log` — runner logs
+- `{app}__base_agent_realtime.log` — agent output
+- `workspaces/{app}__base/` — agent workspace
+
+Trajectories in `trajectories/benchmark_*_48889171/run_1/{app}/{app}__base.jsonl`.
+
 ## Files Modified This Session
 
 | File | Change |
 |------|--------|
-| `config/hpc/lulesh_no_profiling.yaml` | Removed `/cuda` from `env.repo.path` |
-| `config/hpc/lulesh_with_profiling.yaml` | Removed `/cuda` from `env.repo.path` |
-| `batch/hpc_benchmark_runner.py` | Added `import re`, validation constants, `_validate_agent_changes()`, wired into `run_benchmark()` |
-| `STATE.md` | Updated with session 16 bug fixes |
-| `.planning/HANDOFF.md` | This file |
+| `.claude/skills/gpa-benchmark/SKILL.md` | Updated with current repo state |
+| `.claude/skills/swefficiency/SKILL.md` | Updated with inference harness, eval pipeline |
+| `.planning/PHASE2-GOALS.md` | NEW — Phase 2 goal checklist |
+| `.planning/RALPH-PROMPT-PHASE2.md` | NEW — Ralph loop prompt for Phase 2 |
+| `.planning/HANDOFF.md` | This file (restructured) |
 
 ## Files to Read First Next Session
 
 1. `STATE.md` — Full state overview
 2. `.planning/HANDOFF.md` — This file
-3. `dataset/curated_perf_commits.json` — The 9 curated commits for the benchmark run
-4. `batch/run_benchmark.sh` — Benchmark runner (supports `--instance-id` for specific commits)
+3. `.planning/PHASE2-GOALS.md` — Phase 2 goal checklist
+4. `.claude/skills/gpa-benchmark/SKILL.md` — GPA driver API and CLI
+5. `.claude/skills/swefficiency/SKILL.md` — SWE-fficiency eval pipeline
+6. `batch/hpc_benchmark_runner.py` — Main benchmark runner
+7. `batch/run_benchmark.sh` — Shell entry point
 
-## Output Data Locations
+## Key Observations
 
-All results are in `batch_results/benchmark_*_48889171/run_1/{app}/`:
-- `benchmark_results.json` — structured results (success, duration, patch, etc.)
-- `agent.log` — runner stdout (mostly NVM/setup)
-- `benchmark.log` — Python benchmark runner log
-- `{app}__base_agent_realtime.log` — agent's real-time output (verbose for SWE-agent, minimal for Codex/OpenCode)
-- `{app}__base_prompt.txt` — the prompt sent to the agent
-- `workspaces/{app}__base/` — the workspace where the agent worked
-
-Trajectories in `trajectories/benchmark_*_48889171/run_1/{app}/{app}__base.jsonl`.
-
-## Key Observations for Next Session
-
-1. **Laghos produces no patches** — all 4 frameworks finish fast but none change code. Laghos may already be well-optimized or the prompt may not guide well enough.
-2. **Lulesh is the hardest** — only OpenCode and OpenHands succeed. Investigate Codex/SWE-agent trajectories to understand failure modes.
-3. **SWE-agent whitespace issue** — on Lulesh, SWE-agent reformats entire files (1.9M chars, 124K insertions). This is a known but unresolved issue.
-4. **OpenHands Kripke generates huge patches** — 4.5M chars with 48K insertions but 0 deletions. Likely includes build artifacts in git diff. May need to filter build directories.
-5. **OpenCode non-zero exit NOT observed** — all 4 OpenCode instances succeeded. The bug may have been fixed or is intermittent.
-
-## Running the Curated Commits Benchmark
-
-```bash
-# Interactive — preferred
-salloc --nodes 4 --qos interactive --time 04:00:00 --constraint gpu --gpus-per-node=4 --account m2404
-
-# Inside allocation:
-source ~/.openai_env && source ~/envs/sweagent/bin/activate
-bash batch/run_benchmark.sh --framework codex --external-model --model-name openai/gpt-4o-mini
-# (no --base flag = benchmark mode = uses curated_perf_commits.json)
-```
-
-Note: benchmark mode checks out specific commits, runs agent, compares to expert patch. Different from base mode.
+1. **Laghos produces no patches** — all 4 frameworks finish fast but none change code
+2. **Lulesh is hardest** — only OpenCode and OpenHands succeed
+3. **SWE-agent whitespace issue** — reformats entire files on Lulesh (1.9M chars)
+4. **OpenHands Kripke generates huge patches** — 4.5M chars, likely build artifacts
 
 ## Branch State
 
 - **Current branch**: `local`
-- **Latest commit**: `c8cd35d7` — Clarify next task: E2E validation (base mode)
-- **No uncommitted tracked changes**
+- **Latest commit**: `f2140f35` — Fix Lulesh doubled path + post-agent validation

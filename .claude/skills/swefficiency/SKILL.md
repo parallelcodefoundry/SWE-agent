@@ -11,7 +11,7 @@ Repository-level benchmark for **performance optimization** (not bug fixing). 49
 - **Paper**: arXiv:2511.06090
 - **Dataset**: `swefficiency/swefficiency` on HuggingFace
 - **Repos**: numpy, scipy, pandas, scikit-learn, matplotlib, xarray, sympy, dask, astropy
-- **Local clone**: `/pscratch/sd/k/krydzy/swefficiency/`
+- **Local clone**: `/pscratch/sd/k/krydzy/swefficiency/` (symlinked at `~/swefficiency`)
 
 ## Core Metric: Speedup Ratio (SR)
 
@@ -49,21 +49,50 @@ JSONL, one line per instance:
 {"instance_id": "<id>", "model_patch": "<git_diff>", "model_name_or_path": "<model>"}
 ```
 
-Existing predictions: `/pscratch/sd/k/krydzy/swefficiency/predictions/converted/`.
+Existing predictions: `/pscratch/sd/k/krydzy/swefficiency/predictions/converted/` (20+ models including OpenHands, SWE-agent, Cursor runs with various LLMs).
+
+## Inference Harness (`scripts/inference/custom.py`)
+
+Self-contained harness for running agents inside SWE-fficiency containers:
+- **Spec-driven**: YAML configs define pre-work, inference command, patch extraction
+- **Templating**: Jinja2 rendering of env vars, instance metadata, API keys
+- **Parallel**: `--num_workers N` for concurrent instances
+- **Output**: `logs/run_inference/<run_id>/<spec_name>/<instance_id>/patch.diff`
+
+Example spec at `scripts/inference/specs/cursor_cli.yaml`.
 
 ## Evaluation Pipeline
 
-Docker-based. Each instance runs in prebuilt container:
+Docker-based (podman-hpc on Perlmutter). Three-layer image build:
+1. **Base image** — Ubuntu + language runtime
+2. **Env image** — repo + dependency installation
+3. **Instance image** — at `base_commit`, ready for patch
+
+Per-instance evaluation:
 1. Run `workload.py` -> baseline timing
 2. `git apply` model patch
 3. Re-run `workload.py` -> optimized timing
-4. Run covering tests
+4. Run covering tests (PASS_TO_PASS correctness)
 5. Introspection guard (verify patch doesn't game workload)
+
+Prebuilt images: `ghcr.io/swefficiency/swefficiency-images:<instance_id>`
+
+## Report Output
+
+```bash
+swefficiency report --gold_run ... --pred_run ... --report_output eval_reports/
+```
+
+Produces:
+- `eval_report_<model>.csv` — per-instance results (instance_id, SR, correctness, timing)
+- `eval_report_<model>.json` — summary: `overall_score` (harmonic mean SR), `proportion_incorrect`, `proportion_correct_but_no_speedup`, `proportion_human_speedup_or_better`
 
 ## Common Issues
 
-- **Docker images**: Prebuilt on Docker Hub (`swefficiency/swefficiency_images:<instance_id>`)
+- **Docker images**: Prebuilt at `ghcr.io/swefficiency/swefficiency-images:<instance_id>`
+- **podman-hpc on Perlmutter**: Use `podman-hpc` instead of `docker`
 - **CPU pinning**: 4 vCPUs, 16 GB RAM per worker recommended
 - **Agent limits**: 3 hours wall-clock, 100 max actions per instance
+- **Timeout**: Default 2 hours per instance; configurable in eval
 
 For detailed reference, see references/ in this skill directory.
