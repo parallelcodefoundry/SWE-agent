@@ -94,7 +94,7 @@
   - Record: which frameworks succeed, quality of optimizations, profiling tool usage, any framework-specific issues
   - Debug and fix any framework-specific launch/config issues
 
-- [ ] Goal 7: Test remaining agents on SWE-fficiency + GPU/parallel instance audit
+- [x] Goal 7: Test remaining agents on SWE-fficiency + GPU/parallel instance audit
   - **GPU/Parallel Instance Check** (COMPLETED — see findings below):
     - Analyzed all 27 curated SWE-fficiency instances for GPU/CUDA and parallelization characteristics
     - **Result: 0/27 GPU instances, 1/27 parallelization instance (scikit-learn-13310)**
@@ -109,13 +109,12 @@
       - 2 Cython prange/OpenMP
       - 6 high-impact vectorization (NumPy/PyArrow/BLAS implicit parallelism)
     - Updated SWEFFICIENCY_CURATED_INSTANCES in hpc_benchmark_runner.py
-  - Run 1 instance per agent (same instance from Goal 5 or another fast passer):
-    - `--framework sweagent` (tests the fixed Jinja2 templates from Goal 1)
-    - `--framework codex`
-    - `--framework openhands`
-  - Each takes ~1+ hour depending on instance
-  - This is the most time-intensive goal — may need to split across salloc sessions
-  - Record results: patch produced?, eval passed?, speedup?
+  - **Agent tests on scikit-learn__scikit-learn-13310** (SLURM job 49055388):
+    - SWE-agent: Install FAILED — `togetherunidiff` not found, Python version mismatch in container
+    - Codex CLI: **PRODUCED PATCH** — rewrote pairwise.py with threading backend. Patch was missed by runner due to `codex-cli` vs `codex_cli` name mismatch (fixed in swefficiency repo `313572f`)
+    - OpenHands: Install FAILED — `openhands-ai` dependency conflicts in Ubuntu 22.04 container
+  - **Bug found and fixed**: `codex_cli.yaml` had `name: codex-cli` (hyphen) but runner constructs path with `codex_cli` (underscore). Fixed in swefficiency repo.
+  - **Known issue**: SWE-agent and OpenHands install templates need updating for SWE-fficiency containers (Python 3.9/Ubuntu 22.04). The agent frameworks require newer Python (3.10+). This is a template issue, not a pipeline bug.
 
 - [ ] Goal 8: Fix issues and final regression
   - Fix any bugs discovered in Goals 4-7
