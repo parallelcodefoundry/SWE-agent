@@ -32,7 +32,7 @@
   - Update total instance count: LLNL (4) + GPA (16) + SWE-fficiency (27) = 47
   - Commit with descriptive message
 
-- [ ] Goal 1: Fix Jinja2 template bugs in SWE-fficiency inference specs
+- [x] Goal 1: Fix Jinja2 template bugs in SWE-fficiency inference specs
   - CRITICAL: `sweagent.yaml` has un-escaped SWE-agent template variables (`{{observation}}`, `{{working_dir}}`, `{{open_file}}`, `{{diff}}`) inside the inline config heredoc. Jinja2 renders these to empty strings, breaking the SWE-agent config.
   - Fix: wrap SWE-agent template sections in `{% raw %}...{% endraw %}` blocks
   - Audit all 4 specs (sweagent, opencode, codex_cli, openhands) for similar issues
