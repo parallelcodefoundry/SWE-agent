@@ -1,23 +1,20 @@
-# HANDOFF.md — Session 15 Summary
+# HANDOFF.md — Session 16 Summary
 
-Last updated: 2026-02-13 (session 15)
+Last updated: 2026-02-16 (session 16)
 
 ## What Was Done
 
-Ran the full 4×4 matrix validation: all 4 frameworks (Codex, SWE-agent, OpenCode, OpenHands) × all 4 apps (Kripke, Laghos, Lulesh, Quicksilver) in `--base` mode using gpt-4o-mini via the OpenAI API. Single 4-node interactive allocation (Job 48889171), ~2h48m total.
+Fixed Lulesh doubled path bug and added post-agent validation to `hpc_benchmark_runner.py`.
 
 ## Goal Progress
 
-- [x] Goal 1: Reset test repos and pre-flight checks
-- [x] Goal 2: Run Codex on all 4 apps (3/4 success, Lulesh failed)
-- [x] Goal 3: Run SWE-agent on all 4 apps (3/4 success, Lulesh failed)
-- [x] Goal 4: Run OpenCode on all 4 apps (4/4 success — perfect)
-- [x] Goal 5: Run OpenHands on all 4 apps (4/4 success — perfect)
-- [x] Goal 6: Compile results matrix (14/16 overall)
-- [x] Goal 7: Save state
-- [ ] Goal 8: Curated performance commits benchmark (**NEXT SESSION**)
-- [ ] Goal 9: GPA-Benchmark + SWE-fficiency integration
-- [ ] Goal 10: Investigate Lulesh failures for Codex and SWE-agent
+- [x] Goal 1: Fix Lulesh doubled path bug in YAML configs
+- [x] Goal 2: Add post-agent validation to `hpc_benchmark_runner.py`
+- [ ] Goal 3: Smoke test validation on compute node (**IN PROGRESS**)
+- [x] Goal 4 (s15): Full 4×4 matrix validation (14/16 pass)
+- [ ] Goal 5: Curated performance commits benchmark
+- [ ] Goal 6: GPA-Benchmark + SWE-fficiency integration
+- [ ] Goal 7: Investigate Lulesh failures for Codex and SWE-agent
 
 ## Results Matrix
 
@@ -32,9 +29,11 @@ Ran the full 4×4 matrix validation: all 4 frameworks (Codex, SWE-agent, OpenCod
 
 | File | Change |
 |------|--------|
-| `STATE.md` | Updated with session 15 results |
+| `config/hpc/lulesh_no_profiling.yaml` | Removed `/cuda` from `env.repo.path` |
+| `config/hpc/lulesh_with_profiling.yaml` | Removed `/cuda` from `env.repo.path` |
+| `batch/hpc_benchmark_runner.py` | Added `import re`, validation constants, `_validate_agent_changes()`, wired into `run_benchmark()` |
+| `STATE.md` | Updated with session 16 bug fixes |
 | `.planning/HANDOFF.md` | This file |
-| `batch_results/run_full_matrix.sh` | Wrapper script to chain all 4 frameworks (untracked) |
 
 ## Files to Read First Next Session
 

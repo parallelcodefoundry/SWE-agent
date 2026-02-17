@@ -1,6 +1,6 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-02-13 (session 15)
+Last updated: 2026-02-16 (session 16)
 
 ## Active Experiments
 
@@ -8,9 +8,14 @@ None. Full 4×4 matrix validation complete.
 
 ## Current Focus
 
-**Full benchmark suite validated.** All 4 frameworks (Codex, SWE-agent, OpenCode, OpenHands) × all 4 apps (Kripke, Laghos, Lulesh, Quicksilver) have been run in base mode with gpt-4o-mini via external OpenAI API. 14/16 cells succeeded.
+**Bug fixes + post-agent validation.** Fixed SWE-agent Lulesh doubled path bug and added post-agent validation step to populate `agent_builds`, `agent_correctness`, `agent_speedup` in `BenchmarkResult`. Smoke testing on compute node.
 
-## Last Session (Session 15)
+## Last Session (Session 16)
+
+- Fixed Lulesh doubled path: removed `/cuda` from `env.repo.path` in lulesh YAML configs (kept in `LULESH_ROOT`)
+- Added post-agent validation: `_validate_agent_changes()` in `hpc_benchmark_runner.py` populates `agent_builds`/`agent_correctness`/`agent_speedup`
+
+## Previous Session (Session 15)
 
 ### Full 4×4 Matrix Validation — COMPLETE
 
@@ -104,7 +109,7 @@ None. All changes committed on `local` branch.
 - **SWE-agent whitespace patches on Lulesh** — agent reformats code instead of optimizing (1.9M char patch, 124K insertions)
 - **Codex Lulesh failure** — agent errored after 1582s; produced 15K char patch but marked as failed
 - **OpenHands Kripke generates huge patches** — 4.5M chars (48K insertions, 0 deletions); likely includes build artifacts
-- SWE-agent doubled path bug: workspace ends in `/cuda` + git diff gives `cuda/src/...`
+- ~~SWE-agent doubled path bug: workspace ends in `/cuda` + git diff gives `cuda/src/...`~~ — **FIXED** (session 16): removed `/cuda` from `env.repo.path` in lulesh YAMLs, kept it in `LULESH_ROOT`
 - vLLM model cache incomplete — needs HF_TOKEN
 - **run_benchmark.sh only supports one framework per run** — used wrapper script (`batch_results/run_full_matrix.sh`) to chain them
 

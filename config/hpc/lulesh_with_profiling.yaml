@@ -128,6 +128,6 @@ agent:
 
 env:
   repo:
-    path: /pscratch/sd/k/krydzy/SWE-agent/Lulesh_test/cuda
+    path: /pscratch/sd/k/krydzy/SWE-agent/Lulesh_test
   deployment:
     type: local

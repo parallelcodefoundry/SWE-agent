@@ -17,6 +17,7 @@ import argparse
 import difflib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -33,6 +34,21 @@ from typing import Optional
 _sweagent_root = str(Path(__file__).resolve().parent.parent)
 if _sweagent_root not in sys.path:
     sys.path.insert(0, _sweagent_root)
+
+
+# Post-agent validation commands per app
+VALIDATION_BUILD_CMD = {
+    "quicksilver": "qs_build --clean",
+    "lulesh": "lulesh_build --clean",
+    "kripke": "kripke_build --clean --arch CUDA",
+    "laghos": "laghos_build --clean",
+}
+VALIDATION_RUN_CMD = {
+    "quicksilver": "qs_run",
+    "lulesh": "lulesh_run",
+    "kripke": "kripke_run --arch CUDA",
+    "laghos": "laghos_run",
+}
 
 
 @dataclass
@@ -519,6 +535,12 @@ class HPCBenchmarkRunner:
             elif line.startswith("-") and not line.startswith("---"):
                 result.agent_deletions += 1
 
+        # Post-agent validation: rebuild + run to measure actual performance
+        try:
+            self._validate_agent_changes(repo_name, workspace, result)
+        except Exception as e:
+            self.log(f"  [Validation] Error: {e}")
+
         if not self.base_mode:
             # Compare patches (only in benchmark mode)
             expert_diff = instance.get("diff", "")
@@ -547,6 +569,86 @@ class HPCBenchmarkRunner:
             f.write(agent_patch)
 
         return result
+
+    def _validate_agent_changes(self, repo_name: str, workspace: Path, result: BenchmarkResult) -> None:
+        """Rebuild and run the app after agent modifications to measure performance."""
+        if result.agent_insertions == 0 and result.agent_deletions == 0:
+            self.log("  [Validation] Skipping (no code changes)")
+            return
+
+        # Shell preamble: modules + env vars (PATH, APP_ROOT, SWE_AGENT_ROOT, etc.)
+        preamble = self.launcher.get_module_loads() + "\n" + self.launcher.get_env_exports(repo_name, workspace)
+
+        # Lulesh: LULESH_ROOT must point to cuda/ subdir where Makefile lives
+        if repo_name == "lulesh":
+            preamble += f'\nexport LULESH_ROOT="{workspace / "cuda"}"'
+
+        # --- Build ---
+        self.log(f"  [Validation] Building {repo_name}...")
+        try:
+            build_proc = subprocess.run(
+                ["bash", "-c", f"{preamble}\n{VALIDATION_BUILD_CMD[repo_name]}"],
+                capture_output=True, text=True, timeout=600
+            )
+        except subprocess.TimeoutExpired:
+            result.agent_builds = False
+            self.log("  [Validation] Build TIMED OUT")
+            return
+
+        if build_proc.returncode != 0:
+            result.agent_builds = False
+            self.log(f"  [Validation] Build FAILED (exit {build_proc.returncode})")
+            if build_proc.stderr:
+                self.log(f"  [Validation] stderr tail: {build_proc.stderr[-500:]}")
+            return
+
+        result.agent_builds = True
+        self.log("  [Validation] Build OK")
+
+        # --- Run ---
+        self.log(f"  [Validation] Running {repo_name}...")
+        try:
+            run_proc = subprocess.run(
+                ["bash", "-c", f"{preamble}\n{VALIDATION_RUN_CMD[repo_name]}"],
+                capture_output=True, text=True, timeout=600
+            )
+        except subprocess.TimeoutExpired:
+            result.agent_correctness = "timeout"
+            self.log("  [Validation] Run TIMED OUT")
+            return
+
+        output = (run_proc.stdout or "") + "\n" + (run_proc.stderr or "")
+
+        # --- Parse correctness (all 4 apps print CORRECTNESS: PASSED/FAILED) ---
+        if re.search(r"CORRECTNESS:\s+PASSED", output):
+            result.agent_correctness = "passed"
+        elif re.search(r"CORRECTNESS:\s+FAILED", output):
+            result.agent_correctness = "failed"
+        else:
+            result.agent_correctness = "unknown"
+
+        # --- Parse speedup ---
+        if repo_name == "kripke":
+            # Kripke: JSON to stdout with speedup.solve_speedup
+            try:
+                kripke_json = json.loads(run_proc.stdout)
+                result.agent_speedup = round(kripke_json["speedup"]["solve_speedup"], 4)
+            except (json.JSONDecodeError, KeyError, TypeError):
+                pass
+        else:
+            # QS/Lulesh/Laghos: parse BASELINE TIME + MODIFIED TIME from stdout
+            bm = re.search(r"BASELINE TIME:\s+([\d.]+)", output)
+            mm = re.search(r"MODIFIED TIME:\s+([\d.]+)", output)
+            if bm and mm:
+                bt, mt = float(bm.group(1)), float(mm.group(1))
+                if mt > 0:
+                    result.agent_speedup = round(bt / mt, 4)
+
+        self.log(f"  [Validation] Correctness: {result.agent_correctness}")
+        if result.agent_speedup is not None:
+            self.log(f"  [Validation] Speedup: {result.agent_speedup:.2f}x")
+        else:
+            self.log("  [Validation] Speedup: N/A")
 
     def create_base_config(self, repo_name: str, instance_id: str, workspace: Optional[Path] = None) -> Path:
         """Create framework-specific config for base mode.
