@@ -1,119 +1,125 @@
-# HANDOFF.md — Session State
+# HANDOFF — Phase 2B Validation Sprint
 
-Last updated: 2026-02-16 (session 19 — Phase 2 COMPLETE)
+Last updated: 2026-02-17 (session 20)
 
 ## Current Phase
 
-**Phase 2: Benchmark Expansion — ALL GOALS COMPLETE.** Branch `benchmark-expansion` has 8 commits covering Goals 0-8. Ready to merge into `local`.
+**Phase 2B: Validation Sprint — Goals 0-6 complete + SWE-fficiency re-curation done. Goals 7-9 pending.**
 
 ## Goal Progress
 
-- [x] Goal 0: Create feature branch `benchmark-expansion` off `local`
-- [x] Goal 1: GPA-Benchmark — Workspace setup and driver integration
-- [x] Goal 2: GPA-Benchmark — Agent prompt and config
-- [x] Goal 3: GPA-Benchmark — Validate on compute node (16/17 PASS, lulesh upstream issue)
-- [x] Goal 4: SWE-fficiency — Verify eval pipeline on Perlmutter (4 podman fixes applied)
-- [x] Goal 5: SWE-fficiency — Create inference specs for all frameworks (4 specs + templates)
-- [x] Goal 6: SWE-fficiency — Validate agent integration (structural validation PASS)
-- [x] Goal 7: Curated performance commits (9 commits verified, filtering works)
-- [x] Goal 8: Unified results and regression test (docs updated, LLNL+GPA+SWE-fficiency all generate)
+- [x] Goal 0: Remove GPA lulesh from app list
+- [x] Goal 1: Fix Jinja2 template bugs in SWE-fficiency inference specs
+- [x] Goal 2: Gold eval SWE-fficiency subset — timing + validation
+- [x] Goal 3: Add GPA driver as agent-accessible harness tool + profiling config
+- [x] Goal 4: E2E test GPA with OpenCode (with profiling validation)
+- [x] Goal 5: E2E test SWE-fficiency with OpenCode
+- [x] Goal 6: Test remaining agents (SWE-agent, Codex, OpenHands) on GPA gaussian
+- [x] SWE-fficiency GPU/parallel audit + re-curation to 12 parallel instances
+- [ ] Goal 7: Test remaining agents on SWE-fficiency (NOT STARTED — ready to go)
+- [ ] Goal 8: Fix issues + final regression (32 instances)
+- [ ] Goal 9: (Optional) SWE-agent containerization investigation
 
-## What Was Done This Session (19)
+## What Was Done This Session (20)
 
-### Goals 3-8 completed:
+### Goal 5: SWE-fficiency eval report parsing fix
+- Fixed `_run_swefficiency_agent()` to parse `validation_report_*.json` (not `report.json`)
+- Report is keyed by instance_id with nested `perf_report`/`correctness_report`
+- Committed `96d4c0cf`
 
-**Goal 3** — Fixed lavaMD case-sensitivity bug in GPA driver (5 edits in 2 files: `gpa_bench_driver.py` lines 276/282/290/307, `driver_file_swapping.py` line 190). All `app["name"]` comparisons now use `.lower()`. Result: 16/17 PASS.
+### Goal 6: 3 agents on GPA gaussian
+- All 3 frameworks tested with profiling on SLURM job 49050383:
+  - SWE-agent: 236.8s, no code changes (hit cost limit)
+  - Codex: 125.1s, no code changes
+  - OpenHands: 230.2s, produced shared-memory optimization → build failed (extra `}`)
+- Full pipeline confirmed working for all 3 frameworks
+- Committed `145f3504`
 
-**Goal 4** — SWE-fficiency eval pipeline on Perlmutter with 4 podman fixes:
-- `docker_build.py`: Disabled `oom_kill_disable=True` (cgroupv2 incompatible)
-- `cli.py`: Set `use_podman=True`
-- `run_validation.py`: Skip cpu cgroup args in podman mode; fix taskset_cpus extraction from dict
-- `docker_utils.py`: Reset tar uid/gid to root for podman rootless
-- Committed in swefficiency repo: `be86360`
+### SWE-fficiency GPU/parallel audit + re-curation
+- Analyzed all 498 SWE-fficiency instances: 0 GPU/CUDA, 28 with parallelization
+- Re-curated from 27 general → 12 parallelization-focused instances:
+  - 4 strict concurrency: scikit-learn 13310, 17235, 22106, 28064
+  - 2 Cython prange: scikit-learn 15049, 24856
+  - 6 vectorization: dask-10356, scipy-10064, scipy-10467, matplotlib-15346, pandas-45434, numpy-11720
+- Committed `462ba608`
 
-**Goal 5** — Created inference infrastructure:
-- 4 install templates: `{sweagent,opencode,codex,openhands}_install.sh.j2`
-- 4 inference specs: `sweagent.yaml`, `opencode.yaml`, `codex_cli.yaml`, `openhands.yaml`
-- Shared prompt: `hpc_instruction_prompt.txt.j2`
-- Wired `--app swefficiency` into runner with dispatch, instance generation, and result collection
-- Committed in swefficiency repo: `ba06874`
-
-**Goal 6** — Structural validation: 27 instances, dispatch routing, spec loading, custom.py import all work.
-
-**Goal 7** — 9 expert commits verified, `--instance-id` and `--app` filtering confirmed working.
-
-**Goal 8** — Updated `agent_docs/architecture.md` (benchmark task sources table, external repo paths) and `agent_docs/experiment-workflow.md` (GPA/SWE-fficiency sections). Regression: LLNL (4) + GPA (17) + SWE-fficiency (27) = 48 instances generate correctly.
+### SWE-fficiency inference spec fixes (swefficiency repo)
+- `codex_cli.yaml`: Updated to `codex exec --dangerously-bypass-approvals-and-sandbox` with `-c` flags
+- `opencode.yaml`: Added OPENCODE_CONFIG_CONTENT generation with provider + permission config
+- `opencode_install.sh.j2`: Added Node.js 22 installation
+- Committed `30bc979` in swefficiency repo
 
 ## Files Modified This Session
 
 | File | Change |
 |------|--------|
-| `batch/hpc_benchmark_runner.py` | Added SWE-fficiency support (constants, 4 methods, dispatch) |
-| `batch/run_benchmark.sh` | Added `--swefficiency` flag |
-| `agent_docs/architecture.md` | Added task sources table, GPA/SWE-fficiency sections |
-| `agent_docs/experiment-workflow.md` | Added GPA/SWE-fficiency workflow sections |
-| `.planning/PHASE2-GOALS.md` | All goals marked done |
+| `batch/hpc_benchmark_runner.py` | Re-curated SWEFFICIENCY_CURATED_INSTANCES (lines 47-58), fixed eval report parsing (~line 1120) |
+| `agent_docs/architecture.md` | Updated instance counts (12 not 27), added parallelization note |
+| `.planning/PHASE2B-GOALS.md` | Updated Goals 7-8, added design decision #12 |
 
 ### External repos modified:
 | Repo | File | Change |
 |------|------|--------|
-| GPA-Benchmark | `gpa_bench_driver/gpa_bench_driver.py` | Case-insensitive app name matching (4 locations) |
-| GPA-Benchmark | `gpa_bench_driver/driver_src/driver_file_swapping.py` | Case-insensitive matching (1 location) |
-| swefficiency | `swefficiency/harness/docker_build.py` | Disabled oom_kill_disable |
-| swefficiency | `swefficiency/cli.py` | Set use_podman=True |
-| swefficiency | `swefficiency/harness/run_validation.py` | Skip cpu cgroup args in podman |
-| swefficiency | `swefficiency/harness/docker_utils.py` | Reset tar uid/gid to root |
-| swefficiency | `scripts/inference/specs/*.yaml` | 4 new inference specs |
-| swefficiency | `scripts/inference/templates/*.j2` | 5 new templates |
+| swefficiency | `scripts/inference/specs/codex_cli.yaml` | New Codex exec syntax |
+| swefficiency | `scripts/inference/specs/opencode.yaml` | OPENCODE_CONFIG_CONTENT |
+| swefficiency | `scripts/inference/templates/opencode_install.sh.j2` | Node.js 22 install |
 
 ## Files to Read First Next Session
 
-1. `STATE.md` — Full state overview
-2. `.planning/HANDOFF.md` — This file
-3. `.planning/PHASE2-GOALS.md` — Phase 2 goal checklist (all done)
-4. `batch/hpc_benchmark_runner.py` — Main runner (GPA at ~800, SWE-fficiency at ~1000)
-5. `agent_docs/architecture.md` — Updated architecture reference
+1. `.planning/PHASE2B-GOALS.md` — Full goal details (esp. Goals 7-9)
+2. `batch/hpc_benchmark_runner.py` lines 47-66 — New curated instances + spec mapping
+3. `batch/hpc_benchmark_runner.py` lines 1083-1150 — `_run_swefficiency_agent()` flow
+4. `STATE.md` — Full state overview
 
 ## Validation Status
 
 | Check | Status |
 |-------|--------|
-| GPA base (17 apps) | 16/17 PASS (lulesh upstream) |
-| SWE-fficiency eval pipeline | PASS (pandas-dev__pandas-45434, 1.387x) |
-| SWE-fficiency structural validation | PASS (27 instances, dispatch, specs) |
-| LLNL base regression | PASS (4 instances generate) |
-| Mixed selection regression | PASS (48 instances) |
-| Live agent E2E (GPA) | NOT YET RUN |
-| Live agent E2E (SWE-fficiency) | NOT YET RUN |
+| GPA + SWE-agent | PASS (236.8s, no code changes) |
+| GPA + Codex | PASS (125.1s, no code changes) |
+| GPA + OpenHands | PASS (230.2s, changes made, build failed) |
+| GPA + OpenCode | PASS (Goal 4) |
+| SWE-fficiency + OpenCode | PARTIAL (pipeline ran, no patch) |
+| SWE-fficiency + SWE-agent | NOT TESTED (Goal 7) |
+| SWE-fficiency + Codex | NOT TESTED (Goal 7) |
+| SWE-fficiency + OpenHands | NOT TESTED (Goal 7) |
+| Regression (32 instances) | NOT TESTED (Goal 8) |
 
-## Key Gotchas for Next Session
+## Key Gotchas
 
-1. **SWE-fficiency requires podman socket**: `podman-hpc system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock &`
-2. **SWE-fficiency needs jinja2+python-dotenv** in venv: already installed in `/pscratch/sd/k/krydzy/swefficiency/.venv`
-3. **GPA lulesh always fails** — empty LULESH/ dir upstream, not our bug
-4. **GPA driver `run_driver()` needs `os.chdir()` to GPA-Benchmark root** — runner handles this
-5. **`DOCKER_HOST` env var** needed for SWE-fficiency: `unix:///run/user/$(id -u)/podman/podman.sock`
+1. **New SWE-fficiency instances need image pulls**: The 6 scikit-learn instances were NOT in the original 27. Container images need to be pulled from ghcr.io on first run.
+2. **Only 3 of 12 instances have gold eval data**: dask-10356 (10.43x), scipy-10064 (2.53x), numpy-11720 (12.46x)
+3. **Codex CLI syntax changed**: Now `codex exec --dangerously-bypass-approvals-and-sandbox` with `-c` flags
+4. **Don't background salloc**: Use `salloc ... bash -c 'commands'` inline
+5. **Podman socket required**: `podman-hpc system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock &`
 
 ## Branch State
 
 - **Current branch**: `benchmark-expansion` (off `local`)
-- **Latest commit**: `b243537f` (Goal 8: Update docs and mark Phase 2 complete)
-- **8 total commits** for Phase 2
+- **Latest commit**: `462ba608` (Re-curate SWE-fficiency)
+- **Session 20 commits**: 96d4c0cf, 145f3504, 462ba608
 
 ## Suggested Next Action
 
-Merge `benchmark-expansion` into `local`, then start live agent E2E tests or curated commits benchmark.
+Resume Goal 7: Test 3 agents on SWE-fficiency. Use `scikit-learn__scikit-learn-13310` (joblib backend switch — the most representative parallel instance).
 
 ```bash
-# Merge Phase 2 into local
-salloc --nodes 1 --qos interactive --time 04:00:00 --constraint gpu --gpus 4 --account m2404
+salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m2404 bash -c '
+  mkdir -p /run/user/$(id -u)/podman
+  podman-hpc system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock &
+  sleep 10
+  export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+  source ~/.openai_env
+  module load python cmake openmpi/5.0.7
+  source ~/envs/sweagent/bin/activate
+  cd /pscratch/sd/k/krydzy/SWE-agent
 
-# Live GPA test (single easy app)
-source ~/.openai_env
-python3 batch/hpc_benchmark_runner.py --app gpa --framework sweagent --model-name gpt-4o --instance-id gaussian
-
-# Live SWE-fficiency test (single instance)
-podman-hpc system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock &
-export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
-python3 batch/hpc_benchmark_runner.py --app swefficiency --framework sweagent --model-name gpt-4o --instance-id numpy__numpy-18065
+  for fw in sweagent codex openhands; do
+    echo "=== Testing $fw ==="
+    python3 batch/hpc_benchmark_runner.py \
+      --app swefficiency --framework $fw --model-name gpt-4o \
+      --instance-id scikit-learn__scikit-learn-13310 \
+      --output-dir batch_results/goal7_sweff_$fw
+  done
+'
 ```

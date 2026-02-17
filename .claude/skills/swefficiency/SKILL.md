@@ -70,7 +70,7 @@ python3 batch/hpc_benchmark_runner.py --app swefficiency --framework sweagent  #
 bash batch/run_benchmark.sh --swefficiency --base
 ```
 
-Curated subset: 27 instances (3 per repo × 9 repos). Each instance takes ~77 min.
+Curated subset: 12 parallelization-focused instances (4 strict concurrency, 2 Cython prange, 6 vectorization). Re-curated from original 27 general instances after audit confirmed 0 GPU/CUDA instances in the full 498-task dataset. Each instance takes ~77 min.
 
 ## Evaluation Pipeline
 
