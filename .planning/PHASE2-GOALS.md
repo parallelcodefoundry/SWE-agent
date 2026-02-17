@@ -55,19 +55,18 @@
   - Agent mode infrastructure verified: workspace setup, config generation, launch scripts all work
   - NOTE: GPA lulesh is an upstream issue (missing source in GPA-Benchmark/LULESH/), not our integration
 
-- [ ] Goal 4: SWE-fficiency — Verify eval pipeline on Perlmutter
-  - Check podman-hpc compatibility:
-    - Can `podman-hpc pull ghcr.io/swefficiency/swefficiency-images:<instance_id>` work?
-    - Does `swefficiency eval` use Docker SDK or shell commands?
-    - If Docker SDK: check if podman socket is available or if we need `DOCKER_HOST` env var
-  - Set up SWE-fficiency Python env:
-    - `cd /pscratch/sd/k/krydzy/swefficiency && uv venv --python 3.12 && source .venv/bin/activate && uv sync`
-  - Test eval on a small subset using existing predictions:
-    - Pick 2-3 instances from `predictions/converted/oh_claude45sonnet.jsonl`
-    - Run `swefficiency eval --run_id test_perlmutter --prediction_path <subset.jsonl> --instances_regex "<selected_ids>" --num_workers 1`
-    - If podman issues: document blocker, try workarounds (DOCKER_HOST, podman socket)
-  - If eval works: run `swefficiency report` and verify output
-  - This goal is DONE when we know: (a) eval works on Perlmutter, or (b) it's blocked with documented reason
+- [x] Goal 4: SWE-fficiency — Verify eval pipeline on Perlmutter
+  - RESULT: Eval pipeline WORKS on Perlmutter with 4 podman compatibility fixes
+  - Venv set up at `/pscratch/sd/k/krydzy/swefficiency/.venv` (uv sync, 60 packages)
+  - Docker SDK connects to podman via `DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock`
+  - Fixes applied in swefficiency repo (commit be86360):
+    - `docker_build.py`: Disabled `oom_kill_disable=True` (cgroupv2 incompatible)
+    - `cli.py`: Set `use_podman=True` for Perlmutter
+    - `run_validation.py`: Skip cpu cgroup args in podman mode; fix taskset_cpus extraction
+    - `docker_utils.py`: Reset tar uid/gid to root for podman rootless
+  - Tested: pandas-dev__pandas-45434 → 1.387x speedup, correctness 151593/157488 tests passed
+  - Each instance takes ~77 min (includes perf benchmarks + correctness tests)
+  - Requires: `podman-hpc system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock &`
 
 - [ ] Goal 5: SWE-fficiency — Create inference specs for all frameworks (DEPENDS ON Goal 4 — if Goal 4 is BLOCKED, mark this BLOCKED too)
   - Create inference spec YAMLs for each framework in `/pscratch/sd/k/krydzy/swefficiency/scripts/inference/specs/`:
