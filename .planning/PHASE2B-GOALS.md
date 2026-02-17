@@ -12,7 +12,7 @@
 8. **Profiling tools are generic**: `hpc_profile`, `hatchet_analyze`, `compiler_analysis`, `microbench_code` all work on arbitrary CUDA code — not hardcoded to LLNL apps. They should work on GPA kernels.
 9. **Two profiling ecosystems for GPA**: Our HPCToolkit/hatchet wrappers AND the GPA driver's built-in nsys/ncu profiling (via `run_driver(nsys=True)`). Both should be available to agents.
 10. **Phase 2B, not Phase 3**: Phase 3 is reserved for repo restructuring (`agents-perf` repo with submodules).
-12. **SWE-fficiency is CPU-Python by design**: Audit of all 27 curated instances confirmed 0 GPU/CUDA, 1 parallelization (scikit-learn-13310). The full 498-instance SWE-fficiency dataset draws from Python repos (numpy, scipy, pandas, scikit-learn, matplotlib, astropy, sympy, dask, xarray) — none involve GPU. SWE-fficiency serves as a complementary "Python optimization" dimension alongside GPA (GPU kernel) and LLNL (HPC proxy app) benchmarks. This is intentional: the suite tests 3 distinct optimization skills.
+12. **SWE-fficiency re-curated for parallelism**: Audit of all 498 SWE-fficiency instances found 28 with parallel/concurrency characteristics (0 GPU). Re-curated from 27 general instances to 12 parallelization-focused instances (4 strict concurrency, 2 Cython prange, 6 vectorization). Suite now tests 3 optimization dimensions: GPA (GPU kernel), LLNL (HPC proxy app), SWE-fficiency (Python parallelization).
 11. **GPA profiling: explore driver-integrated vs standalone tools**: The GPA driver already knows how to nsys/ncu profile each app (build paths, kernel names, validation). It may be simpler to expose this through `gpa_test --profile nsys` than to have agents run `hpc_profile` on executables they didn't build. Test both approaches in Goals 3-4 and go with what works better. This is an explicit exploration — not a premade decision.
 
 ## Operational Notes
@@ -30,7 +30,7 @@
   - Skip `lulesh` in `_generate_gpa_base_instances()` and `_load_gpa_app_configs()` in `batch/hpc_benchmark_runner.py`
   - Update counts from 17 to 16 in: `batch/hpc_benchmark_runner.py` comments, `agent_docs/architecture.md`, `.claude/skills/gpa-benchmark/SKILL.md`
   - Update PHASE2-GOALS.md references if any mention 17
-  - Update total instance count: LLNL (4) + GPA (16) + SWE-fficiency (27) = 47
+  - Update total instance count: LLNL (4) + GPA (16) + SWE-fficiency (12) = 32
   - Commit with descriptive message
 
 - [x] Goal 1: Fix Jinja2 template bugs in SWE-fficiency inference specs
@@ -104,8 +104,11 @@
       - GPA: GPU kernel optimization (CUDA anti-patterns)
       - LLNL: HPC proxy app optimization (MPI+CUDA scientific codes)
       - SWE-fficiency: Python library performance optimization (algorithmic, caching, vectorization)
-    - **Recommendation**: Keep SWE-fficiency as a complementary benchmark dimension for Python optimization skill.
-      If GPU/parallel Python tasks are needed, consider curating from repos like CuPy, PyTorch, or Numba — but these are NOT in SWE-fficiency's dataset.
+    - **DONE**: Re-curated from 27 general instances to 12 parallelization-focused instances:
+      - 4 strict concurrency (joblib, concurrent.futures, threadpool)
+      - 2 Cython prange/OpenMP
+      - 6 high-impact vectorization (NumPy/PyArrow/BLAS implicit parallelism)
+    - Updated SWEFFICIENCY_CURATED_INSTANCES in hpc_benchmark_runner.py
   - Run 1 instance per agent (same instance from Goal 5 or another fast passer):
     - `--framework sweagent` (tests the fixed Jinja2 templates from Goal 1)
     - `--framework codex`
@@ -120,10 +123,10 @@
   - **Instance classification validation**: Verify benchmark suite covers 3 optimization dimensions:
     - GPU kernel optimization (GPA): 16 CUDA anti-pattern instances
     - HPC proxy app optimization (LLNL): 4 MPI+CUDA proxy apps (Kripke, Laghos, Lulesh, Quicksilver)
-    - Python library optimization (SWE-fficiency): 27 CPU-bound Python instances
-    - Document in architecture.md that SWE-fficiency is intentionally CPU-Python (not GPU/parallel)
-    - Total: 47 instances across 3 dimensions
-  - Run regression: LLNL (4) + GPA (16) + SWE-fficiency (27) = 47 instances all generate correctly
+    - Python parallelization optimization (SWE-fficiency): 12 parallel-focused Python instances
+    - Document in architecture.md that SWE-fficiency is intentionally CPU-Python (no GPU/CUDA)
+    - Total: 32 instances across 3 dimensions
+  - Run regression: LLNL (4) + GPA (16) + SWE-fficiency (12) = 32 instances all generate correctly
   - Update STATE.md, architecture.md, experiment-workflow.md with validation results
   - Commit all fixes
 

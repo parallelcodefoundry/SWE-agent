@@ -44,17 +44,30 @@ if GPA_BENCHMARK_ROOT.exists() and str(GPA_BENCHMARK_ROOT) not in sys.path:
 # SWE-fficiency integration
 SWEFFICIENCY_ROOT = Path("/pscratch/sd/k/krydzy/swefficiency")
 
-# Curated subset of SWE-fficiency instances (3 per repo, 27 total)
+# Curated subset of SWE-fficiency instances — parallelization-focused (12 total)
+# Selected from analysis of all 498 instances for parallel/concurrency optimization patterns.
+# No GPU/CUDA instances exist in SWE-fficiency (Python-only dataset).
+#
+# Categories:
+#   Strict concurrency (4): joblib, concurrent.futures, threadpool tuning
+#   Cython prange/OpenMP (2): loop-level parallelism in compiled code
+#   Vectorization with parallel implications (6): NumPy/PyArrow batch operations
 SWEFFICIENCY_CURATED_INSTANCES = [
-    "astropy__astropy-10814", "astropy__astropy-12699", "astropy__astropy-12701",
-    "dask__dask-10356", "dask__dask-10428", "dask__dask-10922",
-    "matplotlib__matplotlib-13917", "matplotlib__matplotlib-14504", "matplotlib__matplotlib-15346",
-    "numpy__numpy-11720", "numpy__numpy-12321", "numpy__numpy-12575",
-    "pandas-dev__pandas-23772", "pandas-dev__pandas-23888", "pandas-dev__pandas-24023",
-    "pydata__xarray-4740", "pydata__xarray-5661", "pydata__xarray-7374",
-    "scikit-learn__scikit-learn-10610", "scikit-learn__scikit-learn-13290", "scikit-learn__scikit-learn-13310",
-    "scipy__scipy-10064", "scipy__scipy-10393", "scipy__scipy-10467",
-    "sympy__sympy-10621", "sympy__sympy-10919", "sympy__sympy-11675",
+    # Strict concurrency & parallelism (scikit-learn)
+    "scikit-learn__scikit-learn-13310",  # joblib backend switch (process → thread) for pairwise_distances
+    "scikit-learn__scikit-learn-17235",  # threadpool limit context manager optimization
+    "scikit-learn__scikit-learn-22106",  # IPC serialization overhead reduction for RandomForest
+    "scikit-learn__scikit-learn-28064",  # concurrent.futures.ThreadPoolExecutor for binning
+    # Cython prange / OpenMP parallelism (scikit-learn)
+    "scikit-learn__scikit-learn-15049",  # Manhattan distance with prange on sparse matrices
+    "scikit-learn__scikit-learn-24856",  # Histogram computation with prange + search space reduction
+    # High-impact vectorization (implicit parallelism via BLAS/MKL/PyArrow)
+    "dask__dask-10356",                  # NumPy vectorized random generation (10.43x gold speedup)
+    "scipy__scipy-10064",                # Vectorized Householder transforms (2.53x gold speedup)
+    "scipy__scipy-10467",                # O(N²) pdist → efficient algorithm
+    "matplotlib__matplotlib-15346",      # Vectorized arrow batch processing via NumPy
+    "pandas-dev__pandas-45434",          # PyArrow compute for timezone conversion
+    "numpy__numpy-11720",                # einsum optimization (12.46x gold speedup)
 ]
 
 # Framework → SWE-fficiency inference spec name mapping

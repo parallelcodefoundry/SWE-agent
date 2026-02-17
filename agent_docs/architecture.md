@@ -124,13 +124,13 @@ The pipeline supports three categories of optimization tasks via `--app`:
 |--------|------|-------|----------|--------|
 | LLNL Proxy Apps | `--app kripke/laghos/lulesh/quicksilver` | 9 curated commits | C++/CUDA | Speedup vs expert patch |
 | GPA-Benchmark | `--app gpa` | 16 GPU kernels | CUDA | Speedup vs baseline (nsys timing) |
-| SWE-fficiency | `--app swefficiency` | 27 curated instances | Python | Speedup vs baseline (containerized eval) |
+| SWE-fficiency | `--app swefficiency` | 12 parallel-focused instances | Python | Speedup vs baseline (containerized eval) |
 
 **LLNL Proxy Apps**: Agent receives a workspace checked out to a pre-optimization commit. Must find and apply the same (or better) optimization as the expert. Harness tools (`app_build`, `app_run`) measure correctness and speedup against a pristine baseline.
 
 **GPA-Benchmark**: Agent receives a CUDA kernel file with a known GPU performance anti-pattern. Must diagnose and fix the issue. The GPA driver (`run_driver()`) compiles, validates, and profiles the optimized code using Nsight Systems to measure kernel execution time speedup.
 
-**SWE-fficiency**: Agent runs inside a Docker/podman container with a Python project. Must optimize Python code to pass performance benchmarks. Eval harness measures correctness (test suite) and speedup (timing benchmarks) in isolation.
+**SWE-fficiency**: Agent runs inside a Docker/podman container with a Python project. Must optimize Python code to pass performance benchmarks. Eval harness measures correctness (test suite) and speedup (timing benchmarks) in isolation. Instances are curated for parallelization/concurrency optimization (joblib, threading, Cython prange, vectorization). SWE-fficiency is intentionally CPU-Python — no GPU/CUDA instances exist in the dataset.
 
 ```bash
 # Run all task sources
