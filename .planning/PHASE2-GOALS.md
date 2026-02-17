@@ -10,9 +10,9 @@
 
 ## Goals
 
-- [ ] Goal 0: Create feature branch `benchmark-expansion` off `local`
+- [x] Goal 0: Create feature branch `benchmark-expansion` off `local`
 
-- [ ] Goal 1: GPA-Benchmark — Workspace setup and driver integration
+- [x] Goal 1: GPA-Benchmark — Workspace setup and driver integration
   - Add `/pscratch/sd/k/krydzy/GPA-Benchmark` to `sys.path` in `hpc_benchmark_runner.py`
   - Add `--app gpa` support to `batch/run_benchmark.sh` arg parsing
   - Implement GPA workspace setup in the runner:

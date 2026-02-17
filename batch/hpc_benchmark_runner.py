@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import yaml
 from collections import defaultdict
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
@@ -34,6 +35,11 @@ from typing import Optional
 _sweagent_root = str(Path(__file__).resolve().parent.parent)
 if _sweagent_root not in sys.path:
     sys.path.insert(0, _sweagent_root)
+
+# GPA-Benchmark integration
+GPA_BENCHMARK_ROOT = Path("/pscratch/sd/k/krydzy/GPA-Benchmark")
+if GPA_BENCHMARK_ROOT.exists() and str(GPA_BENCHMARK_ROOT) not in sys.path:
+    sys.path.insert(0, str(GPA_BENCHMARK_ROOT))
 
 
 # Post-agent validation commands per app
@@ -218,6 +224,11 @@ class HPCBenchmarkRunner:
         repo_names = apps if apps else list(self.REPO_CONFIG_TEMPLATES.keys())
 
         for repo_name in repo_names:
+            # GPA apps are generated separately
+            if repo_name == "gpa":
+                instances.extend(self._generate_gpa_base_instances())
+                continue
+
             if repo_name not in self.repo_configs:
                 continue
 
@@ -423,6 +434,10 @@ class HPCBenchmarkRunner:
 
     def run_benchmark(self, instance: dict) -> BenchmarkResult:
         """Run a single benchmark instance"""
+        # GPA benchmark has its own flow
+        if instance.get("repo_name") == "gpa":
+            return self._run_gpa_benchmark(instance)
+
         instance_id = instance["instance_id"]
         repo_name = instance["repo_name"]
 
@@ -650,6 +665,271 @@ class HPCBenchmarkRunner:
         else:
             self.log("  [Validation] Speedup: N/A")
 
+    # =========================================================================
+    # GPA-Benchmark Support
+    # =========================================================================
+
+    def _load_gpa_app_configs(self) -> dict[str, dict]:
+        """Load GPA app configurations from driver_apps.yaml (cached)."""
+        if not hasattr(self, '_gpa_app_configs_cache'):
+            config_path = GPA_BENCHMARK_ROOT / "driver_apps.yaml"
+            with open(config_path) as f:
+                data = yaml.safe_load(f)
+            self._gpa_app_configs_cache = {
+                app["name"]: app for app in data["apps"]
+            }
+        return self._gpa_app_configs_cache
+
+    def _generate_gpa_base_instances(self) -> list[dict]:
+        """Generate base-mode instances for all GPA apps."""
+        instances = []
+        for app_name, app_config in self._load_gpa_app_configs().items():
+            instances.append({
+                "instance_id": f"gpa_{app_name}__base",
+                "repo_name": "gpa",
+                "gpa_app_name": app_name,
+                "optimization_type": "gpu_kernel_optimization",
+                "kernel_file": app_config.get("kernel_file", ""),
+                "extra_files": app_config.get("extra_files", []),
+                "kernel_name": app_config.get("kernel_name", ""),
+                "commit_hash": "",
+                "commit_message": f"GPA benchmark: {app_name}",
+                "base_commit": "",
+                "files_changed": [],
+                "insertions": 0,
+                "deletions": 0,
+                "diff": "",
+            })
+        return instances
+
+    def _setup_gpa_workspace(self, instance: dict) -> Optional[Path]:
+        """Create workspace with kernel files for GPA agent editing."""
+        gpa_app = instance["gpa_app_name"]
+        instance_id = instance["instance_id"]
+        workspace = self.work_dir / instance_id
+        if workspace.exists():
+            shutil.rmtree(workspace)
+        workspace.mkdir(parents=True)
+
+        self.log(f"  Creating GPA workspace: {workspace}")
+
+        kernel_file = instance.get("kernel_file", "")
+        if kernel_file:
+            src = GPA_BENCHMARK_ROOT / kernel_file
+            if src.exists():
+                dst = workspace / Path(kernel_file).name
+                shutil.copy2(src, dst)
+                self.log(f"    Copied kernel: {kernel_file}")
+            else:
+                self.log(f"    WARNING: kernel file not found: {src}")
+
+        for extra in instance.get("extra_files", []) or []:
+            src = GPA_BENCHMARK_ROOT / extra
+            if src.exists():
+                dst = workspace / Path(extra).name
+                shutil.copy2(src, dst)
+                self.log(f"    Copied extra: {extra}")
+
+        return workspace
+
+    def _run_gpa_benchmark(self, instance: dict) -> BenchmarkResult:
+        """Run a single GPA benchmark instance."""
+        gpa_app = instance["gpa_app_name"]
+        instance_id = instance["instance_id"]
+
+        self.log(f"\n{'='*60}")
+        self.log(f"GPA {'BASE RUN' if self.base_mode else 'Benchmark'}: {gpa_app}")
+        self.log(f"{'='*60}")
+
+        result = BenchmarkResult(
+            instance_id=instance_id,
+            repo_name="gpa",
+            optimization_type="gpu_kernel_optimization",
+            framework=self.framework,
+            run_number=self.run_number,
+        )
+
+        start_time = time.time()
+
+        if self.base_mode:
+            # Base mode: verify GPA driver baseline works (no agent)
+            self.log(f"  Mode: Base (verify driver baseline for {gpa_app})")
+            self._run_gpa_driver(gpa_app, result)
+        else:
+            # Agent mode: workspace → agent → collect results
+            workspace = self._setup_gpa_workspace(instance)
+            if not workspace:
+                result.error_message = "Failed to setup GPA workspace"
+                result.duration_seconds = time.time() - start_time
+                return result
+
+            try:
+                config_path = self.create_instance_config(instance, workspace)
+            except Exception as e:
+                result.error_message = f"Config generation failed: {e}"
+                result.duration_seconds = time.time() - start_time
+                return result
+
+            self.log(f"  Created config: {config_path}")
+            self.log(f"  Workspace: {workspace}")
+
+            # Run agent
+            self.log(f"  Running {self.framework} agent...")
+            success, agent_patch, traj_file = self.run_agent(
+                instance, workspace, config_path
+            )
+
+            result.success = success
+            result.trajectory_file = traj_file
+
+            if success:
+                self.log(f"  Agent completed successfully")
+            else:
+                self.log(f"  Agent failed or timed out")
+                result.error_message = "Agent run failed"
+
+            # Collect results via GPA driver (swap in agent's code, compare timing)
+            self._collect_gpa_results(gpa_app, instance, workspace, result)
+
+        result.duration_seconds = time.time() - start_time
+
+        self.log(f"  Duration: {result.duration_seconds:.1f}s")
+        if result.agent_builds is not None:
+            self.log(f"  Builds: {result.agent_builds}")
+        if result.agent_correctness is not None:
+            self.log(f"  Correctness: {result.agent_correctness}")
+        if result.agent_speedup is not None:
+            self.log(f"  Speedup: {result.agent_speedup:.2f}x")
+
+        return result
+
+    def _run_gpa_driver(self, gpa_app: str, result: BenchmarkResult,
+                        swaps_override: Optional[dict] = None) -> None:
+        """Run the GPA driver and populate result fields.
+
+        For base mode: runs baseline only (swaps_override=None).
+        For agent mode: runs with swaps_override to compare timing.
+        """
+        saved_cwd = os.getcwd()
+        try:
+            os.chdir(str(GPA_BENCHMARK_ROOT))
+            os.environ.setdefault(
+                "CUDA_HOME", os.environ.get("CUDATOOLKIT_HOME", "")
+            )
+
+            from gpa_bench_driver.gpa_bench_driver import run_driver
+
+            run_kwargs = dict(
+                app=gpa_app,
+                sm_version=80,
+                log_level="INFO",
+                no_progress=True,
+            )
+            if swaps_override:
+                run_kwargs["swaps_override"] = swaps_override
+                run_kwargs["nsys"] = True
+
+            results, operations, long_results = run_driver(**run_kwargs)
+
+            app_result = results.get(gpa_app)
+            passes = long_results.get(gpa_app, [])
+
+            if not app_result:
+                result.error_message = f"No GPA results for {gpa_app}"
+                return
+
+            if swaps_override:
+                # Agent mode: check swap results
+                result.agent_builds = app_result.swap_builds_numerator > 0
+                swap_valid = app_result.swap_valid_numerator > 0
+                result.agent_correctness = "passed" if swap_valid else "failed"
+
+                # Extract timing from nsys_data
+                if len(passes) >= 2:
+                    baseline_pass = passes[0]
+                    swap_pass = passes[1]
+                    baseline_times = []
+                    swap_times = []
+
+                    if baseline_pass.nsys_data:
+                        baseline_times = [
+                            d["exec_time"] for d in baseline_pass.nsys_data
+                            if "exec_time" in d
+                        ]
+                    if swap_pass.nsys_data:
+                        swap_times = [
+                            d["exec_time"] for d in swap_pass.nsys_data
+                            if "exec_time" in d
+                        ]
+
+                    if baseline_times and swap_times:
+                        baseline_mean = sum(baseline_times) / len(baseline_times)
+                        swap_mean = sum(swap_times) / len(swap_times)
+                        if swap_mean > 0:
+                            result.agent_speedup = round(
+                                baseline_mean / swap_mean, 4
+                            )
+
+                result.success = True
+            else:
+                # Base mode: check baseline results
+                result.agent_builds = app_result.build
+                result.agent_correctness = (
+                    "passed" if app_result.validate else "failed"
+                )
+                result.success = bool(
+                    app_result.build and app_result.run and app_result.validate
+                )
+                self.log(
+                    f"  GPA driver: build={app_result.build}, "
+                    f"run={app_result.run}, validate={app_result.validate}"
+                )
+
+        except Exception as e:
+            result.error_message = str(e)
+            self.log(f"  GPA driver error: {e}")
+        finally:
+            os.chdir(saved_cwd)
+
+    def _collect_gpa_results(self, gpa_app: str, instance: dict,
+                             workspace: Path, result: BenchmarkResult) -> None:
+        """After agent runs, read modified kernel and run GPA driver with swaps."""
+        kernel_file = instance.get("kernel_file", "")
+        if not kernel_file:
+            result.error_message = "No kernel_file in GPA instance config"
+            return
+
+        kernel_basename = Path(kernel_file).name
+        modified_path = workspace / kernel_basename
+
+        if not modified_path.exists():
+            self.log(f"  [GPA] Modified kernel not found: {modified_path}")
+            result.error_message = f"Modified kernel not found: {modified_path}"
+            return
+
+        modified_code = modified_path.read_text()
+        result.agent_patch = modified_code
+
+        # Compare with original to count changes
+        original_path = GPA_BENCHMARK_ROOT / kernel_file
+        if original_path.exists():
+            original_lines = original_path.read_text().splitlines()
+            modified_lines = modified_code.splitlines()
+            result.agent_insertions = max(
+                0, len(modified_lines) - len(original_lines)
+            )
+            result.agent_deletions = max(
+                0, len(original_lines) - len(modified_lines)
+            )
+
+        if result.agent_insertions == 0 and result.agent_deletions == 0:
+            self.log(f"  [GPA] No code changes detected, skipping driver swap")
+            return
+
+        self.log(f"  [GPA] Running driver with swapped code for {gpa_app}...")
+        swaps = {gpa_app: {kernel_basename: modified_code}}
+        self._run_gpa_driver(gpa_app, result, swaps_override=swaps)
+
     def create_base_config(self, repo_name: str, instance_id: str, workspace: Optional[Path] = None) -> Path:
         """Create framework-specific config for base mode.
 
@@ -789,7 +1069,7 @@ def main():
         "--app",
         type=str,
         action="append",
-        choices=["quicksilver", "lulesh", "kripke", "laghos"],
+        choices=["quicksilver", "lulesh", "kripke", "laghos", "gpa"],
         help="Filter by application (can specify multiple)"
     )
     parser.add_argument(

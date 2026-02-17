@@ -1,22 +1,24 @@
 # HANDOFF.md — Session State
 
-Last updated: 2026-02-16 (session 17 — Phase 2 setup)
+Last updated: 2026-02-16 (session 18 — Phase 2 Goals 0-1)
 
 ## Current Phase
 
 **Phase 2: Benchmark Expansion** — goals tracked in `.planning/PHASE2-GOALS.md`
 
-## What Was Done This Session (17)
+## What Was Done This Session (18)
 
-- Committed session 16 uncommitted changes (Lulesh doubled path fix + post-agent validation)
-- Updated `.claude/skills/gpa-benchmark/SKILL.md` with current GPA-Benchmark repo state (17 apps, `run_driver()` API, new CLI flags)
-- Updated `.claude/skills/swefficiency/SKILL.md` with inference harness, eval pipeline, podman-hpc notes
-- Created `~/swefficiency` symlink to `/pscratch/sd/k/krydzy/swefficiency/`
-- Pulled latest changes in both GPA-Benchmark and SWE-fficiency repos
-- Created `.planning/PHASE2-GOALS.md` (Ralph loop checklist)
-- Created `.planning/RALPH-PROMPT-PHASE2.md` (combined Ralph + Phase 2 prompt)
+- **Goal 0**: Created `benchmark-expansion` branch off `local`
+- **Goal 1**: GPA-Benchmark driver integration:
+  - Added `--app gpa` to `hpc_benchmark_runner.py` CLI and `--gpa` to `run_benchmark.sh`
+  - Added `GPA_BENCHMARK_ROOT` and `sys.path` setup for GPA driver import
+  - Implemented 6 new methods in `HPCBenchmarkRunner` for GPA workflow
+  - Base mode: iterates all 17 GPA apps, calls `run_driver()` directly (no agent needed)
+  - Agent mode: creates workspace with kernel files, runs agent, reads modified files, calls `run_driver(swaps_override=...)` for timing comparison
+  - Validated on compute node: gaussian (9.6s, PASS) and hotspot (16.6s, PASS)
+  - Pre-requisite: `get_data.sh` downloaded rodinia input data; `alive-progress` pip installed
 
-## What Was Done Last Session (16)
+## What Was Done Session 17
 
 - Fixed Lulesh doubled path: removed `/cuda` from `env.repo.path` in lulesh YAML configs (kept in `LULESH_ROOT`)
 - Added post-agent validation: `_validate_agent_changes()` in `hpc_benchmark_runner.py` populates `agent_builds`/`agent_correctness`/`agent_speedup`
@@ -47,11 +49,11 @@ Trajectories in `trajectories/benchmark_*_48889171/run_1/{app}/{app}__base.jsonl
 
 | File | Change |
 |------|--------|
-| `.claude/skills/gpa-benchmark/SKILL.md` | Updated with current repo state |
-| `.claude/skills/swefficiency/SKILL.md` | Updated with inference harness, eval pipeline |
-| `.planning/PHASE2-GOALS.md` | NEW — Phase 2 goal checklist |
-| `.planning/RALPH-PROMPT-PHASE2.md` | NEW — Ralph loop prompt for Phase 2 |
-| `.planning/HANDOFF.md` | This file (restructured) |
+| `batch/hpc_benchmark_runner.py` | Added GPA support: 6 new methods, --app gpa, import + sys.path |
+| `batch/run_benchmark.sh` | Added --gpa flag, CUDA_HOME export, updated help text |
+| `.planning/PHASE2-GOALS.md` | Marked Goals 0-1 done |
+| `.planning/HANDOFF.md` | This file |
+| `STATE.md` | Updated with session 18 |
 
 ## Files to Read First Next Session
 
@@ -72,5 +74,5 @@ Trajectories in `trajectories/benchmark_*_48889171/run_1/{app}/{app}__base.jsonl
 
 ## Branch State
 
-- **Current branch**: `local`
-- **Latest commit**: `f2140f35` — Fix Lulesh doubled path + post-agent validation
+- **Current branch**: `benchmark-expansion` (off `local`)
+- **Latest commit**: (pending commit for Goal 0-1)

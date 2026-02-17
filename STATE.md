@@ -1,16 +1,33 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-02-16 (session 16)
+Last updated: 2026-02-16 (session 18)
 
 ## Active Experiments
 
-None. Full 4×4 matrix validation complete.
+None.
 
 ## Current Focus
 
-**Phase 2: Benchmark Expansion** — integrating GPA-Benchmark and SWE-fficiency into the runner. Phase 1 bug fixes (Lulesh path + post-agent validation) complete and verified on compute node.
+**Phase 2: Benchmark Expansion** — Goals 0-1 complete (branch + GPA driver integration). Working on Goal 2 (GPA agent prompt/config).
 
-## Last Session (Session 16)
+## Last Session (Session 18)
+
+- Created `benchmark-expansion` branch off `local` (Goal 0)
+- GPA-Benchmark driver integration (Goal 1):
+  - Added `--app gpa` to `hpc_benchmark_runner.py` and `--gpa` to `run_benchmark.sh`
+  - Added GPA-Benchmark root (`/pscratch/sd/k/krydzy/GPA-Benchmark`) to `sys.path`
+  - Implemented 6 new methods in `HPCBenchmarkRunner`: `_load_gpa_app_configs()`, `_generate_gpa_base_instances()`, `_setup_gpa_workspace()`, `_run_gpa_benchmark()`, `_run_gpa_driver()`, `_collect_gpa_results()`
+  - Base mode generates 17 instances (all GPA apps) and calls `run_driver()` directly
+  - Agent mode creates workspace with kernel files, then after agent edits, calls `run_driver(swaps_override=...)` for timing comparison
+  - Validated on compute node: gaussian (9.6s) and hotspot (16.6s) both PASS (build=True, run=True, validate=True)
+  - Installed `alive-progress` dependency required by GPA driver
+  - Ran `get_data.sh` to download rodinia input data (needed by b+tree, bfs, heartwall, hotspot, huffman)
+
+## Previous Session (Session 17)
+
+- Set up Phase 2 planning: created PHASE2-GOALS.md, RALPH-INSTRUCTIONS.md, updated skill files
+
+## Session 16
 
 - Fixed Lulesh doubled path: removed `/cuda` from `env.repo.path` in lulesh YAML configs (kept in `LULESH_ROOT`)
 - Added post-agent validation: `_validate_agent_changes()` in `hpc_benchmark_runner.py` populates `agent_builds`/`agent_correctness`/`agent_speedup`

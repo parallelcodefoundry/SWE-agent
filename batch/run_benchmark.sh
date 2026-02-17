@@ -74,7 +74,8 @@ Application Filters (combine multiple to run subset):
   --lulesh              Include LULESH instances
   --kripke              Include Kripke instances
   --laghos              Include Laghos instances
-  (If none specified, all applications are included)
+  --gpa                 Include GPA-Benchmark apps (17 GPU kernel benchmarks)
+  (If none specified, all LLNL proxy apps are included; GPA must be explicit)
 
 Framework Selection:
   --framework NAME      Agent framework: sweagent, opencode, openhands, codex
@@ -231,6 +232,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --laghos)
             APPS+=("laghos")
+            shift
+            ;;
+        --gpa)
+            APPS+=("gpa")
             shift
             ;;
         *)
@@ -716,6 +721,7 @@ for run_num in $(seq 1 $NUM_RUNS); do
                     export SWEAGENT_ROOT='${SWEAGENT_ROOT}'
                     export HF_HOME='${HF_HOME}'
                     export FRAMEWORK='${FRAMEWORK}'
+                    export CUDA_HOME=\${CUDATOOLKIT_HOME:-}
 
                     python3 batch/hpc_benchmark_runner.py ${RUNNER_ARGS_STR}
                 " > "${RUN_OUTPUT_DIR}/agent.log" 2>&1 &
