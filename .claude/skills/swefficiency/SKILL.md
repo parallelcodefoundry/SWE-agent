@@ -59,7 +59,18 @@ Self-contained harness for running agents inside SWE-fficiency containers:
 - **Parallel**: `--num_workers N` for concurrent instances
 - **Output**: `logs/run_inference/<run_id>/<spec_name>/<instance_id>/patch.diff`
 
-Example spec at `scripts/inference/specs/cursor_cli.yaml`.
+Inference specs for all 4 frameworks: `scripts/inference/specs/{sweagent,opencode,codex_cli,openhands}.yaml`. Each spec has install templates in `scripts/inference/templates/`.
+
+```bash
+# Via benchmark runner (from SWE-agent repo root)
+python3 batch/hpc_benchmark_runner.py --base --app swefficiency          # base mode
+python3 batch/hpc_benchmark_runner.py --app swefficiency --framework sweagent  # agent mode
+
+# Via run_benchmark.sh
+bash batch/run_benchmark.sh --swefficiency --base
+```
+
+Curated subset: 27 instances (3 per repo × 9 repos). Each instance takes ~77 min.
 
 ## Evaluation Pipeline
 
@@ -87,10 +98,29 @@ Produces:
 - `eval_report_<model>.csv` — per-instance results (instance_id, SR, correctness, timing)
 - `eval_report_<model>.json` — summary: `overall_score` (harmonic mean SR), `proportion_incorrect`, `proportion_correct_but_no_speedup`, `proportion_human_speedup_or_better`
 
+## Perlmutter Setup
+
+Requires podman socket running (Docker SDK connects via it):
+```bash
+podman-hpc system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock &
+export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+```
+
+Venv: `/pscratch/sd/k/krydzy/swefficiency/.venv` (needs jinja2 + python-dotenv installed).
+
+4 podman compatibility fixes applied (commit `be86360` in swefficiency repo):
+- `docker_build.py`: Disabled `oom_kill_disable=True` (cgroupv2 incompatible)
+- `cli.py`: Set `use_podman=True`
+- `run_validation.py`: Skip cpu cgroup args in podman mode; fix taskset_cpus extraction
+- `docker_utils.py`: Reset tar uid/gid to root for podman rootless
+
 ## Common Issues
 
 - **Docker images**: Prebuilt at `ghcr.io/swefficiency/swefficiency-images:<instance_id>`
-- **podman-hpc on Perlmutter**: Use `podman-hpc` instead of `docker`
+- **podman-hpc on Perlmutter**: Must start socket manually (see setup above)
+- **`oom_kill_disable` error**: cgroupv2 incompatible — disabled in `docker_build.py`
+- **cpu/cpuset cgroup error**: Not delegated on Perlmutter — `cpu_groups=None` when using podman
+- **`lchown` tar error**: Reset uid/gid to 0 in `docker_utils.py` for podman rootless
 - **CPU pinning**: 4 vCPUs, 16 GB RAM per worker recommended
 - **Agent limits**: 3 hours wall-clock, 100 max actions per instance
 - **Timeout**: Default 2 hours per instance; configurable in eval

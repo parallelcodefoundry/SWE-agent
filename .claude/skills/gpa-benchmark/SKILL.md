@@ -108,6 +108,23 @@ Swap file naming: `run_<num>_optimized_code_<num>.cu`
 
 `drive-gpa.sbatch` runs all 17 apps as a SLURM job array (1 GPU per app, H100/A100).
 
+## Benchmark Runner Integration
+
+```bash
+# Via benchmark runner (from SWE-agent repo root)
+python3 batch/hpc_benchmark_runner.py --base --app gpa          # base mode (all 17 apps)
+python3 batch/hpc_benchmark_runner.py --app gpa --framework sweagent  # agent mode
+
+# Via run_benchmark.sh
+bash batch/run_benchmark.sh --gpa --base
+```
+
+The runner handles `sys.path` setup, `os.chdir()` to GPA root, workspace creation for agent mode, and result collection via `run_driver()` API.
+
+## Validation Status (Perlmutter A100)
+
+16/17 apps PASS in base mode. Only `lulesh` fails (empty `LULESH/` dir upstream — not our bug).
+
 ## Common Issues
 
 - **`CUDA_HOME` not set**: `export CUDA_HOME=$CUDATOOLKIT_HOME`
@@ -115,5 +132,7 @@ Swap file naming: `run_<num>_optimized_code_<num>.cu`
 - **Missing rodinia data**: Run `bash get_data.sh`
 - **V100 speedups != A100**: README results are V100. Re-baseline on A100
 - **Force rebuild**: Driver uses `make -B` to always rebuild (prevents stale binaries)
+- **lavaMD case sensitivity**: Fixed — driver lowercases app names but `driver_apps.yaml` has `name: lavaMD`. All comparisons now use `.lower()` (commit `ab21f6b` in GPA-Benchmark)
+- **lulesh always fails**: Empty `LULESH/` directory in GPA-Benchmark repo — upstream issue, not our integration
 
 For detailed reference, see references/ in this skill directory.
