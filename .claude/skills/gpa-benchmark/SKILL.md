@@ -6,20 +6,20 @@ user-invocable: false
 
 # GPA-Benchmark (GPU Performance Advisor Benchmark)
 
-Suite of GPU kernels with **known performance anti-patterns and expert-written fixes**, plus a Python driver (`gpa_bench_driver`) that automates build, run, validate, profile, and swap. 17 active benchmarks from Rodinia, ExaTENSOR, LULESH, XSBench. Speedups 1.02x-3.86x on V100.
+Suite of GPU kernels with **known performance anti-patterns and expert-written fixes**, plus a Python driver (`gpa_bench_driver`) that automates build, run, validate, profile, and swap. 16 active benchmarks from Rodinia, ExaTENSOR, XSBench. Speedups 1.02x-3.86x on V100.
 
 ## Source & Layout
 
 - **Local clone**: `/pscratch/sd/k/krydzy/GPA-Benchmark/` (symlinked at `~/GPA-Benchmark`)
-- **App configs**: `driver_apps.yaml` (17 apps)
+- **App configs**: `driver_apps.yaml` (16 active apps; lulesh excluded — empty upstream dir)
 - **Driver source**: `gpa_bench_driver/` (entry: `gpa_bench_driver.py`)
 - **Driver modules**: `gpa_bench_driver/driver_src/` (operations, validation, profiling, file swapping, reporting)
 - **App dirs**: `rodinia/`, `ExaTENSOR/`, `LULESH/`, `XSBench/`, `Castro/`, `darknet/`, `PeleC/`, `Quicksilver/`
 
-## Active Apps (17)
+## Active Apps (16)
 
-**Rodinia (13):** b+tree, backprop, bfs, gaussian, heartwall, hotspot, huffman, lavaMD, lud, nw, particlefilter, pathfinder, srad, streamcluster
-**Standalone (3):** exatensor, lulesh, xsbench
+**Rodinia (14):** b+tree, backprop, bfs, gaussian, heartwall, hotspot, huffman, lavaMD, lud, nw, particlefilter, pathfinder, srad, streamcluster
+**Standalone (2):** exatensor, xsbench
 **Commented out:** quicksilver (validation needs CORAL2), myocyte
 
 ## Driver CLI
@@ -29,7 +29,7 @@ cd /pscratch/sd/k/krydzy/GPA-Benchmark
 
 # Core operations
 python -m gpa_bench_driver --app gaussian                     # build + run + validate
-python -m gpa_bench_driver --app all                          # all 17 apps
+python -m gpa_bench_driver --app all                          # all 16 active apps
 python -m gpa_bench_driver --app gaussian --nsys              # + Nsight Systems profiling
 python -m gpa_bench_driver --app gaussian --ncu               # + Nsight Compute profiling
 python -m gpa_bench_driver --app gaussian --swaps /path/dir   # test optimized code variants
@@ -106,13 +106,13 @@ Swap file naming: `run_<num>_optimized_code_<num>.cu`
 
 ## Batch Execution
 
-`drive-gpa.sbatch` runs all 17 apps as a SLURM job array (1 GPU per app, H100/A100).
+`drive-gpa.sbatch` runs all 16 active apps as a SLURM job array (1 GPU per app, H100/A100).
 
 ## Benchmark Runner Integration
 
 ```bash
 # Via benchmark runner (from SWE-agent repo root)
-python3 batch/hpc_benchmark_runner.py --base --app gpa          # base mode (all 17 apps)
+python3 batch/hpc_benchmark_runner.py --base --app gpa          # base mode (all 16 apps)
 python3 batch/hpc_benchmark_runner.py --app gpa --framework sweagent  # agent mode
 
 # Via run_benchmark.sh
@@ -123,7 +123,7 @@ The runner handles `sys.path` setup, `os.chdir()` to GPA root, workspace creatio
 
 ## Validation Status (Perlmutter A100)
 
-16/17 apps PASS in base mode. Only `lulesh` fails (empty `LULESH/` dir upstream — not our bug).
+16/16 active apps PASS in base mode. (lulesh excluded — empty `LULESH/` dir upstream.)
 
 ## Common Issues
 
@@ -133,6 +133,6 @@ The runner handles `sys.path` setup, `os.chdir()` to GPA root, workspace creatio
 - **V100 speedups != A100**: README results are V100. Re-baseline on A100
 - **Force rebuild**: Driver uses `make -B` to always rebuild (prevents stale binaries)
 - **lavaMD case sensitivity**: Fixed — driver lowercases app names but `driver_apps.yaml` has `name: lavaMD`. All comparisons now use `.lower()` (commit `ab21f6b` in GPA-Benchmark)
-- **lulesh always fails**: Empty `LULESH/` directory in GPA-Benchmark repo — upstream issue, not our integration
+- **lulesh excluded**: Empty `LULESH/` directory in GPA-Benchmark repo — excluded from active apps
 
 For detailed reference, see references/ in this skill directory.

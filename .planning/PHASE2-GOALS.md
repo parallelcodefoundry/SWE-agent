@@ -4,7 +4,7 @@
 
 1. **GPA agent workspace model**: Agent gets a workspace directory with kernel `.cu` file(s), profiling output, and a prompt file. Agent edits files in place. We read modified files and pass to `run_driver(swaps_override=...)`. This is consistent with the LLNL proxy app flow.
 2. **GPA: no git patches**: GPA comparison is timing-based (baseline vs optimized speedup), not patch-based. The `BenchmarkResult.agent_patch` field stores the optimized code. `agent_speedup` stores the timing ratio. No `expert_commit` or `file_overlap` for GPA tasks.
-3. **GPA scope**: All 17 active apps from `driver_apps.yaml`. Validate with easy tier first (gaussian, hotspot, particlefilter, xsbench), then enable all apps once infra works.
+3. **GPA scope**: All 16 active apps from `driver_apps.yaml` (lulesh excluded — empty upstream dir). Validate with easy tier first (gaussian, hotspot, particlefilter, xsbench), then enable all apps once infra works.
 4. **SWE-fficiency**: Full integration — verify eval pipeline on Perlmutter, then create inference specs for all 4 frameworks and wire into benchmark runner.
 5. **Curated commits benchmark**: Run the 9 expert commits from `dataset/curated_perf_commits.json` across frameworks.
 
@@ -34,7 +34,7 @@
       - `agent_patch` = the modified kernel code (for logging)
   - For `--base` mode: just run `run_driver(app=X)` with no swaps to verify baseline works
   - IMPORTANT: `run_driver()` runs from the GPA-Benchmark repo root. Either `os.chdir("/pscratch/sd/k/krydzy/GPA-Benchmark")` before calling, or ensure paths resolve correctly.
-  - Support all 17 apps from `driver_apps.yaml` (iterate over app configs)
+  - Support all 16 active apps from `driver_apps.yaml` (iterate over app configs; lulesh excluded)
   - Read `.claude/skills/gpa-benchmark/SKILL.md` for driver API details
 
 - [x] Goal 2: GPA-Benchmark — Agent prompt and config
@@ -50,7 +50,7 @@
   - The prompt should tell the agent to modify the kernel file(s) in-place in the workspace
 
 - [x] Goal 3: GPA-Benchmark — Validate on compute node
-  - Base mode all 17 apps: 16/17 PASS, 1 FAIL (lulesh — empty upstream LULESH/ dir)
+  - Base mode: 16/16 active apps PASS (lulesh excluded — empty upstream LULESH/ dir)
   - Fixed lavaMD case-sensitivity bug in GPA driver (app name comparisons now case-insensitive)
   - Agent mode infrastructure verified: workspace setup, config generation, launch scripts all work
   - NOTE: GPA lulesh is an upstream issue (missing source in GPA-Benchmark/LULESH/), not our integration
@@ -96,7 +96,7 @@
   - `batch/run_benchmark.sh --help` shows new `--gpa` and `--swefficiency` options
   - `hpc_benchmark_runner.py --help` shows all 6 app choices (kripke, laghos, lulesh, quicksilver, gpa, swefficiency)
   - `benchmark_results.json` output uses unified `BenchmarkResult` format with `agent_builds`, `agent_correctness`, `agent_speedup`
-  - Regression test: LLNL (4) + GPA (17) + SWE-fficiency (27) = 48 instances, mixed selection works
+  - Regression test: LLNL (4) + GPA (16) + SWE-fficiency (27) = 47 instances, mixed selection works
   - Updated `agent_docs/architecture.md` with benchmark task sources table and external repo paths
   - Updated `agent_docs/experiment-workflow.md` with GPA/SWE-fficiency sections and examples
 

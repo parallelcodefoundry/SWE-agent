@@ -710,6 +710,7 @@ class HPCBenchmarkRunner:
                 data = yaml.safe_load(f)
             self._gpa_app_configs_cache = {
                 app["name"]: app for app in data["apps"]
+                if app["name"].lower() != "lulesh"  # excluded: empty LULESH/ dir upstream
             }
         return self._gpa_app_configs_cache
 

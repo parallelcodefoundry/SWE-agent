@@ -60,7 +60,7 @@ scripts/
 {App}_test/ → working copies for experiments
 
 # External repos (separate git repos with their own commits)
-/pscratch/sd/k/krydzy/GPA-Benchmark/           # 17 GPU anti-pattern kernels + driver
+/pscratch/sd/k/krydzy/GPA-Benchmark/           # 16 GPU anti-pattern kernels + driver
 /pscratch/sd/k/krydzy/swefficiency/            # SWE-fficiency eval pipeline + inference specs
 ```
 
@@ -123,7 +123,7 @@ The pipeline supports three categories of optimization tasks via `--app`:
 | Source | Flag | Tasks | Language | Metric |
 |--------|------|-------|----------|--------|
 | LLNL Proxy Apps | `--app kripke/laghos/lulesh/quicksilver` | 9 curated commits | C++/CUDA | Speedup vs expert patch |
-| GPA-Benchmark | `--app gpa` | 17 GPU kernels | CUDA | Speedup vs baseline (nsys timing) |
+| GPA-Benchmark | `--app gpa` | 16 GPU kernels | CUDA | Speedup vs baseline (nsys timing) |
 | SWE-fficiency | `--app swefficiency` | 27 curated instances | Python | Speedup vs baseline (containerized eval) |
 
 **LLNL Proxy Apps**: Agent receives a workspace checked out to a pre-optimization commit. Must find and apply the same (or better) optimization as the expert. Harness tools (`app_build`, `app_run`) measure correctness and speedup against a pristine baseline.
