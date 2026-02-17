@@ -40,9 +40,10 @@ tools/
   nsight_compute/, nsight_systems/              # Nsight wrappers (bin/ only, no config.yaml yet)
 config/hpc/
   {app}_{with|no}_profiling.yaml                # SWE-agent configs (one per app × profiling variant)
+  gpa_{no|with}_profiling.yaml                  # GPA-Benchmark SWE-agent configs
 batch/
   run_benchmark.sh                              # SLURM entrypoint (vLLM + benchmark orchestration)
-  hpc_benchmark_runner.py                       # Both modes: benchmark (agent vs expert) and base (--base)
+  hpc_benchmark_runner.py                       # All modes: benchmark, base (--base), all app types
   frameworks/                                   # Multi-framework support
     __init__.py                                 # get_launcher() factory
     base.py                                     # FrameworkLauncher ABC + shared helpers
@@ -57,6 +58,10 @@ scripts/
   setup_apps.sh, reset_test_repos.sh            # Build and reset app repos
 {App}/ → pristine repos (NEVER modify)
 {App}_test/ → working copies for experiments
+
+# External repos (separate git repos with their own commits)
+/pscratch/sd/k/krydzy/GPA-Benchmark/           # 17 GPU anti-pattern kernels + driver
+/pscratch/sd/k/krydzy/swefficiency/            # SWE-fficiency eval pipeline + inference specs
 ```
 
 ## Data Flow
@@ -111,8 +116,31 @@ bash batch/run_benchmark.sh --base --lulesh --framework openhands --external-mod
 bash batch/run_benchmark.sh --base --lulesh --framework codex --external-model
 ```
 
-## Expansion Plan
+## Benchmark Task Sources
 
-**More applications**: GPA-Benchmark (20+ GPU anti-pattern benchmarks) and SWE-fficiency (498 Python optimization tasks) will be added as additional task sources. Each needs harnesses following the same build/run/correctness pattern.
+The pipeline supports three categories of optimization tasks via `--app`:
 
-**Unified benchmark**: The pipeline can now run any combination of framework × application × profiling variant, producing directly comparable results.
+| Source | Flag | Tasks | Language | Metric |
+|--------|------|-------|----------|--------|
+| LLNL Proxy Apps | `--app kripke/laghos/lulesh/quicksilver` | 9 curated commits | C++/CUDA | Speedup vs expert patch |
+| GPA-Benchmark | `--app gpa` | 17 GPU kernels | CUDA | Speedup vs baseline (nsys timing) |
+| SWE-fficiency | `--app swefficiency` | 27 curated instances | Python | Speedup vs baseline (containerized eval) |
+
+**LLNL Proxy Apps**: Agent receives a workspace checked out to a pre-optimization commit. Must find and apply the same (or better) optimization as the expert. Harness tools (`app_build`, `app_run`) measure correctness and speedup against a pristine baseline.
+
+**GPA-Benchmark**: Agent receives a CUDA kernel file with a known GPU performance anti-pattern. Must diagnose and fix the issue. The GPA driver (`run_driver()`) compiles, validates, and profiles the optimized code using Nsight Systems to measure kernel execution time speedup.
+
+**SWE-fficiency**: Agent runs inside a Docker/podman container with a Python project. Must optimize Python code to pass performance benchmarks. Eval harness measures correctness (test suite) and speedup (timing benchmarks) in isolation.
+
+```bash
+# Run all task sources
+python3 batch/hpc_benchmark_runner.py --base --app kripke --app gpa --app swefficiency
+
+# Single GPA app validation
+python3 batch/hpc_benchmark_runner.py --base --app gpa
+
+# Single curated commit
+python3 batch/hpc_benchmark_runner.py --instance-id lulesh__691e123e --framework opencode
+```
+
+**Unified benchmark**: The pipeline runs any combination of framework × application × profiling variant, producing directly comparable `benchmark_results.json` output with `agent_builds`, `agent_correctness`, and `agent_speedup` fields.

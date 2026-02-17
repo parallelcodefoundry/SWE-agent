@@ -91,12 +91,14 @@
   - To run: `python3 batch/hpc_benchmark_runner.py --instance-id lulesh__691e123e --framework opencode`
   - Full benchmark run requires GPU allocation + LLM API + ~30-60min/instance × 9 × frameworks
 
-- [ ] Goal 8: Unified results and regression test
+- [x] Goal 8: Unified results and regression test
   - Existing LLNL app benchmarks (`--app kripke/laghos/lulesh/quicksilver`) still work unchanged
-  - `batch/run_benchmark.sh --help` shows new `--app gpa` and `--app swefficiency` options
-  - `benchmark_results.json` output includes GPA and SWE-fficiency results in compatible format
-  - Update skills and docs
-  - Commit all changes
+  - `batch/run_benchmark.sh --help` shows new `--gpa` and `--swefficiency` options
+  - `hpc_benchmark_runner.py --help` shows all 6 app choices (kripke, laghos, lulesh, quicksilver, gpa, swefficiency)
+  - `benchmark_results.json` output uses unified `BenchmarkResult` format with `agent_builds`, `agent_correctness`, `agent_speedup`
+  - Regression test: LLNL (4) + GPA (17) + SWE-fficiency (27) = 48 instances, mixed selection works
+  - Updated `agent_docs/architecture.md` with benchmark task sources table and external repo paths
+  - Updated `agent_docs/experiment-workflow.md` with GPA/SWE-fficiency sections and examples
 
 ## Key Integration Points
 

@@ -11,13 +11,21 @@ For setup prerequisites (modules, Perlmutter, salloc), see the `perlmutter` skil
 # Run full benchmark (all apps, all commits, no profiling) — defaults to SWE-agent
 sbatch batch/run_benchmark.sh
 
-# Common flags
+# Common flags — LLNL proxy apps
 sbatch batch/run_benchmark.sh --kripke --laghos          # specific apps
 sbatch batch/run_benchmark.sh --profiling with_profiling  # enable profiling tools
 sbatch batch/run_benchmark.sh --both                      # run with AND without profiling
 sbatch batch/run_benchmark.sh --num-probs 2 --num-runs 3  # limit commits, repeat runs
 sbatch batch/run_benchmark.sh --instance-id kripke__07b2b60d  # single commit
 sbatch batch/run_benchmark.sh --base --lulesh             # base mode (no expert comparison)
+
+# GPA-Benchmark (17 GPU anti-pattern kernels)
+sbatch batch/run_benchmark.sh --gpa --base                # validate all GPA apps
+python3 batch/hpc_benchmark_runner.py --base --app gpa    # direct Python invocation
+
+# SWE-fficiency (27 curated Python optimization tasks)
+sbatch batch/run_benchmark.sh --swefficiency --base       # validate SWE-fficiency pipeline
+python3 batch/hpc_benchmark_runner.py --base --app swefficiency
 
 # Multi-framework: specify --framework to use a different agent
 sbatch batch/run_benchmark.sh --base --lulesh --framework opencode --external-model
@@ -67,11 +75,13 @@ The agent never self-reports performance. Every measurement is a direct comparis
 ## Results
 
 Output lands in `batch_results/benchmark_<SLURM_JOBID>/`:
-- `benchmark_results.json` — per-instance: `instance_id`, `framework`, `success`, `agent_speedup`, `agent_correctness`, `file_overlap`, `patch_similarity`, `duration_seconds`
+- `benchmark_results.json` — per-instance: `instance_id`, `framework`, `success`, `agent_builds`, `agent_correctness`, `agent_speedup`, `file_overlap`, `patch_similarity`, `duration_seconds`
 - `*_agent.patch` — the agent's generated diff
 - `*_config.yaml` / `*_opencode_config.json` / `*_openhands_config.toml` — framework-specific config
 - `workspaces/` — cloned repos at base_commit (benchmark mode only)
 - Trajectories in `trajectories/` (SWE-agent's step-by-step execution log)
+
+Results from all three task sources (LLNL, GPA, SWE-fficiency) use the same `BenchmarkResult` format, so results are directly comparable across sources.
 
 ## Resetting Between Runs
 
@@ -99,6 +109,25 @@ The `--framework` flag selects which agent framework to use. All frameworks shar
 | Codex CLI | `--framework codex` | `-c` flags + AGENTS.md | `codex exec --yolo` | Node.js (nvm), wire_api=chat for vLLM |
 
 Implementation: `batch/frameworks/` contains a `FrameworkLauncher` ABC and per-framework subclasses. The `HPCBenchmarkRunner` delegates config generation, launch command building, and trajectory discovery to the active launcher.
+
+## GPA-Benchmark Tasks
+
+GPA-Benchmark provides 17 GPU kernels with known performance anti-patterns. The agent receives a CUDA kernel file in a workspace and must optimize it.
+
+- **Driver**: `run_driver()` from `/pscratch/sd/k/krydzy/GPA-Benchmark` handles build/run/validate/profile
+- **Base mode**: Builds and runs each app's baseline kernel; 16/17 pass (lulesh has empty upstream dir)
+- **Agent mode**: Agent edits kernel in workspace → runner calls `run_driver(swaps_override=...)` → measures speedup via nsys timing
+- **Configs**: `config/hpc/gpa_{no,with}_profiling.yaml` for SWE-agent; other frameworks use prompt templates
+
+## SWE-fficiency Tasks
+
+SWE-fficiency provides 27 curated Python optimization tasks (3 per repo × 9 repos). The agent runs inside a Docker/podman container.
+
+- **Eval pipeline**: `/pscratch/sd/k/krydzy/swefficiency` — requires podman socket running
+- **Inference specs**: `swefficiency/scripts/inference/specs/{sweagent,opencode,codex_cli,openhands}.yaml`
+- **Agent mode**: Runner calls `custom.py` → agent produces patch → `swefficiency eval` measures speedup + correctness
+- **Podman requirement**: `podman-hpc system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock &`
+- **Time per instance**: ~77 minutes (includes perf benchmarks + correctness tests)
 
 ## Adding a New Framework
 
