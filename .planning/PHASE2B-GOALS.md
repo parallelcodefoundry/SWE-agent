@@ -39,7 +39,7 @@
   - Dry-run render: load each spec with `custom.py`'s `load_spec()` and `render_inline()` on the inference command to verify correct output
   - Commit fixes
 
-- [ ] Goal 2: Gold eval SWE-fficiency subset — timing discovery + validation
+- [x] Goal 2: Gold eval SWE-fficiency subset — timing discovery + validation
   - Run gold eval on 5 instances (1 per fast-likely repo): numpy, scipy, dask, sympy, astropy
   - Use `swefficiency eval` CLI directly (not through runner) with `--num_workers 3` for parallelism
   - Record per-instance timing to calibrate expectations (pandas was ~77 min; others may be 15-30 min)
