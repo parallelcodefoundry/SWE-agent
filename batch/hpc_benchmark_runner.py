@@ -41,6 +41,30 @@ GPA_BENCHMARK_ROOT = Path("/pscratch/sd/k/krydzy/GPA-Benchmark")
 if GPA_BENCHMARK_ROOT.exists() and str(GPA_BENCHMARK_ROOT) not in sys.path:
     sys.path.insert(0, str(GPA_BENCHMARK_ROOT))
 
+# SWE-fficiency integration
+SWEFFICIENCY_ROOT = Path("/pscratch/sd/k/krydzy/swefficiency")
+
+# Curated subset of SWE-fficiency instances (3 per repo, 27 total)
+SWEFFICIENCY_CURATED_INSTANCES = [
+    "astropy__astropy-10814", "astropy__astropy-12699", "astropy__astropy-12701",
+    "dask__dask-10356", "dask__dask-10428", "dask__dask-10922",
+    "matplotlib__matplotlib-13917", "matplotlib__matplotlib-14504", "matplotlib__matplotlib-15346",
+    "numpy__numpy-11720", "numpy__numpy-12321", "numpy__numpy-12575",
+    "pandas-dev__pandas-23772", "pandas-dev__pandas-23888", "pandas-dev__pandas-24023",
+    "pydata__xarray-4740", "pydata__xarray-5661", "pydata__xarray-7374",
+    "scikit-learn__scikit-learn-10610", "scikit-learn__scikit-learn-13290", "scikit-learn__scikit-learn-13310",
+    "scipy__scipy-10064", "scipy__scipy-10393", "scipy__scipy-10467",
+    "sympy__sympy-10621", "sympy__sympy-10919", "sympy__sympy-11675",
+]
+
+# Framework → SWE-fficiency inference spec name mapping
+SWEFFICIENCY_SPEC_MAP = {
+    "sweagent": "sweagent",
+    "opencode": "opencode",
+    "codex": "codex_cli",
+    "openhands": "openhands",
+}
+
 
 # Post-agent validation commands per app
 VALIDATION_BUILD_CMD = {
@@ -227,6 +251,11 @@ class HPCBenchmarkRunner:
             # GPA apps are generated separately
             if repo_name == "gpa":
                 instances.extend(self._generate_gpa_base_instances())
+                continue
+
+            # SWE-fficiency instances are generated from curated subset
+            if repo_name == "swefficiency":
+                instances.extend(self._generate_swefficiency_instances())
                 continue
 
             if repo_name not in self.repo_configs:
@@ -437,6 +466,10 @@ class HPCBenchmarkRunner:
         # GPA benchmark has its own flow
         if instance.get("repo_name") == "gpa":
             return self._run_gpa_benchmark(instance)
+
+        # SWE-fficiency has its own flow
+        if instance.get("repo_name") == "swefficiency":
+            return self._run_swefficiency_benchmark(instance)
 
         instance_id = instance["instance_id"]
         repo_name = instance["repo_name"]
@@ -947,6 +980,232 @@ class HPCBenchmarkRunner:
         swaps = {gpa_app: {kernel_basename: modified_code}}
         self._run_gpa_driver(gpa_app, result, swaps_override=swaps)
 
+    # ---------------------------------------------------------------
+    # SWE-fficiency integration
+    # ---------------------------------------------------------------
+
+    def _generate_swefficiency_instances(self) -> list[dict]:
+        """Generate instances for the curated SWE-fficiency subset."""
+        instances = []
+        for instance_id in SWEFFICIENCY_CURATED_INSTANCES:
+            instances.append({
+                "instance_id": f"swefficiency__{instance_id}",
+                "repo_name": "swefficiency",
+                "optimization_type": "python_performance",
+                "swefficiency_instance_id": instance_id,
+            })
+        return instances
+
+    def _run_swefficiency_benchmark(self, instance: dict) -> BenchmarkResult:
+        """Run a single SWE-fficiency benchmark instance.
+
+        Flow:
+        1. In base mode: just verify the instance image can be pulled and eval works
+        2. In agent mode: run inference via custom.py, then eval the patch
+        """
+        swe_instance_id = instance["swefficiency_instance_id"]
+        our_instance_id = instance["instance_id"]
+
+        self.log(f"\n{'='*60}")
+        self.log(f"SWE-fficiency: {swe_instance_id}")
+        self.log(f"{'='*60}")
+
+        result = BenchmarkResult(
+            instance_id=our_instance_id,
+            repo_name="swefficiency",
+            optimization_type="python_performance",
+            framework=self.framework,
+            run_number=self.run_number,
+            success=False,
+        )
+
+        if self.base_mode:
+            return self._run_swefficiency_base(swe_instance_id, result)
+        else:
+            return self._run_swefficiency_agent(swe_instance_id, instance, result)
+
+    def _run_swefficiency_base(self, swe_instance_id: str,
+                                result: BenchmarkResult) -> BenchmarkResult:
+        """Base mode: run gold eval (no agent patch) to verify infra works."""
+        self.log(f"  [SWE-fficiency] Base mode: running gold eval for {swe_instance_id}")
+
+        try:
+            # Run swefficiency eval with no prediction (gold mode)
+            run_id = f"base_{swe_instance_id}"
+            cmd = [
+                sys.executable, "-m", "swefficiency.cli", "eval",
+                "--run_id", run_id,
+                "--instances_regex", swe_instance_id,
+                "--num_workers", "1",
+            ]
+            env = os.environ.copy()
+            env["DOCKER_HOST"] = f"unix:///run/user/{os.getuid()}/podman/podman.sock"
+
+            proc = subprocess.run(
+                cmd,
+                cwd=str(SWEFFICIENCY_ROOT),
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=7200,
+            )
+
+            self.log(f"  [SWE-fficiency] eval returncode={proc.returncode}")
+            if proc.stdout:
+                self.log(f"  stdout (last 500 chars): {proc.stdout[-500:]}")
+            if proc.returncode != 0 and proc.stderr:
+                self.log(f"  stderr (last 500 chars): {proc.stderr[-500:]}")
+
+            # Check for eval results
+            eval_dir = SWEFFICIENCY_ROOT / "logs" / "run_evaluation" / run_id
+            report_files = list(eval_dir.rglob("report.json")) if eval_dir.exists() else []
+
+            if report_files:
+                with open(report_files[0]) as f:
+                    report = json.load(f)
+                self.log(f"  [SWE-fficiency] Gold report: {json.dumps(report, indent=2)[:500]}")
+                result.success = True
+                result.agent_builds = True
+                result.agent_correctness = report.get("resolved", False)
+            else:
+                result.error_message = "No eval report generated"
+
+        except subprocess.TimeoutExpired:
+            result.error_message = "SWE-fficiency eval timed out (7200s)"
+        except Exception as e:
+            result.error_message = f"SWE-fficiency eval error: {e}"
+
+        return result
+
+    def _run_swefficiency_agent(self, swe_instance_id: str, instance: dict,
+                                 result: BenchmarkResult) -> BenchmarkResult:
+        """Agent mode: run inference via custom.py, then eval the patch."""
+        spec_name = SWEFFICIENCY_SPEC_MAP.get(self.framework, "sweagent")
+        spec_path = SWEFFICIENCY_ROOT / "scripts" / "inference" / "specs" / f"{spec_name}.yaml"
+
+        if not spec_path.exists():
+            result.error_message = f"Inference spec not found: {spec_path}"
+            return result
+
+        self.log(f"  [SWE-fficiency] Running inference with {self.framework} spec: {spec_name}")
+
+        run_id = f"agent_{self.framework}_{swe_instance_id}"
+
+        try:
+            # Step 1: Run inference via custom.py
+            env = os.environ.copy()
+            env["DOCKER_HOST"] = f"unix:///run/user/{os.getuid()}/podman/podman.sock"
+
+            # Pass API credentials
+            if self.model_name:
+                api_base = os.environ.get("OPENAI_API_BASE", "")
+                api_key = os.environ.get("OPENAI_API_KEY", "")
+            else:
+                api_base = f"http://{self.vllm_host}:{self.vllm_port}/v1"
+                api_key = "dummy-key-ok"
+
+            model = self.model_name or "openai/openai/gpt-oss-120b"
+
+            inference_cmd = [
+                sys.executable,
+                str(SWEFFICIENCY_ROOT / "scripts" / "inference" / "custom.py"),
+                "--run-id", run_id,
+                "--spec", str(spec_path),
+                "--num-workers", "1",
+                "--instance-ids", swe_instance_id,
+                "--var", f"model_name={model}",
+                "--var", f"api_base={api_base}",
+                "--var", f"api_key={api_key}",
+            ]
+
+            self.log(f"  Running: {' '.join(inference_cmd[:6])}...")
+            proc = subprocess.run(
+                inference_cmd,
+                cwd=str(SWEFFICIENCY_ROOT),
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=3600,
+            )
+
+            self.log(f"  [SWE-fficiency] inference returncode={proc.returncode}")
+
+            # Step 2: Find the patch
+            patch_dir = (SWEFFICIENCY_ROOT / "logs" / "run_inference" /
+                         run_id / spec_name / swe_instance_id)
+            patch_file = patch_dir / "patch.diff"
+
+            if not patch_file.exists():
+                result.error_message = f"No patch produced at {patch_file}"
+                return result
+
+            patch_content = patch_file.read_text()
+            result.agent_patch = patch_content
+
+            if not patch_content.strip():
+                result.error_message = "Agent produced empty patch"
+                return result
+
+            self.log(f"  [SWE-fficiency] Patch size: {len(patch_content)} bytes")
+
+            # Step 3: Convert patch to prediction JSONL for eval
+            pred_dir = self.output_dir / "swefficiency_predictions"
+            pred_dir.mkdir(exist_ok=True)
+            pred_file = pred_dir / f"{swe_instance_id}.jsonl"
+
+            prediction = {
+                "instance_id": swe_instance_id,
+                "model_name_or_path": f"{self.framework}_{self.model_name or 'local'}",
+                "model_patch": patch_content,
+            }
+            with open(pred_file, "w") as f:
+                f.write(json.dumps(prediction) + "\n")
+
+            # Step 4: Run eval on the patch
+            eval_run_id = f"eval_{run_id}"
+            eval_cmd = [
+                sys.executable, "-m", "swefficiency.cli", "eval",
+                "--run_id", eval_run_id,
+                "--prediction_path", str(pred_file),
+                "--instances_regex", swe_instance_id,
+                "--num_workers", "1",
+            ]
+
+            self.log(f"  [SWE-fficiency] Running eval...")
+            proc = subprocess.run(
+                eval_cmd,
+                cwd=str(SWEFFICIENCY_ROOT),
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=7200,
+            )
+
+            self.log(f"  [SWE-fficiency] eval returncode={proc.returncode}")
+
+            # Step 5: Parse eval results
+            eval_dir = SWEFFICIENCY_ROOT / "logs" / "run_evaluation" / eval_run_id
+            report_files = list(eval_dir.rglob("report.json")) if eval_dir.exists() else []
+
+            if report_files:
+                with open(report_files[0]) as f:
+                    report = json.load(f)
+                self.log(f"  [SWE-fficiency] Report: {json.dumps(report, indent=2)[:500]}")
+
+                result.agent_builds = True
+                result.agent_correctness = report.get("resolved", False)
+                result.agent_speedup = report.get("speedup", 0.0)
+                result.success = True
+            else:
+                result.error_message = "No eval report generated after agent patch"
+
+        except subprocess.TimeoutExpired:
+            result.error_message = "SWE-fficiency inference/eval timed out"
+        except Exception as e:
+            result.error_message = f"SWE-fficiency error: {e}"
+
+        return result
+
     def create_base_config(self, repo_name: str, instance_id: str, workspace: Optional[Path] = None) -> Path:
         """Create framework-specific config for base mode.
 
@@ -1086,7 +1345,7 @@ def main():
         "--app",
         type=str,
         action="append",
-        choices=["quicksilver", "lulesh", "kripke", "laghos", "gpa"],
+        choices=["quicksilver", "lulesh", "kripke", "laghos", "gpa", "swefficiency"],
         help="Filter by application (can specify multiple)"
     )
     parser.add_argument(

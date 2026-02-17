@@ -75,7 +75,8 @@ Application Filters (combine multiple to run subset):
   --kripke              Include Kripke instances
   --laghos              Include Laghos instances
   --gpa                 Include GPA-Benchmark apps (17 GPU kernel benchmarks)
-  (If none specified, all LLNL proxy apps are included; GPA must be explicit)
+  --swefficiency        Include SWE-fficiency Python optimization instances (27 curated)
+  (If none specified, all LLNL proxy apps are included; GPA/SWE-fficiency must be explicit)
 
 Framework Selection:
   --framework NAME      Agent framework: sweagent, opencode, openhands, codex
@@ -236,6 +237,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --gpa)
             APPS+=("gpa")
+            shift
+            ;;
+        --swefficiency)
+            APPS+=("swefficiency")
             shift
             ;;
         *)

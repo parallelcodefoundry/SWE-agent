@@ -68,14 +68,13 @@
   - Each instance takes ~77 min (includes perf benchmarks + correctness tests)
   - Requires: `podman-hpc system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock &`
 
-- [ ] Goal 5: SWE-fficiency — Create inference specs for all frameworks (DEPENDS ON Goal 4 — if Goal 4 is BLOCKED, mark this BLOCKED too)
-  - Create inference spec YAMLs for each framework in `/pscratch/sd/k/krydzy/swefficiency/scripts/inference/specs/`:
-    - `sweagent.yaml`, `opencode.yaml`, `codex_cli.yaml`, `openhands.yaml`
-    - Follow the pattern in `cursor_cli.yaml`: docker config, prework (install framework), inference command, patch extraction
-  - Add `--app swefficiency` support to `batch/run_benchmark.sh` and `hpc_benchmark_runner.py`
-  - Wire into our dispatch: runner calls `custom.py` with the right spec, then feeds patches to `swefficiency eval`
-  - Map SWE-fficiency results (SR, correctness) to `BenchmarkResult` format
-  - Select a curated subset of instances for benchmarking (not all 498 — pick ~20-50 representative ones across repos)
+- [x] Goal 5: SWE-fficiency — Create inference specs for all frameworks
+  - Created 4 inference spec YAMLs: `sweagent.yaml`, `opencode.yaml`, `codex_cli.yaml`, `openhands.yaml`
+  - Created install script templates + shared prompt template in swefficiency repo
+  - Added `--app swefficiency` to `batch/run_benchmark.sh` and `hpc_benchmark_runner.py`
+  - Wired dispatch: runner calls `custom.py` → produces patch → feeds to `swefficiency eval`
+  - Results mapped to BenchmarkResult (agent_builds, agent_correctness, agent_speedup)
+  - Curated subset: 27 instances (3 per repo × 9 repos)
 
 - [ ] Goal 6: SWE-fficiency — Validate agent integration (DEPENDS ON Goals 4+5)
   - Test one framework (e.g., opencode) on 2-3 SWE-fficiency instances end-to-end
