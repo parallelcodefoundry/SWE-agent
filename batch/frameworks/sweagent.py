@@ -194,7 +194,7 @@ timeout {SESSION_TIMEOUT} sweagent run --config {config_path} \\
         GPA apps use a dynamically generated config since the prompt includes
         the kernel source code, which varies per app.
         """
-        base_config_path = self.sweagent_root / "config/hpc/gpa_no_profiling.yaml"
+        base_config_path = self.sweagent_root / f"config/hpc/gpa_{self.profiling}.yaml"
         with open(base_config_path) as f:
             config_content = f.read()
 

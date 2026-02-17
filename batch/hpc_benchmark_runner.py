@@ -1116,6 +1116,9 @@ class HPCBenchmarkRunner:
                 "--spec", str(spec_path),
                 "--num-workers", "1",
                 "--instance-ids", swe_instance_id,
+                "--no-pull",  # Images pre-pulled via podman-hpc
+                "--disable-cpu-pinning",  # Perlmutter CPU topology
+                "--stream-logs",  # Show container output
                 "--var", f"model_name={model}",
                 "--var", f"api_base={api_base}",
                 "--var", f"api_key={api_key}",
@@ -1132,6 +1135,13 @@ class HPCBenchmarkRunner:
             )
 
             self.log(f"  [SWE-fficiency] inference returncode={proc.returncode}")
+            if proc.returncode != 0:
+                stderr_tail = (proc.stderr or "")[-2000:]
+                stdout_tail = (proc.stdout or "")[-2000:]
+                if stderr_tail:
+                    self.log(f"  [SWE-fficiency] stderr (last 2000 chars):\n{stderr_tail}")
+                if stdout_tail:
+                    self.log(f"  [SWE-fficiency] stdout (last 2000 chars):\n{stdout_tail}")
 
             # Step 2: Find the patch
             patch_dir = (SWEFFICIENCY_ROOT / "logs" / "run_inference" /
