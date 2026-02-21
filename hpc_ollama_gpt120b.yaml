@@ -1,0 +1,27 @@
+# hpc_ollama_gpt120b.yaml
+# Configuration for gpt-oss:120b via local Ollama server
+agent:
+  model:
+    name: ollama_chat/gpt-oss:120b
+    api_base: http://127.0.0.1:11434
+    api_key: EMPTY
+    per_instance_cost_limit: 0
+    total_cost_limit: 0
+    per_instance_call_limit: 100
+  tools:
+    parse_function:
+      type: thought_action
+
+env:
+  deployment:
+    type: docker
+    container_runtime: podman
+    pull: missing
+    docker_args:
+      - --ipc=host
+      - --runtime=crun
+  repo:
+    path: /pscratch/sd/k/krydzy/test-repo
+
+problem_statement:
+  github_url: https://github.com/SWE-agent/test-repo/issues/1

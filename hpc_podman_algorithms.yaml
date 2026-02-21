@@ -1,0 +1,37 @@
+# hpc_podman_algorithms.yaml
+# Configuration for SWE-bench/SWE-agent-LM-32B via local vLLM server
+# Testing configuration for algorithms performance bug suite (perf-bugs-suite branch)
+#
+# Usage: Run with instances.jsonl to test performance bug detection/fixing:
+#   sweagent run-batch \
+#     --config config/default.yaml \
+#     --config ./hpc_podman_algorithms.yaml \
+#     --agent.model.per_instance_cost_limit=0 \
+#     --agent.model.max_input_tokens=60000
+#
+# Note: image_name comes from instances.jsonl (python:3.11)
+# Note: repo_name "algorithms" expects /algorithms in container (mounted via docker_args)
+agent:
+  model:
+    name: openai/SWE-bench/SWE-agent-LM-32B
+    api_base: http://127.0.0.1:8007/v1
+    api_key: EMPTY
+    per_instance_cost_limit: 0
+  tools:
+    parse_function:
+      type: single_bash_code_block
+
+instances:
+  type: file
+  path: /global/u2/k/krydzy/algorithms/instances.jsonl
+  deployment:
+    type: docker
+    container_runtime: podman
+    image: python:3.11
+    pull: missing
+    python_standalone_dir: ""  # Disable compiling Python from source
+    docker_args:
+      - --ipc=host
+      - --runtime=crun
+      - -v
+      - /global/u2/k/krydzy/algorithms:/algorithms

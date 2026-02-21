@@ -1,0 +1,147 @@
+# hpc_podman_algorithms_isolated.yaml
+# Configuration for gpt-oss-120b model via local vLLM server (port 8008)
+# Testing configuration for algorithms performance bug suite (perf-bugs-suite branch)
+# ISOLATED VERSION: Uses GitHub URLs to clone repos into containers (no volume mounts)
+#
+# Usage: Run with instances_isolated.jsonl to test performance bug detection/fixing:
+#   sweagent run-batch \
+#     --config config/default.yaml \
+#     --config ./hpc_podman_algorithms_isolated.yaml \
+#     --agent.model.per_instance_cost_limit=0 \
+#     --agent.model.max_input_tokens=60000
+#
+# Note: image_name from instances_isolated.jsonl (python:3.11) overrides deployment.image setting
+# Note: repo_name uses GitHub URL - SWE-Agent will clone into container (GithubRepoConfig)
+# Note: No volume mounts - full container isolation, changes don't affect host repo
+# Note: GPU/HPC context not available in isolated containers - algorithms are CPU-bound
+agent:
+  templates:
+    system_template: |-
+      You are an autonomous agent that can interact with a computer to solve performance optimization tasks.
+      CRITICAL RULES (NEVER BREAK THESE):
+      1. You MUST respond with EXACTLY ONE function call for EVERY response
+      2. This includes when you're ready to submit - call submit() as a function
+      3. NEVER switch to text mode or write explanations without a function call
+      4. There is NO "conclusion mode" - always use function calls until the system ends the session
+      5. ONLY fix the specific performance issue mentioned in the task
+      6. Do NOT explore or fix other performance problems beyond the specified scope
+      7. ONLY run the specific performance test mentioned in the task (e.g., pytest -xvs tests/test_perf_ms1.py)
+      8. Do NOT run the full test suite (pytest tests/) - only run the specific test file for this performance bug
+
+      PERFORMANCE TESTING CONTEXT:
+      - The buggy code is FUNCTIONALLY CORRECT but SLOW
+      - The test suite has two tests: test_correctness (should PASS) and test_performance (should FAIL before fix, PASS after fix)
+      - Performance tests compare the current code against a baseline implementation
+      - Success means achieving slowdown_factor < 1.5 (within 50% of baseline performance)
+
+      Never switch from Choices(finish_reason='tool_calls'...) to Choices(finish_reason='stop'...) even if you think we are close to being finished with the response. We want to always be in tool_calls mode.
+      Reasoning: high
+    instance_template: |-
+      <uploaded_files>
+      {{working_dir}}
+      </uploaded_files>
+      A python code repository is available in the directory {{working_dir}}. This repository contains a performance bug.
+
+      <performance_bug>
+      {{problem_statement}}
+      </performance_bug>
+
+      Fix the performance issue described above.
+      Make minimal changes to files in the {{working_dir}} directory to resolve the performance bug.
+      Follow these steps to resolve the issue:
+      1. Find and read the code mentioned in the <performance_bug> description
+      2. Run the specific performance test to confirm the slowdown (the test command is: pytest -xvs tests/test_perf_<taskid>.py)
+         - test_correctness should PASS (the code is functionally correct)
+         - test_performance should FAIL (the code is too slow)
+      3. Analyze the code to identify the performance bottleneck
+      4. Edit the source code to fix the performance issue (optimize algorithm, add memoization, use better data structures, etc.)
+      5. Rerun the specific performance test to confirm the fix:
+         - test_correctness should still PASS (don't break functionality)
+         - test_performance should now PASS (slowdown_factor < 1.5)
+      Thinking should be thorough and so it's fine if it's very long.
+
+      SCOPE: Fix ONLY the specific performance issue described. Do NOT optimize other parts of the codebase.
+      TESTING: ONLY run the specific perf test file (tests/test_perf_*.py). Do NOT run pytest tests/ or the full test suite.
+    next_step_template: |-
+      OBSERVATION:
+      {{observation}}
+      (Open file: {{open_file}})
+      (Current directory: {{working_dir}})
+      bash-$
+
+      Continue using function calls. Never switch to text mode.
+    next_step_no_output_template: |-
+      Your command ran successfully and did not produce any output.
+      (Open file: {{open_file}})
+      (Current directory: {{working_dir}})
+      bash-$
+    demonstration_template: |
+      Here is a demonstration of how to correctly accomplish this task.
+      It is included to show you how to correctly use the interface.
+      You do not need to follow exactly what is done in the demonstration.
+      --- DEMONSTRATION ---
+      {{demonstration}}
+      --- END OF DEMONSTRATION ---
+    demonstrations:
+      - trajectories/demonstrations/str_replace_anthropic_demo.yaml
+    put_demos_in_history: true
+  model:
+    api_base: "http://127.0.0.1:8008/v1"
+    api_key: "dummy"
+    name: openai/openai/gpt-oss-120b
+    per_instance_cost_limit: 0
+  tools:
+    env_variables:
+      PAGER: cat
+      MANPAGER: cat
+      LESS: -R
+      PIP_PROGRESS_BAR: 'off'
+      TQDM_DISABLE: '1'
+      GIT_PAGER: cat
+    bundles:
+      - path: tools/registry
+      - path: tools/edit_anthropic
+      - path: tools/review_on_submit_m
+      - path: tools/forfeit
+    registry_variables:
+      USE_FILEMAP: 'true'
+      SUBMIT_REVIEW_MESSAGES:
+        - |
+          Before finalizing the submission, complete the following validation steps:
+
+          1. Re-run the specific performance test for this bug (e.g., pytest -xvs tests/test_perf_*.py).
+            - Verify that test_correctness still PASSES (functionality is preserved)
+            - Verify that test_performance now PASSES (slowdown_factor < 1.5)
+            If either test is failing, revisit the changes and correct them.
+          2. Confirm that only the specific performance issue was fixed and no unrelated code was modified.
+          3. Run the submit command again to finalize.
+
+          Changes made:
+
+          <diff>
+          {{diff}}
+          </diff>
+    enable_bash_tool: true
+    parse_function:
+      type: function_calling
+  history_processors:
+    - type: last_n_observations
+      n: 5
+
+instances:
+  type: file
+  path: /pscratch/sd/k/krydzy/algorithms/instances_isolated.jsonl
+  deployment:
+    type: docker
+    container_runtime: podman
+    image: python:3.11
+    pull: missing
+    python_standalone_dir: ""  # Disable compiling Python from source
+    docker_args:
+      - --ipc=host
+      - --runtime=crun
+      # No volume mount - repo will be cloned from GitHub into container
+  env:
+    post_startup_commands:
+      - "pip install -e ."  # Install algorithms package so tests can import from it
+      - "pip install pytest"  # Install pytest to run performance tests

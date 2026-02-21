@@ -1,0 +1,7 @@
+# gpt4o_mini.yaml
+# Configuration for GPT-4o-mini via OpenAI API (single instance mode)
+agent:
+  model:
+    name: gpt-4o-mini
+    per_instance_cost_limit: 0.50
+    per_instance_call_limit: 60

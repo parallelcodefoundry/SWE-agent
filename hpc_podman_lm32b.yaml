@@ -1,0 +1,32 @@
+# hpc_podman_lm32b.yaml
+# Configuration for SWE-bench/SWE-agent-LM-32B via local vLLM server
+agent:
+  model:
+    name: openai/SWE-bench/SWE-agent-LM-32B
+    api_base: http://127.0.0.1:8007/v1
+    api_key: EMPTY
+    per_instance_cost_limit: 0
+  tools:
+    parse_function:
+      type: single_bash_code_block
+  templates:
+    system_template: |-
+      {{ system_template }}
+      {{ command_docs }}
+    instance_template: |-
+      {{ instance_template }}
+      Output exactly one ```bash block that contains the command to run. Nothing after it.
+env:
+  deployment:
+    type: docker
+    container_runtime: podman
+    pull: missing
+    docker_args:
+      - --ipc=host
+      - --runtime=crun
+  repo:
+    path: /global/homes/k/krydzy/test-repo
+
+problem_statement:
+  github_url: https://github.com/SWE-agent/test-repo/issues/1
+

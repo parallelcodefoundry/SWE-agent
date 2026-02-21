@@ -3,6 +3,29 @@ keys.yaml
 .vscode/**
 cov.xml
 trajectories/**
+
+# HPC proxy app repos and dependencies (large, cloned separately)
+Kripke/
+Kripke_test/
+Laghos/
+Laghos_test/
+Lulesh/
+Lulesh_test/
+Quicksilver/
+Quicksilver_test/
+MACSio/
+ParEval-Repo/
+mfem/
+hypre-2.11.2/
+hypre
+metis-4.0.3/
+metis
+metis-4.0
+v2.11.2.tar.gz
+
+# Benchmark results and profiling output (large, regenerated)
+batch_results/
+profiling_test_output/
 !trajectories/demonstrations/**
 data/**
 *.env

@@ -1,0 +1,33 @@
+# gpt4o_mini_algorithms.yaml
+# Configuration for GPT-4o-mini via OpenAI API
+# Testing configuration for algorithms performance bug suite
+#
+# Usage: Run with instances.jsonl to test performance bug detection/fixing:
+#   sweagent run-batch \
+#     --config config/default.yaml \
+#     --config config/gpt4o_mini_algorithms.yaml
+#
+# Note: image_name comes from instances.jsonl (python:3.11)
+# Note: repo_name "algorithms" expects /algorithms in container (mounted via docker_args)
+agent:
+  model:
+    name: gpt-4o-mini
+    per_instance_cost_limit: 0.50
+    per_instance_call_limit: 60
+
+instances:
+  type: file
+  path: /pscratch/sd/k/krydzy/algorithms/instances.jsonl
+  deployment:
+    type: docker
+    container_runtime: podman
+    image: python:3.11
+    pull: missing
+    python_standalone_dir: ""  # Disable compiling Python from source
+    docker_args:
+      - --ipc=host
+      - --runtime=crun
+      - -e
+      - OPENAI_API_KEY
+      - -v
+      - /pscratch/sd/k/krydzy/algorithms:/algorithms
