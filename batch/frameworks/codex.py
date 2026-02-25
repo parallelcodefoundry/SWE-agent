@@ -42,7 +42,7 @@ class CodexLauncher(FrameworkLauncher):
             # Add explicit timeout guidance for AGENTS.md (Codex reads this)
             f.write(
                 "## Shell Command Timeouts\n\n"
-                "The default shell timeout has been set to 300 seconds (5 minutes) "
+                "The default shell timeout has been set to 600 seconds (10 minutes) "
                 "via CODEX_DEFAULT_EXEC_TIMEOUT_MS. Build and run commands may take "
                 "60-240 seconds — they will NOT be killed by the default timeout. "
                 "If you need even longer, set `timeout_ms` explicitly.\n"
@@ -142,22 +142,9 @@ else
     exit 1
 fi
 
-# Load HPC modules
-{self.get_module_loads(repo_name)}
-
-# Setup spack/HPCToolkit for profiling
-if [ -f "{home_dir}/spack/share/spack/setup-env.sh" ]; then
-    source "{home_dir}/spack/share/spack/setup-env.sh"
-    spack load hpctoolkit 2>/dev/null || true
-fi
-
-# Environment variables
-{self.get_env_exports(repo_name, workspace)}
-{self.get_api_env_exports()}
+{self.build_shell_preamble(repo_name, workspace)}
 export CODEX_API_KEY="${{OPENAI_API_KEY}}"
-export CODEX_DEFAULT_EXEC_TIMEOUT_MS=300000
-
-cd "{workspace}"
+export CODEX_DEFAULT_EXEC_TIMEOUT_MS=600000
 
 # Enable Codex internal logging (Rust tracing) — goes to stderr,
 # which subprocess.run merges into _agent_realtime.log via stderr=STDOUT.

@@ -106,10 +106,7 @@ source "{sweagent_venv}/bin/activate"
 export PATH="{home_dir}/local/bin:$PATH"
 
 # Setup spack/HPCToolkit for profiling
-if [ -f "{home_dir}/spack/share/spack/setup-env.sh" ]; then
-    source "{home_dir}/spack/share/spack/setup-env.sh"
-    spack load hpctoolkit 2>/dev/null || true
-fi
+{self.get_spack_setup()}
 
 # Environment variables
 {self.get_env_exports(repo_name, workspace)}

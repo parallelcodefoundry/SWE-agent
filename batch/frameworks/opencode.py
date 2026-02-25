@@ -116,23 +116,10 @@ else
     exit 1
 fi
 
-# Load HPC modules
-{self.get_module_loads(repo_name)}
-
-# Setup spack/HPCToolkit for profiling
-if [ -f "{home_dir}/spack/share/spack/setup-env.sh" ]; then
-    source "{home_dir}/spack/share/spack/setup-env.sh"
-    spack load hpctoolkit 2>/dev/null || true
-fi
-
-# Environment variables
-{self.get_env_exports(repo_name, workspace)}
-{self.get_api_env_exports()}
+{self.build_shell_preamble(repo_name, workspace)}
 
 # OpenCode config via env var
 export OPENCODE_CONFIG_CONTENT="$(cat '{config_path}')"
-
-cd "{workspace}"
 
 # Run OpenCode in headless mode with debug logging.
 # --log-level DEBUG --print-logs sends debug traces to stderr,

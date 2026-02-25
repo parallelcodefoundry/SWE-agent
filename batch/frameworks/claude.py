@@ -109,23 +109,11 @@ set -o pipefail  # propagate agent exit code through tee pipe
 # Ensure claude CLI is in PATH
 export PATH="{home_dir}/.local/bin:$PATH"
 
-# Load HPC modules
-{self.get_module_loads(repo_name)}
-
-# Setup spack/HPCToolkit for profiling
-if [ -f "{home_dir}/spack/share/spack/setup-env.sh" ]; then
-    source "{home_dir}/spack/share/spack/setup-env.sh"
-    spack load hpctoolkit 2>/dev/null || true
-fi
-
-# Environment variables (harness tools in PATH, app root, GPU config)
-{self.get_env_exports(repo_name, workspace)}
+{self.build_shell_preamble(repo_name, workspace, include_api_exports=False)}
 
 # Claude Code uses Anthropic API via subscription auth (~/.claude/).
 # No OPENAI_API_BASE/KEY needed. If ANTHROPIC_API_KEY is set, Claude Code
 # will use it automatically.
-
-cd "{workspace}"
 
 # Run Claude Code in non-interactive mode
 # -p: pass prompt directly (non-interactive)

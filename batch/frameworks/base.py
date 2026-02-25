@@ -209,6 +209,46 @@ class FrameworkLauncher(ABC):
         lines.append("module load python 2>/dev/null || true")
         return "\n".join(lines)
 
+    def get_spack_setup(self) -> str:
+        """Generate shell snippet for spack/HPCToolkit profiling tools."""
+        home_dir = os.environ.get("HOME", str(Path.home()))
+        return (
+            f'if [ -f "{home_dir}/spack/share/spack/setup-env.sh" ]; then\n'
+            f'    source "{home_dir}/spack/share/spack/setup-env.sh"\n'
+            f'    spack load hpctoolkit 2>/dev/null || true\n'
+            f'fi'
+        )
+
+    def build_shell_preamble(
+        self,
+        repo_name: str,
+        workspace: Path,
+        include_api_exports: bool = True,
+    ) -> str:
+        """Build the common shell preamble for all framework launchers.
+
+        Generates: module loads, spack setup, env exports, cd to workspace.
+        Framework-specific setup (nvm, venv, custom PATH) should be added
+        before or after this preamble by each subclass.
+        """
+        parts = [
+            f"# HPC modules",
+            self.get_module_loads(repo_name),
+            "",
+            f"# Spack/HPCToolkit",
+            self.get_spack_setup(),
+            "",
+            f"# Environment variables",
+            self.get_env_exports(repo_name, workspace),
+        ]
+        if include_api_exports:
+            parts.append(self.get_api_env_exports())
+        parts.extend([
+            "",
+            f'cd "{workspace}"',
+        ])
+        return "\n".join(parts)
+
     def get_prompt(self, repo_name: str, workspace: Path) -> str:
         """Get the task prompt for this framework and app.
 

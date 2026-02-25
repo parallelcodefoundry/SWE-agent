@@ -125,10 +125,7 @@ source {sweagent_venv}/bin/activate
 {self.get_module_loads(repo_name)}
 
 # Setup spack and HPCToolkit for profiling tools
-if [ -f "{home_dir}/spack/share/spack/setup-env.sh" ]; then
-    source "{home_dir}/spack/share/spack/setup-env.sh"
-    spack load hpctoolkit 2>/dev/null || true
-fi
+{self.get_spack_setup()}
 
 # Setup podman wrapper to use podman-hpc
 unalias podman 2>/dev/null || true
