@@ -74,7 +74,6 @@ def main():
             cmake_args.append('-DCMAKE_CUDA_ARCHITECTURES=80')
             cmake_args.append('-DCMAKE_CUDA_FLAGS=--extended-lambda --expt-relaxed-constexpr')
             # nvcc requires GCC ≤13; system default may be 14+
-            import shutil
             host_cxx = shutil.which('g++-12') or shutil.which('g++-11') or 'g++'
             cmake_args.append(f'-DCMAKE_CUDA_HOST_COMPILER={host_cxx}')
 
