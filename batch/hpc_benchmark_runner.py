@@ -295,7 +295,11 @@ class HPCBenchmarkRunner:
         return instances
 
     def reset_test_repo(self, repo_name: str) -> bool:
-        """Reset a test repository to clean state"""
+        """Reset a test repository to clean state.
+
+        Unstages all changes, reverts modified files, and removes untracked files.
+        Called before workspace creation to ensure clean rsync source.
+        """
         test_path = Path(self.repo_configs[repo_name]["test"])
 
         if not test_path.exists():
@@ -305,12 +309,20 @@ class HPCBenchmarkRunner:
         self.log(f"  Resetting test repo: {test_path}")
 
         try:
+            # Unstage any added files (git reset HEAD)
+            subprocess.run(
+                ["git", "reset", "HEAD", "--", "."],
+                cwd=test_path,
+                capture_output=True
+            )
+            # Revert modified tracked files
             subprocess.run(
                 ["git", "checkout", "."],
                 cwd=test_path,
                 check=True,
                 capture_output=True
             )
+            # Remove untracked files and directories
             subprocess.run(
                 ["git", "clean", "-fd"],
                 cwd=test_path,
@@ -517,6 +529,9 @@ class HPCBenchmarkRunner:
 
         if self.base_mode:
             # Base mode: create isolated workspace copy from test repo
+            # Reset test repo first to ensure clean source for rsync
+            self.reset_test_repo(repo_name)
+
             test_repo = Path(self.repo_configs[repo_name]["test"])
             if not test_repo.exists():
                 result.error_message = f"Test repo not found: {test_repo}"
