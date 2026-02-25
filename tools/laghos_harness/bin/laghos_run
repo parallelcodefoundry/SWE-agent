@@ -20,6 +20,9 @@ import json
 import re
 import time
 
+# Default MPI configuration — 4 ranks = 1 per GPU on Perlmutter A100 node
+DEFAULT_NP = 4
+
 # Pristine Laghos source (unmodified baseline)
 def _find_pristine_laghos():
     root = os.environ.get('PRISTINE_LAGHOS_ROOT')
@@ -145,16 +148,18 @@ def get_pristine_executable():
     return exe_path
 
 
-def run_laghos(exe_path, problem, dim, rs, tf, device, use_pa=True, label=""):
+def run_laghos(exe_path, problem, dim, rs, tf, device, use_pa=True, np_ranks=DEFAULT_NP, label=""):
     """Run Laghos with specified parameters.
+
+    Laghos is MPI-linked (via MFEM). When np > 1, uses mpirun for multi-GPU execution.
+    MFEM's ParMesh automatically handles domain decomposition across MPI ranks.
 
     Returns: (elapsed_time, final_energy, step, dt, output_text) or None on failure
     """
     env = os.environ.copy()
-    # Use all available GPUs (inherit CUDA_VISIBLE_DEVICES from environment)
     env['OMP_NUM_THREADS'] = '1'
 
-    cmd = [
+    laghos_cmd = [
         exe_path,
         '-p', str(problem),
         '-dim', str(dim),
@@ -164,15 +169,22 @@ def run_laghos(exe_path, problem, dim, rs, tf, device, use_pa=True, label=""):
 
     # Add partial assembly for better GPU performance
     if use_pa:
-        cmd.append('-pa')
+        laghos_cmd.append('-pa')
 
     # Add device flag for GPU
     if device and device != 'cpu':
-        cmd.extend(['-d', device])
+        laghos_cmd.extend(['-d', device])
+
+    # Wrap with mpirun for multi-GPU execution.
+    # --oversubscribe: PRRTE/OpenMPI 5 may see only 1 slot from SLURM srun.
+    # --bind-to none: let CUDA_VISIBLE_DEVICES handle GPU assignment.
+    # Even for np=1, use mpirun since the binary is MPI-linked.
+    cmd = ['mpirun', '-np', str(np_ranks), '--bind-to', 'none', '--oversubscribe'] + laghos_cmd
 
     try:
         if label:
-            print(f"Running {label}...")
+            print(f"Running {label} (MPI ranks={np_ranks})...")
+            print(f"  Command: {' '.join(cmd)}", file=sys.stderr)
             sys.stdout.flush()
 
         start_time = time.time()
@@ -316,6 +328,8 @@ def main():
                        help='Device type')
     parser.add_argument('--no-pa', action='store_true',
                        help='Disable partial assembly (use full assembly)')
+    parser.add_argument('--np', type=int, default=DEFAULT_NP,
+                       help=f'Number of MPI ranks (default: {DEFAULT_NP}, one per GPU)')
     args = parser.parse_args()
 
     # Find modified Laghos executable
@@ -347,13 +361,13 @@ def main():
 
     print("=" * 60)
     print(f"LAGHOS BENCHMARK: problem={args.problem}, dim={args.dim}, rs={args.rs}, tf={args.tf}")
-    print(f"Device: {args.device}, Partial Assembly: {use_pa}")
+    print(f"Device: {args.device}, Partial Assembly: {use_pa}, MPI Ranks: {args.np}")
     print("=" * 60)
 
     # Run baseline
     baseline_result = run_laghos(
         pristine_exe, args.problem, args.dim, args.rs, args.tf,
-        args.device, use_pa, "baseline (unmodified)"
+        args.device, use_pa, args.np, "baseline (unmodified)"
     )
     if baseline_result is None:
         print("=" * 60)
@@ -366,7 +380,7 @@ def main():
     # Run modified version
     modified_result = run_laghos(
         modified_exe, args.problem, args.dim, args.rs, args.tf,
-        args.device, use_pa, "modified version"
+        args.device, use_pa, args.np, "modified version"
     )
     if modified_result is None:
         print("=" * 60)

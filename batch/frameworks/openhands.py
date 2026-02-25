@@ -96,7 +96,7 @@ class OpenHandsLauncher(FrameworkLauncher):
 
         shell_script = f"""\
 # Load HPC modules BEFORE venv activation so module load python doesn't shadow venv
-{self.get_module_loads()}
+{self.get_module_loads(repo_name)}
 
 # Activate Python venv (OpenHands SDK is pip-installed here)
 # Must come AFTER module loads so venv's Python takes precedence over module's

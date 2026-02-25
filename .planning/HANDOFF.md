@@ -1,99 +1,122 @@
-# HANDOFF — Phase 2B COMPLETE
+# HANDOFF — Session 23: Benchmark Debugging + Infra Fixes
 
-Last updated: 2026-02-17 (session 21)
+Last updated: 2026-02-25 (session 23)
 
 ## Current Phase
 
-**Phase 2B: Validation Sprint — ALL GOALS COMPLETE (0-9)**
+**Debugging infra from first production benchmark.** Fixed 3 infra bugs. Next: fix timeouts, rerun.
 
-## Goal Progress
+## Goal Progress (Session 24 Checklist)
 
-- [x] Goal 0: Remove GPA lulesh from app list
-- [x] Goal 1: Fix Jinja2 template bugs in SWE-fficiency inference specs
-- [x] Goal 2: Gold eval SWE-fficiency subset — timing + validation
-- [x] Goal 3: Add GPA driver as agent-accessible harness tool + profiling config
-- [x] Goal 4: E2E test GPA with OpenCode (with profiling validation)
-- [x] Goal 5: E2E test SWE-fficiency with OpenCode
-- [x] Goal 6: Test remaining agents (SWE-agent, Codex, OpenHands) on GPA gaussian
-- [x] SWE-fficiency GPU/parallel audit + re-curation to 12 parallel instances
-- [x] Goal 7: Test remaining agents on SWE-fficiency
-- [x] Goal 8: Fix issues + final regression (37 instances)
-- [x] Goal 9: (Optional) SWE-agent containerization investigation — SKIPPED (not needed)
+- [x] Goal 0: Investigate all LLNL failures from s22 benchmark (DONE s23)
+- [x] Goal 1: Fix kripke_build GCC 14 vs nvcc (DONE s23)
+- [x] Goal 2: Fix GPA CUDA global override (DONE s23)
+- [x] Goal 3: Improve validation build logging (DONE s23)
+- [ ] Goal 4: Fix OpenHands tool timeout (300s → 600s for harness commands)
+- [ ] Goal 5: Fix Codex command timeout (10s kills harness commands)
+- [ ] Goal 6: Refactor framework launchers to reduce duplication (parent class pattern)
+- [ ] Goal 7: Rerun LLNL benchmark (kripke + timeout fixes)
+- [ ] Goal 8: Rerun GPA benchmark (CUDA fix)
+- [ ] Goal 9: Validate Claude Code on LLNL apps
+- [ ] Goal 10: Commit all s22+s23+s24 changes
 
-## What Was Done This Session (21)
+## What Was Done This Session (23)
 
-### Goal 7: 3 agents on SWE-fficiency scikit-learn-13310 (SLURM 49055388)
-- **SWE-agent**: Install FAILED — `togetherunidiff` not found in container (Python 3.9 too old)
-- **Codex CLI**: PRODUCED PATCH (pairwise.py threading rewrite). Patch was MISSED by runner due to `codex-cli` vs `codex_cli` name mismatch
-- **OpenHands**: Install FAILED — `openhands-ai` dependency conflicts
-- Pipeline E2E validated for all 3 frameworks (returncode=0)
-- Committed `2ca16c69`
+### kripke_build CUDA host compiler fix
+- **File**: `tools/kripke_harness/bin/kripke_build` (lines 73-76)
+- **Change**: Added `CMAKE_CUDA_HOST_COMPILER=g++-12` to cmake args when `arch == 'CUDA'`
+- **Why**: System GCC is 14.3, nvcc requires ≤13. Lulesh/quicksilver already handled this; kripke didn't.
+- **g++-12 location**: `/usr/bin/g++-12` (confirmed on both login and compute nodes)
 
-### Goal 8: Final regression + docs update
-- Fixed `codex_cli.yaml` name mismatch: `name: codex-cli` → `name: codex_cli` (swefficiency repo `313572f`)
-- Corrected total: 37 instances (LLNL 9 + GPA 16 + SWE-fficiency 12) — was incorrectly 32
-- Regression: ALL 37 instances generate correctly
-- Updated architecture.md (total count), experiment-workflow.md (instance counts)
-- Committed `a28dcf14`
+### GPA CUDA global override fix
+- **Files**: `batch/run_benchmark.sh` (line 464), `batch/frameworks/base.py` (get_module_loads)
+- **Change**: Removed global `module load cudatoolkit/12.4`. Now per-app: LLNL loads 12.4, GPA unloads it.
+- **Also changed**: All 5 framework launchers (`claude.py`, `codex.py`, `opencode.py`, `openhands.py`, `sweagent.py`) to pass `repo_name` to `get_module_loads()`.
 
-### Goal 9: Skipped
-- SWE-agent failure was pip dependency (`togetherunidiff`), not sandbox/container mode issue
-- No investigation needed
+### Validation build logging
+- **File**: `batch/hpc_benchmark_runner.py` (lines 661-675)
+- **Change**: On build failure, saves full stdout+stderr to `{workspace.parent}/{repo}_validation_build.log`
+
+## Agent Failure Root Causes (Detailed)
+
+### OpenHands Timeout Issues
+- `no_change_timeout_seconds=300` in OpenHands config kills commands that produce no terminal output for 5 min
+- `laghos_run` and `qs_run` take 60-120s but may buffer output, causing timeout
+- **Fix approach**: Increase to 600s in the OpenHands TOML config. File: check `batch/frameworks/openhands_runner.py` for where config is generated.
+
+### Codex Command Timeout
+- Codex CLI has a per-command timeout (default 10s)
+- Previously patched binary at npm path; env var `CODEX_DEFAULT_EXEC_TIMEOUT_MS` overrides
+- **Memory note says**: "Codex timeout patched — Binary at npm path rebuilt from `/pscratch/sd/k/krydzy/codex/`. Env var `CODEX_DEFAULT_EXEC_TIMEOUT_MS` overrides default (300s fallback). Original backed up as `.bak`."
+- **Likely cause**: The env var may not be getting passed through to the compute node srun. Or the patched binary isn't in PATH on compute nodes.
+- **Fix approach**: Verify `CODEX_DEFAULT_EXEC_TIMEOUT_MS=600000` (10 min in ms) is exported in codex.py's shell preamble. Load the `codex-cli` skill for details.
+
+### SWE-agent gpt-4.1-mini API error
+- `Invalid 'messages[17].tool_calls': empty array` — model returns empty tool_calls, LiteLLM rejects it
+- This is a gpt-4.1-mini quirk; may need to filter empty tool_calls in SWE-agent's model handling or switch models
+
+### Framework Launcher Refactoring (Goal 6)
+- Currently: each of 5 launchers has an f-string with `{self.get_module_loads(repo_name)}` and similar patterns
+- All inherit from `FrameworkLauncher` in `base.py` but duplicate the shell preamble
+- **Proposed**: Add a `build_shell_preamble(repo_name, workspace)` method to base class that generates the common module loads + env exports + venv activation. Each subclass only overrides the framework-specific parts.
+- **Files to read first**: `batch/frameworks/base.py`, then any one launcher (e.g., `codex.py`) to see the pattern.
 
 ## Files Modified This Session
 
 | File | Change |
 |------|--------|
-| `.planning/PHASE2B-GOALS.md` | Goals 7-9 marked complete, count corrected to 37 |
-| `agent_docs/architecture.md` | Added total count line (37 instances) |
-| `agent_docs/experiment-workflow.md` | Updated GPA count (16), SWE-fficiency count (12) |
+| `tools/kripke_harness/bin/kripke_build` | Added CMAKE_CUDA_HOST_COMPILER=g++-12 (lines 73-76) |
+| `batch/run_benchmark.sh` | Removed global cudatoolkit/12.4 load (line 464), updated echo |
+| `batch/frameworks/base.py` | `get_module_loads(repo_name)` with GPA conditional |
+| `batch/frameworks/claude.py` | `get_module_loads(repo_name)` |
+| `batch/frameworks/codex.py` | `get_module_loads(repo_name)` |
+| `batch/frameworks/opencode.py` | `get_module_loads(repo_name)` |
+| `batch/frameworks/openhands.py` | `get_module_loads(repo_name)` |
+| `batch/frameworks/sweagent.py` | `get_module_loads(repo_name)` |
+| `batch/hpc_benchmark_runner.py` | Validation build log + repo_name passthrough |
+| `STATE.md` | Updated for session 23 |
+| `.planning/HANDOFF.md` | This file |
 
-### External repos modified:
-| Repo | File | Change |
-|------|------|--------|
-| swefficiency | `scripts/inference/specs/codex_cli.yaml` | `name: codex-cli` → `name: codex_cli` |
+## Files to Read First (Next Session)
+
+1. `batch/frameworks/base.py` (lines 198-210) — `get_module_loads()` method
+2. `batch/frameworks/codex.py` (lines 140-170) — shell preamble with timeout env vars
+3. `batch/frameworks/openhands_runner.py` — OpenHands config generation (look for `no_change_timeout`)
+4. `batch/frameworks/openhands.py` (lines 55-120) — OpenHands launch command builder
+5. `tools/kripke_harness/bin/kripke_build` (lines 60-80) — CUDA host compiler fix
 
 ## Validation Status
 
 | Check | Status |
 |-------|--------|
-| GPA + SWE-agent | PASS (236.8s, no code changes) |
-| GPA + Codex | PASS (125.1s, no code changes) |
-| GPA + OpenHands | PASS (230.2s, changes made, build failed) |
-| GPA + OpenCode | PASS (Goal 4) |
-| SWE-fficiency + OpenCode | PARTIAL (pipeline ran, no patch) |
-| SWE-fficiency + SWE-agent | FAIL (install failed — togetherunidiff) |
-| SWE-fficiency + Codex | **PASS** (produced patch, path bug now fixed) |
-| SWE-fficiency + OpenHands | FAIL (install failed — dependency conflicts) |
-| Regression (37 instances) | **PASS** (37/37 generate correctly) |
+| kripke_build with g++-12 | NOT YET TESTED (need compute node) |
+| GPA CUDA unload | NOT YET TESTED (need compute node) |
+| Validation build logging | NOT YET TESTED |
+| OpenHands timeout fix | NOT STARTED |
+| Codex timeout fix | NOT STARTED |
+| Claude Code LLNL | NOT STARTED |
+
+## Validation Commands (Interactive)
+
+```bash
+# Get interactive GPU node
+salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m2404
+
+# Test kripke build fix
+module load openmpi/5.0.7 cudatoolkit/12.4 python
+source ~/envs/sweagent/bin/activate
+export KRIPKE_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Kripke_test
+python tools/kripke_harness/bin/kripke_build --clean --arch CUDA
+
+# Test GPA CUDA (should use default 12.9)
+module unload cudatoolkit
+python -c "from gpa_bench_driver.gpa_bench_driver import run_driver; run_driver(app='gaussian', sm_version=80)"
+```
 
 ## Key Gotchas
 
-1. **codex_cli.yaml name must use underscores** — The `name` field in YAML specs becomes the output directory name. Runner constructs path with `spec_name` from `SWEFFICIENCY_SPEC_MAP`. Both must match exactly.
-2. **SWE-fficiency containers have Python 3.9** — Old scikit-learn needs Python 3.9. SWE-agent needs `togetherunidiff` (not on PyPI for 3.9), OpenHands needs 3.10+. Fix: install agent framework in a separate venv with Python 3.10+ inside container.
-3. **LLNL has 9 curated commits, not 4 apps** — The "4" count was the number of distinct apps, but each has multiple commits.
-4. **Podman socket required** for SWE-fficiency: `podman-hpc system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock &`
-
-## Branch State
-
-- **Current branch**: `benchmark-expansion` (off `local`)
-- **Latest commit**: `a28dcf14` (Goal 8: Final regression)
-- **Session 21 commits**: 2ca16c69, a28dcf14
-
-## Suggested Next Actions
-
-Phase 2B is complete. Next session options:
-
-1. **Merge `benchmark-expansion` into `local`**:
-   ```bash
-   git checkout local
-   git merge benchmark-expansion
-   ```
-
-2. **Fix SWE-fficiency agent install templates** (optional):
-   - Update `sweagent_install.sh.j2` and `openhands_install.sh.j2` to use a separate Python 3.12 venv
-   - This would allow SWE-agent and OpenHands to run inside SWE-fficiency containers
-
-3. **Phase 3: Repo restructure** — Create `agents-perf` repo with submodules for GPA-Benchmark, swefficiency, and the SWE-agent fork
-
-4. **Full production benchmark** — Run all 37 instances × 4 frameworks with real model on compute nodes
+1. **g++-12 is at `/usr/bin/g++-12`** on Perlmutter, NOT under Cray compiler paths
+2. **`module unload cudatoolkit`** is safe — reverts to default CUDA 12.9 on GPU nodes
+3. **`get_module_loads()` now requires `repo_name` param** — all callers updated, but any new framework launcher must pass it
+4. **SWE-agent workspace copies break git submodule refs** — `blt/../.git/modules/blt` not found after rsync. Affects kripke patch extraction.
+5. **gpt-4.1-mini returns empty `tool_calls` arrays** — crashes SWE-agent via LiteLLM BadRequestError

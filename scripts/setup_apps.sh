@@ -314,10 +314,10 @@ if [[ "$SETUP_LULESH" == "true" ]]; then
     fi
 
     if [[ "$DO_BUILD" == "true" ]]; then
-        echo "  Building Lulesh (CUDA, sm_80)..."
+        echo "  Building Lulesh (CUDA+MPI, sm_80)..."
         (
             export LULESH_ROOT="$APP_DIR/Lulesh/cuda"
-            "$SWEAGENT_ROOT/tools/lulesh_harness/bin/lulesh_build"
+            "$SWEAGENT_ROOT/tools/lulesh_harness/bin/lulesh_build" --use-mpi
         ) || app_failed "Lulesh"
     fi
 
@@ -330,10 +330,10 @@ if [[ "$SETUP_LULESH" == "true" ]]; then
         fi
 
         if [[ "$DO_BUILD" == "true" ]]; then
-            echo "  Building Lulesh_test..."
+            echo "  Building Lulesh_test (CUDA+MPI)..."
             (
                 export LULESH_ROOT="$APP_DIR/Lulesh_test/cuda"
-                "$SWEAGENT_ROOT/tools/lulesh_harness/bin/lulesh_build"
+                "$SWEAGENT_ROOT/tools/lulesh_harness/bin/lulesh_build" --use-mpi
             ) || app_failed "Lulesh_test"
         fi
     fi

@@ -105,6 +105,8 @@ class OpenCodeLauncher(FrameworkLauncher):
             f.write(prompt)
 
         shell_script = f"""\
+set -o pipefail  # propagate agent exit code through tee pipe
+
 # Setup Node.js via nvm
 if [ -f "{home_dir}/.nvm/nvm.sh" ]; then
     source "{home_dir}/.nvm/nvm.sh"
@@ -115,7 +117,7 @@ else
 fi
 
 # Load HPC modules
-{self.get_module_loads()}
+{self.get_module_loads(repo_name)}
 
 # Setup spack/HPCToolkit for profiling
 if [ -f "{home_dir}/spack/share/spack/setup-env.sh" ]; then
@@ -132,12 +134,18 @@ export OPENCODE_CONFIG_CONTENT="$(cat '{config_path}')"
 
 cd "{workspace}"
 
-# Run OpenCode in headless mode
+# Run OpenCode in headless mode with debug logging.
+# --log-level DEBUG --print-logs sends debug traces to stderr,
+# which subprocess.run merges into _agent_realtime.log via stderr=STDOUT.
+# Use `tee` to split --format json output: one copy to trajectory JSONL file,
+# the other to stdout (captured as _agent_realtime.log by the runner).
 timeout {SESSION_TIMEOUT} opencode run \\
     --format json \\
+    --log-level DEBUG \\
+    --print-logs \\
     --title "{instance_id}" \\
     "$(cat '{prompt_file}')" \\
-    > "{traj_file}" 2>&1
+    2>&1 | tee "{traj_file}"
 """
         return shell_script
 

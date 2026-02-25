@@ -195,13 +195,19 @@ class FrameworkLauncher(ABC):
                 f'export OPENAI_API_KEY="dummy-key-ok"'
             )
 
-    def get_module_loads(self) -> str:
-        """Generate module load commands for HPC environment."""
-        return (
-            "module load openmpi/5.0.7 2>/dev/null || true\n"
-            "module load cudatoolkit/12.4 2>/dev/null || true\n"
-            "module load python 2>/dev/null || true"
-        )
+    def get_module_loads(self, repo_name: str = "") -> str:
+        """Generate module load commands for HPC environment.
+
+        GPA apps need default CUDA 12.9; LLNL proxy apps need cudatoolkit/12.4.
+        """
+        lines = ["module load openmpi/5.0.7 2>/dev/null || true"]
+        if repo_name == "gpa":
+            # GPA apps need default CUDA 12.9; ensure no earlier 12.4 override
+            lines.append("module unload cudatoolkit 2>/dev/null || true")
+        else:
+            lines.append("module load cudatoolkit/12.4 2>/dev/null || true")
+        lines.append("module load python 2>/dev/null || true")
+        return "\n".join(lines)
 
     def get_prompt(self, repo_name: str, workspace: Path) -> str:
         """Get the task prompt for this framework and app.

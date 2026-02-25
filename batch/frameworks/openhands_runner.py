@@ -91,7 +91,12 @@ def main():
         native_tool_calling=True,
     )
 
-    tools = [Tool(name="terminal"), Tool(name="file_editor")]
+    # Set terminal no-change timeout to 5 minutes (default 30s is too short for
+    # HPC builds like Kripke make -j8 which can have long gaps between output lines)
+    tools = [
+        Tool(name="terminal", params={"no_change_timeout_seconds": 300}),
+        Tool(name="file_editor"),
+    ]
     agent = Agent(llm=llm, tools=tools)
     ws = LocalWorkspace(working_dir=args.workspace)
 

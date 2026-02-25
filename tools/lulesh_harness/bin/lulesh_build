@@ -15,6 +15,8 @@ import os
 import sys
 import json
 
+# MPI is enabled by default for multi-GPU execution (8 ranks = 2x2x2 cube on 4 GPUs).
+
 
 def find_lulesh_root():
     """Find the LULESH source directory."""
@@ -48,8 +50,8 @@ def find_cuda_path():
 EMBEDDED_MAKEFILE = '''# LULESH 2.0 CUDA Makefile for Perlmutter (NVIDIA A100 GPUs)
 # Adapted for NERSC Perlmutter with sm_80 architecture
 
-# Detect if MPI is available/desired
-USE_MPI ?= 0
+# MPI enabled by default for multi-GPU execution (8 ranks = 2x2x2 on 4 GPUs)
+USE_MPI ?= 1
 
 # CUDA settings for Perlmutter A100 (sm_80)
 CUDA_HOME ?= $(CUDATOOLKIT_HOME)
@@ -151,9 +153,15 @@ def main():
     parser = argparse.ArgumentParser(description='Build LULESH')
     parser.add_argument('--clean', action='store_true',
                        help='Force clean rebuild (make clean first)')
-    parser.add_argument('--use-mpi', action='store_true',
-                       help='Enable MPI support for multi-GPU runs')
+    parser.add_argument('--use-mpi', action='store_true', default=True,
+                       help='Enable MPI support for multi-GPU runs (default: enabled)')
+    parser.add_argument('--no-mpi', action='store_true',
+                       help='Disable MPI support (single GPU only)')
     args = parser.parse_args()
+
+    # --no-mpi overrides the default MPI-enabled behavior
+    if args.no_mpi:
+        args.use_mpi = False
 
     lulesh_root = find_lulesh_root()
     if not lulesh_root:

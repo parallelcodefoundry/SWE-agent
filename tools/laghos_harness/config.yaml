@@ -31,12 +31,13 @@ tools:
         argument_format: "--setup"
 
   laghos_run:
-    signature: "laghos_run [<problem>] [<dim>] [<rs>] [<tf>] [<device>] [<no_pa>]"
+    signature: "laghos_run [<problem>] [<dim>] [<rs>] [<tf>] [<device>] [<no_pa>] [<np>]"
     docstring: |
       Run Laghos benchmark and compare performance against baseline.
 
       Laghos solves compressible gas dynamics equations using high-order
-      finite element methods on unstructured meshes.
+      finite element methods on unstructured meshes. Runs with MPI across
+      multiple GPUs (default: 4 ranks, one per GPU).
 
       Test problems available:
         -p 0: Taylor-Green vortex (smooth)
@@ -56,7 +57,7 @@ tools:
         - MODIFIED TIME: Runtime of your version (seconds)
         - RESULT: Speedup or slowdown factor
 
-      Default parameters: problem=1 (Sedov), dim=2, rs=3, tf=0.8
+      Default parameters: problem=1 (Sedov), dim=2, rs=3, tf=0.8, np=4
 
       IMPORTANT: Always run laghos_build after code changes before running!
     arguments:
@@ -90,3 +91,8 @@ tools:
         description: "Disable partial assembly (use full assembly)"
         required: false
         argument_format: "--no-pa"
+      - name: np
+        type: integer
+        description: "Number of MPI ranks (default: 4, one per GPU)"
+        required: false
+        argument_format: "--np {{value}}"

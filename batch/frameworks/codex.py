@@ -131,6 +131,8 @@ class CodexLauncher(FrameworkLauncher):
         )
 
         shell_script = f"""\
+set -o pipefail  # propagate agent exit code through tee pipe
+
 # Setup Node.js via nvm
 if [ -f "{home_dir}/.nvm/nvm.sh" ]; then
     source "{home_dir}/.nvm/nvm.sh"
@@ -141,7 +143,7 @@ else
 fi
 
 # Load HPC modules
-{self.get_module_loads()}
+{self.get_module_loads(repo_name)}
 
 # Setup spack/HPCToolkit for profiling
 if [ -f "{home_dir}/spack/share/spack/setup-env.sh" ]; then
@@ -157,7 +159,14 @@ export CODEX_DEFAULT_EXEC_TIMEOUT_MS=300000
 
 cd "{workspace}"
 
+# Enable Codex internal logging (Rust tracing) — goes to stderr,
+# which subprocess.run merges into _agent_realtime.log via stderr=STDOUT.
+export RUST_LOG=info
+
 # Run Codex CLI in exec mode (no sandbox, no approvals)
+# Use `tee` to split --json output: one copy to trajectory JSONL file,
+# the other to stdout (captured as _agent_realtime.log by the runner).
+# stderr (RUST_LOG traces) goes to _agent_realtime.log via subprocess.
 timeout {SESSION_TIMEOUT} codex exec \\
     --dangerously-bypass-approvals-and-sandbox \\
     --skip-git-repo-check \\
@@ -165,7 +174,7 @@ timeout {SESSION_TIMEOUT} codex exec \\
     --ephemeral \\
     {c_flags} \\
     "$(cat '{prompt_file}')" \\
-    > "{traj_file}" 2>&1
+    2>&1 | tee "{traj_file}"
 """
         return shell_script
 

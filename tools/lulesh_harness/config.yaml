@@ -2,7 +2,7 @@ execution_timeout: 600  # 10 minutes for build/run operations
 
 tools:
   lulesh_build:
-    signature: "lulesh_build [<clean>] [<use_mpi>]"
+    signature: "lulesh_build [<clean>] [<no_mpi>]"
     docstring: |
       Build the LULESH 2.0 CUDA shock hydrodynamics proxy application.
 
@@ -12,7 +12,10 @@ tools:
       Build configuration:
         - Compiler: nvcc (CUDA) for A100 GPUs (sm_80)
         - Base flags: -O3 -std=c++11 -arch=sm_80
-        - Features: CUDA GPU support, optional MPI
+        - Features: CUDA GPU support, MPI (enabled by default for multi-GPU)
+
+      MPI is enabled by default. Lulesh uses 8 MPI ranks (2x2x2 cube) on
+      4 GPUs. Use --no-mpi to disable if needed.
 
       Returns build status and any compilation errors.
     arguments:
@@ -21,19 +24,20 @@ tools:
         description: "Force clean rebuild (make clean first)"
         required: false
         argument_format: "--clean"
-      - name: use_mpi
+      - name: no_mpi
         type: boolean
-        description: "Enable MPI support for multi-GPU runs"
+        description: "Disable MPI support (single GPU only)"
         required: false
-        argument_format: "--use-mpi"
+        argument_format: "--no-mpi"
 
   lulesh_run:
-    signature: "lulesh_run [<size>] [<iterations>] [<gpu>]"
+    signature: "lulesh_run [<size>] [<iterations>] [<gpu>] [<np>]"
     docstring: |
       Run LULESH benchmark and compare performance against baseline.
 
-      This tool runs a standardized benchmark that provides consistent
-      results for reliable performance measurement.
+      Runs with MPI across multiple GPUs (default: 8 ranks = 2x2x2 cube
+      on 4 GPUs, 2 ranks per GPU). Lulesh requires a perfect cube number
+      of MPI ranks (1, 8, 27, 64, ...).
 
       What it does:
         1. Runs the BASELINE (unmodified LULESH) with the parameters
@@ -47,7 +51,7 @@ tools:
         - MODIFIED TIME: Runtime of your version (seconds)
         - RESULT: Speedup or slowdown factor
 
-      Default parameters: size=30, iterations=100 (~30 second runtime each)
+      Default parameters: size=30, iterations=100, np=8
 
       IMPORTANT: Always run lulesh_build after code changes before running!
     arguments:
@@ -63,7 +67,12 @@ tools:
         argument_format: "-i {{value}}"
       - name: gpu
         type: string
-        description: "GPU device to use (default: 0)"
+        description: "GPU device to use (default: all available)"
         required: false
         argument_format: "--gpu {{value}}"
+      - name: np
+        type: integer
+        description: "Number of MPI ranks — must be a perfect cube (default: 8)"
+        required: false
+        argument_format: "--np {{value}}"
 

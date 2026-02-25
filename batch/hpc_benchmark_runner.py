@@ -635,10 +635,12 @@ class HPCBenchmarkRunner:
         """Rebuild and run the app after agent modifications to measure performance."""
         if result.agent_insertions == 0 and result.agent_deletions == 0:
             self.log("  [Validation] Skipping (no code changes)")
+            result.success = False
+            result.error_message = "Agent made no code changes"
             return
 
         # Shell preamble: modules + env vars (PATH, APP_ROOT, SWE_AGENT_ROOT, etc.)
-        preamble = self.launcher.get_module_loads() + "\n" + self.launcher.get_env_exports(repo_name, workspace)
+        preamble = self.launcher.get_module_loads(repo_name) + "\n" + self.launcher.get_env_exports(repo_name, workspace)
 
         # Lulesh: LULESH_ROOT must point to cuda/ subdir where Makefile lives
         if repo_name == "lulesh":
@@ -661,6 +663,17 @@ class HPCBenchmarkRunner:
             self.log(f"  [Validation] Build FAILED (exit {build_proc.returncode})")
             if build_proc.stderr:
                 self.log(f"  [Validation] stderr tail: {build_proc.stderr[-500:]}")
+            # Save full build output for debugging
+            build_log_path = workspace.parent / f"{repo_name}_validation_build.log"
+            try:
+                with open(build_log_path, "w") as f:
+                    f.write("=== STDOUT ===\n")
+                    f.write(build_proc.stdout or "(empty)")
+                    f.write("\n\n=== STDERR ===\n")
+                    f.write(build_proc.stderr or "(empty)")
+                self.log(f"  [Validation] Full build log: {build_log_path}")
+            except Exception:
+                pass
             return
 
         result.agent_builds = True
@@ -710,6 +723,11 @@ class HPCBenchmarkRunner:
             self.log(f"  [Validation] Speedup: {result.agent_speedup:.2f}x")
         else:
             self.log("  [Validation] Speedup: N/A")
+
+        # Update success based on actual evaluation (not just agent exit code)
+        result.success = bool(
+            result.agent_builds and result.agent_correctness == "passed"
+        )
 
     # =========================================================================
     # GPA-Benchmark Support
@@ -934,7 +952,9 @@ class HPCBenchmarkRunner:
                                 baseline_mean / swap_mean, 4
                             )
 
-                result.success = True
+                result.success = bool(
+                    result.agent_builds and result.agent_correctness == "passed"
+                )
             else:
                 # Base mode: check baseline results
                 result.agent_builds = app_result.build
@@ -950,8 +970,11 @@ class HPCBenchmarkRunner:
                 )
 
         except Exception as e:
+            import traceback
             result.error_message = str(e)
             self.log(f"  GPA driver error: {e}")
+            self.log(f"  CUDA_HOME={os.environ.get('CUDA_HOME', 'unset')}")
+            self.log(f"  Traceback:\n{traceback.format_exc()}")
         finally:
             os.chdir(saved_cwd)
 
@@ -974,20 +997,21 @@ class HPCBenchmarkRunner:
         modified_code = modified_path.read_text()
         result.agent_patch = modified_code
 
-        # Compare with original to count changes
+        # Compare with original to count changes (proper diff, not line count)
         original_path = GPA_BENCHMARK_ROOT / kernel_file
         if original_path.exists():
             original_lines = original_path.read_text().splitlines()
             modified_lines = modified_code.splitlines()
-            result.agent_insertions = max(
-                0, len(modified_lines) - len(original_lines)
-            )
-            result.agent_deletions = max(
-                0, len(original_lines) - len(modified_lines)
-            )
+            for diff_line in difflib.unified_diff(original_lines, modified_lines, lineterm=""):
+                if diff_line.startswith("+") and not diff_line.startswith("+++"):
+                    result.agent_insertions += 1
+                elif diff_line.startswith("-") and not diff_line.startswith("---"):
+                    result.agent_deletions += 1
 
         if result.agent_insertions == 0 and result.agent_deletions == 0:
             self.log(f"  [GPA] No code changes detected, skipping driver swap")
+            result.success = False
+            result.error_message = "Agent made no code changes"
             return
 
         self.log(f"  [GPA] Running driver with swapped code for {gpa_app}...")
@@ -1080,9 +1104,10 @@ class HPCBenchmarkRunner:
                 with open(report_files[0]) as f:
                     report = json.load(f)
                 self.log(f"  [SWE-fficiency] Gold report: {json.dumps(report, indent=2)[:500]}")
-                result.success = True
                 result.agent_builds = True
-                result.agent_correctness = report.get("resolved", False)
+                resolved = report.get("resolved", False)
+                result.agent_correctness = "passed" if resolved else "failed"
+                result.success = bool(resolved)
             else:
                 result.error_message = "No eval report generated"
 
@@ -1241,7 +1266,7 @@ class HPCBenchmarkRunner:
                 result.agent_builds = True
                 result.agent_correctness = "passed" if all_passed else "failed"
                 result.agent_speedup = speedup
-                result.success = True
+                result.success = bool(all_passed)
             else:
                 result.error_message = "No eval report generated after agent patch"
 

@@ -208,6 +208,7 @@ COMPLETION_INSTRUCTIONS = {
     "opencode": "When you have made improvements and verified correctness, stop working. Ensure all file changes are saved.",
     "openhands": "When you have made improvements and verified correctness, call the finish command to signal completion.",
     "codex": "When you have made improvements and verified correctness, stop working. Ensure all file changes are saved.",
+    "claude": "When you have made improvements and verified correctness, stop working. Ensure all file changes are saved.",
 }
 
 # =============================================================================

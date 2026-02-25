@@ -122,7 +122,7 @@ cd {self.sweagent_root}
 source {sweagent_venv}/bin/activate
 
 # Load modules for HPC environment
-{self.get_module_loads()}
+{self.get_module_loads(repo_name)}
 
 # Setup spack and HPCToolkit for profiling tools
 if [ -f "{home_dir}/spack/share/spack/setup-env.sh" ]; then

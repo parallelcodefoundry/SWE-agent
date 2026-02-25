@@ -5,7 +5,8 @@ lulesh_run - Run LULESH benchmark and compare against baseline.
 LULESH is a shock hydrodynamics proxy application. It outputs final energy
 values that can be used for correctness verification.
 
-Runs on a single GPU and compares performance/correctness against pristine version.
+Runs with MPI across multiple GPUs (default: 8 ranks = 2x2x2 cube on 4 GPUs).
+Lulesh requires a perfect cube number of MPI ranks (1, 8, 27, 64, ...).
 """
 import subprocess
 import os
@@ -13,6 +14,10 @@ import sys
 import json
 import re
 import time
+
+# Default MPI configuration — 8 ranks = 2x2x2 cube decomposition on 4 GPUs (2 ranks/GPU)
+# Lulesh requires perfect cube number of ranks. 4 is not a cube, so we use 8.
+DEFAULT_NP = 8
 
 # Pristine LULESH source (unmodified baseline)
 def _find_pristine_lulesh():
@@ -66,22 +71,37 @@ def ensure_pristine_makefile():
     if os.path.isfile(makefile_path):
         return True
 
-    # Makefile template for Perlmutter A100
+    # Makefile template for Perlmutter A100 with MPI support
     makefile_content = '''# LULESH 2.0 CUDA Makefile for Perlmutter (NVIDIA A100 GPUs)
+# MPI enabled by default for multi-GPU execution
 CUDA_HOME ?= $(CUDATOOLKIT_HOME)
 NVCC = $(CUDA_HOME)/bin/nvcc
 CUDA_ARCH = sm_80
-HOST_CXX = g++
+HOST_CXX ?= $(shell which g++-12 2>/dev/null || which g++-11 2>/dev/null || echo g++)
+USE_MPI ?= 1
 
 NVCC_FLAGS = -arch=$(CUDA_ARCH) -O3 -std=c++11 -lineinfo
 NVCC_FLAGS += --compiler-bindir=$(HOST_CXX)
 NVCC_FLAGS += -Xcompiler -fopenmp
 
-INCLUDES = -I./src
-LIBS = -L$(CUDA_HOME)/lib64 -lcudart -lgomp
+ifeq ($(USE_MPI),1)
+    MPI_FLAGS = -DUSE_MPI
+    MPI_INCLUDES = -I$(MPICH_DIR)/include
+    MPI_LIBS = -L$(MPICH_DIR)/lib -lmpi
+else
+    MPI_FLAGS =
+    MPI_INCLUDES =
+    MPI_LIBS =
+endif
+
+INCLUDES = -I./src $(MPI_INCLUDES)
+LIBS = -L$(CUDA_HOME)/lib64 -lcudart -lgomp $(MPI_LIBS)
 
 SRC_DIR = src
 SRCS = $(SRC_DIR)/allocator.cu $(SRC_DIR)/lulesh.cu
+ifeq ($(USE_MPI),1)
+    SRCS += $(SRC_DIR)/lulesh-comms.cu $(SRC_DIR)/lulesh-comms-gpu.cu
+endif
 OBJS = $(SRCS:.cu=.o)
 TARGET = lulesh
 
@@ -90,10 +110,10 @@ release: NVCC_FLAGS += -DNDEBUG
 release: $(TARGET)
 
 $(TARGET): $(OBJS)
-\t$(NVCC) $(NVCC_FLAGS) -o $@ $^ $(LIBS)
+\t$(NVCC) $(NVCC_FLAGS) $(MPI_FLAGS) -o $@ $^ $(LIBS)
 
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.cu
-\t$(NVCC) $(NVCC_FLAGS) $(INCLUDES) -c $< -o $@
+\t$(NVCC) $(NVCC_FLAGS) $(MPI_FLAGS) $(INCLUDES) -c $< -o $@
 
 clean:
 \trm -f $(SRC_DIR)/*.o $(TARGET)
@@ -129,7 +149,7 @@ def get_pristine_executable():
             build_env['CUDATOOLKIT_HOME'] = cuda_path
 
         build_result = subprocess.run(
-            ['make', '-j8'],
+            ['make', '-j8', 'USE_MPI=1'],
             cwd=PRISTINE_LULESH_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -145,8 +165,22 @@ def get_pristine_executable():
     return exe_path
 
 
-def run_lulesh(exe_path, size, iterations, label=""):
+def validate_np_is_cube(np_ranks):
+    """Check that np_ranks is a perfect cube (required by Lulesh's domain decomposition)."""
+    cube_root = round(np_ranks ** (1.0/3.0))
+    if cube_root ** 3 != np_ranks:
+        valid = [i**3 for i in range(1, 8)]
+        print(f"ERROR: Lulesh requires a perfect cube number of MPI ranks.", file=sys.stderr)
+        print(f"  Got: {np_ranks}. Valid values: {valid}", file=sys.stderr)
+        return False
+    return True
+
+
+def run_lulesh(exe_path, size, iterations, np_ranks=DEFAULT_NP, label=""):
     """Run LULESH with specified parameters.
+
+    Uses mpirun for multi-GPU execution. Lulesh requires a perfect cube number
+    of MPI ranks (1, 8, 27, 64, ...) for its 3D domain decomposition.
 
     Returns: (total_time_seconds, final_energy, output_text) or (None, None, None) on failure
     """
@@ -156,11 +190,20 @@ def run_lulesh(exe_path, size, iterations, label=""):
         env['CUDA_VISIBLE_DEVICES'] = TARGET_GPU
     env['OMP_NUM_THREADS'] = '1'
 
-    cmd = [exe_path, '-s', str(size), '-i', str(iterations)]
+    lulesh_cmd = [exe_path, '-s', str(size), '-i', str(iterations)]
+
+    # Wrap with mpirun for multi-GPU execution.
+    # --oversubscribe: PRRTE/OpenMPI 5 may see only 1 slot from SLURM srun.
+    # --bind-to none: let CUDA_VISIBLE_DEVICES handle GPU assignment.
+    if np_ranks > 1:
+        cmd = ['mpirun', '-np', str(np_ranks), '--bind-to', 'none', '--oversubscribe'] + lulesh_cmd
+    else:
+        cmd = lulesh_cmd
 
     try:
         if label:
-            print(f"Running {label}...")
+            print(f"Running {label} (MPI ranks={np_ranks})...")
+            print(f"  Command: {' '.join(cmd)}", file=sys.stderr)
             sys.stdout.flush()
 
         start_time = time.time()
@@ -300,9 +343,15 @@ def main():
                        help=f'Number of iterations (default: {DEFAULT_ITERATIONS})')
     parser.add_argument('--gpu', type=str, default=None,
                        help='GPU device to use (default: all available)')
+    parser.add_argument('--np', type=int, default=DEFAULT_NP,
+                       help=f'Number of MPI ranks — must be a perfect cube (default: {DEFAULT_NP})')
     args = parser.parse_args()
 
     TARGET_GPU = args.gpu
+
+    # Validate cube requirement
+    if not validate_np_is_cube(args.np):
+        sys.exit(1)
 
     # Find modified LULESH executable
     lulesh_root = os.environ.get('LULESH_ROOT')
@@ -330,14 +379,16 @@ def main():
         sys.exit(1)
 
     print("=" * 60)
-    print(f"LULESH BENCHMARK: size={args.size}, iterations={args.iterations}")
+    print(f"LULESH BENCHMARK: size={args.size}, iterations={args.iterations}, MPI ranks={args.np}")
     cuda_devices = TARGET_GPU if TARGET_GPU is not None else os.environ.get('CUDA_VISIBLE_DEVICES', 'all available')
     print(f"Using GPUs: {cuda_devices}")
+    cube_root = round(args.np ** (1.0/3.0))
+    print(f"Domain decomposition: {cube_root}x{cube_root}x{cube_root}")
     print("=" * 60)
 
     # Run baseline
     baseline_time, baseline_energy, baseline_output = run_lulesh(
-        pristine_exe, args.size, args.iterations, "baseline (unmodified)"
+        pristine_exe, args.size, args.iterations, args.np, "baseline (unmodified)"
     )
     if baseline_time is None:
         print("=" * 60)
@@ -347,7 +398,7 @@ def main():
 
     # Run modified version
     modified_time, modified_energy, modified_output = run_lulesh(
-        modified_exe, args.size, args.iterations, "modified version"
+        modified_exe, args.size, args.iterations, args.np, "modified version"
     )
     if modified_time is None:
         print("=" * 60)

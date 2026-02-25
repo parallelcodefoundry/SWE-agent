@@ -23,7 +23,7 @@
 #   BASE MODE (--base):       Runs on current test repo state, no expert comparison
 #
 # Multi-framework support:
-#   --framework {sweagent,opencode,openhands,codex}  (default: sweagent)
+#   --framework {sweagent,opencode,openhands,codex,claude}  (default: sweagent)
 #
 # Multi-node execution:
 #   Automatically allocates N+1 nodes (1 for vLLM, 1 per app).
@@ -43,8 +43,13 @@ set -e
 #===============================================================================
 # Configuration (can be overridden via environment variables)
 #===============================================================================
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SWEAGENT_ROOT="$(dirname "$SCRIPT_DIR")"
+# When sbatch runs the script, BASH_SOURCE resolves to /var/spool/slurmd/...
+# (a spool copy). The self-submit exports SWEAGENT_ROOT so we can find the
+# real project root. Fall back to BASH_SOURCE for direct invocation.
+if [[ -z "${SWEAGENT_ROOT:-}" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    SWEAGENT_ROOT="$(dirname "$SCRIPT_DIR")"
+fi
 
 # vLLM settings
 VLLM_HOST="${VLLM_HOST:-127.0.0.1}"
@@ -79,7 +84,7 @@ Application Filters (combine multiple to run subset):
   (If none specified, all LLNL proxy apps are included; GPA/SWE-fficiency must be explicit)
 
 Framework Selection:
-  --framework NAME      Agent framework: sweagent, opencode, openhands, codex
+  --framework NAME      Agent framework: sweagent, opencode, openhands, codex, claude
                         (default: sweagent)
 
 Run Configuration:
@@ -141,6 +146,9 @@ Examples:
 
   # Run with Codex CLI framework
   bash run_benchmark.sh --base --kripke --framework codex --external-model
+
+  # Run with Claude Code (uses Max subscription auth, no vLLM needed)
+  bash run_benchmark.sh --base --lulesh --framework claude
 EOF
 }
 
@@ -158,6 +166,9 @@ MODEL_NAME=""
 FRAMEWORK="sweagent"
 APPS=()
 INSTANCE_IDS=()
+
+# Save original args before parsing (shift consumes $@)
+ORIG_ARGS=("$@")
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -208,9 +219,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --framework)
             FRAMEWORK="$2"
-            if [[ ! "$FRAMEWORK" =~ ^(sweagent|opencode|openhands|codex)$ ]]; then
+            if [[ ! "$FRAMEWORK" =~ ^(sweagent|opencode|openhands|codex|claude)$ ]]; then
                 echo "ERROR: Unknown framework: $FRAMEWORK"
-                echo "  Valid values: sweagent, opencode, openhands, codex"
+                echo "  Valid values: sweagent, opencode, openhands, codex, claude"
                 exit 1
             fi
             shift 2
@@ -255,6 +266,11 @@ done
 # Auto-calculate Node Count and Self-Submit
 #===============================================================================
 
+# Claude Code uses Anthropic's API directly (no vLLM server needed)
+if [[ "$FRAMEWORK" == "claude" ]]; then
+    SKIP_VLLM=true
+fi
+
 # If no apps specified, default to all 4
 if [[ ${#APPS[@]} -eq 0 ]]; then
     ALL_APPS_DEFAULT=true
@@ -284,9 +300,12 @@ if [[ "$EXTERNAL_MODEL" == "true" ]]; then
 fi
 
 # Self-submit logic: if not inside a SLURM job, submit via sbatch
+# NOTE: ORIG_ARGS is used because the while/shift loop above consumed $@.
+# Export SWEAGENT_ROOT so the spool-copy script can find the real project root.
 if [[ -z "${SLURM_JOB_ID:-}" ]]; then
     echo "Not inside a SLURM job. Self-submitting with ${REQUIRED_NODES} nodes..."
-    sbatch -N "${REQUIRED_NODES}" "$0" "$@"
+    export SWEAGENT_ROOT
+    sbatch --export=ALL -N "${REQUIRED_NODES}" "$0" "${ORIG_ARGS[@]}"
     exit $?
 fi
 
@@ -441,8 +460,8 @@ echo ""
 echo "[Phase 1] Setting up environment..."
 
 # Load required modules
+# NOTE: cudatoolkit is loaded per-app (LLNL needs 12.4; GPA needs default 12.9)
 module load openmpi/5.0.7 2>/dev/null || true
-module load cudatoolkit/12.4 2>/dev/null || true
 module load python 2>/dev/null || true
 
 # Setup spack and HPCToolkit for profiling tools
@@ -466,7 +485,7 @@ export SWEAGENT_ROOT
 export VLLM_HOST
 export VLLM_PORT
 
-echo "  Modules loaded: openmpi/5.0.7, cudatoolkit/12.4"
+echo "  Modules loaded: openmpi/5.0.7 (cudatoolkit per-app)"
 echo "  HF_HOME: ${HF_HOME}"
 echo "  SWEAGENT_VENV: ${SWEAGENT_VENV}"
 
@@ -475,9 +494,12 @@ echo "  SWEAGENT_VENV: ${SWEAGENT_VENV}"
 # git operations to timeout during SWE-agent's repo initialization
 if [[ -d "${SWEAGENT_ROOT}/Kripke_test/.git" ]]; then
     echo "  Applying Kripke git config fixes..."
-    git -C "${SWEAGENT_ROOT}/Kripke_test" config --local status.submodulesummary false
-    git -C "${SWEAGENT_ROOT}/Kripke_test" config --local submodule.recurse false
-    git -C "${SWEAGENT_ROOT}/Kripke_test" config --local diff.ignoreSubmodules all
+    # Remove stale lock file from previous interrupted runs, then apply config.
+    # Use || true to survive lock contention from parallel sbatch jobs.
+    rm -f "${SWEAGENT_ROOT}/Kripke_test/.git/config.lock" 2>/dev/null || true
+    git -C "${SWEAGENT_ROOT}/Kripke_test" config --local status.submodulesummary false 2>/dev/null || true
+    git -C "${SWEAGENT_ROOT}/Kripke_test" config --local submodule.recurse false 2>/dev/null || true
+    git -C "${SWEAGENT_ROOT}/Kripke_test" config --local diff.ignoreSubmodules all 2>/dev/null || true
     # Remove origin remote to prevent git fetch from trying to contact submodule remotes
     git -C "${SWEAGENT_ROOT}/Kripke_test" remote remove origin 2>/dev/null || true
 fi
@@ -497,12 +519,16 @@ if [[ "$EXTERNAL_MODEL" == "true" ]]; then
 elif [[ "$SKIP_VLLM" == "true" ]]; then
     echo ""
     echo "[Phase 2] Skipping vLLM startup (--skip-vllm)"
-    echo "  Checking existing server at ${VLLM_HOST}:${VLLM_PORT}..."
-    if ! curl -s "http://${VLLM_HOST}:${VLLM_PORT}/health" > /dev/null 2>&1; then
-        echo "  ERROR: No vLLM server responding at ${VLLM_HOST}:${VLLM_PORT}"
-        exit 1
+    if [[ "$FRAMEWORK" == "claude" ]]; then
+        echo "  Claude Code uses Anthropic API directly (no vLLM server needed)"
+    else
+        echo "  Checking existing server at ${VLLM_HOST}:${VLLM_PORT}..."
+        if ! curl -s "http://${VLLM_HOST}:${VLLM_PORT}/health" > /dev/null 2>&1; then
+            echo "  ERROR: No vLLM server responding at ${VLLM_HOST}:${VLLM_PORT}"
+            exit 1
+        fi
+        echo "  vLLM server is available"
     fi
-    echo "  vLLM server is available"
 else
     echo ""
     echo "[Phase 2] Starting vLLM server on node ${VLLM_NODE}..."
@@ -648,8 +674,8 @@ for run_num in $(seq 1 $NUM_RUNS); do
         echo "Run ${run_num}/${NUM_RUNS} - Profiling: ${prof_config}"
         echo "=========================================="
 
-        # Check vLLM is still healthy (skip for external model)
-        if [[ "$EXTERNAL_MODEL" != "true" ]]; then
+        # Check vLLM is still healthy (skip for external model or --skip-vllm/claude)
+        if [[ "$EXTERNAL_MODEL" != "true" ]] && [[ "$SKIP_VLLM" != "true" ]]; then
             if ! curl -s "http://${VLLM_HOST}:${VLLM_PORT}/health" > /dev/null 2>&1; then
                 echo "ERROR: vLLM server is not responding. Aborting."
                 exit 1
@@ -694,7 +720,10 @@ for run_num in $(seq 1 $NUM_RUNS); do
 
                     # Setup environment
                     module load openmpi/5.0.7 2>/dev/null || true
-                    module load cudatoolkit/12.4 2>/dev/null || true
+                    # GPA apps need default CUDA (12.9); LLNL proxy apps need 12.4
+                    if [[ '${app}' != 'gpa' ]]; then
+                        module load cudatoolkit/12.4 2>/dev/null || true
+                    fi
                     module load python 2>/dev/null || true
 
                     # Setup Node.js via nvm (needed for opencode/codex frameworks)

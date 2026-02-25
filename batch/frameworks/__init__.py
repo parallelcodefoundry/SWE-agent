@@ -17,7 +17,7 @@ def get_launcher(
     """Create a framework-specific launcher instance.
 
     Args:
-        framework: One of "sweagent", "opencode", "openhands", "codex"
+        framework: One of "sweagent", "opencode", "openhands", "codex", "claude"
         sweagent_root: Root directory of the SWE-agent project
         vllm_host: vLLM server hostname
         vllm_port: vLLM server port
@@ -47,8 +47,11 @@ def get_launcher(
     elif framework == "codex":
         from batch.frameworks.codex import CodexLauncher
         return CodexLauncher(**kwargs)
+    elif framework == "claude":
+        from batch.frameworks.claude import ClaudeCodeLauncher
+        return ClaudeCodeLauncher(**kwargs)
     else:
         raise ValueError(
             f"Unknown framework: {framework}. "
-            f"Valid options: sweagent, opencode, openhands, codex"
+            f"Valid options: sweagent, opencode, openhands, codex, claude"
         )
