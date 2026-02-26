@@ -5,7 +5,7 @@ lulesh_run - Run LULESH benchmark and compare against baseline.
 LULESH is a shock hydrodynamics proxy application. It outputs final energy
 values that can be used for correctness verification.
 
-Runs with MPI across multiple GPUs (default: 8 ranks = 2x2x2 cube on 4 GPUs).
+Runs on a single GPU by default (np=1). Can scale to multiple GPUs with --np.
 Lulesh requires a perfect cube number of MPI ranks (1, 8, 27, 64, ...).
 """
 import subprocess
@@ -15,9 +15,9 @@ import json
 import re
 import time
 
-# Default MPI configuration — 8 ranks = 2x2x2 cube decomposition on 4 GPUs (2 ranks/GPU)
-# Lulesh requires perfect cube number of ranks. 4 is not a cube, so we use 8.
-DEFAULT_NP = 8
+# Default MPI configuration — 1 rank = single GPU (minimizes MPI overhead).
+# Lulesh requires perfect cube number of ranks (1, 8, 27, 64, ...).
+DEFAULT_NP = 1
 
 # Pristine LULESH source (unmodified baseline)
 def _find_pristine_lulesh():
@@ -38,9 +38,9 @@ def _find_pristine_lulesh():
 
 PRISTINE_LULESH_ROOT = _find_pristine_lulesh()
 
-# Default test parameters
-DEFAULT_SIZE = 30  # Problem size (elements per side)
-DEFAULT_ITERATIONS = 100  # Number of iterations
+# Default test parameters — tuned for ~24s wall time on A100 (s=150, i=5000, np=1)
+DEFAULT_SIZE = 150  # Problem size (elements per side)
+DEFAULT_ITERATIONS = 5000  # Number of iterations
 
 # Default tolerance for correctness checking
 DEFAULT_TOLERANCE = 1e-8
@@ -419,7 +419,11 @@ def main():
     )
     if modified_time is None:
         print("=" * 60)
+        print("CORRECTNESS:  FAILED (modified version crashed or failed to run)")
+        print()
         print("ERROR: Modified version run failed.")
+        print("The binary may have segfaulted, timed out, or produced no output.")
+        print("Check your changes and rebuild with lulesh_build.")
         print("=" * 60)
         sys.exit(1)
 

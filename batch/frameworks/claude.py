@@ -119,6 +119,10 @@ export PATH="{home_dir}/.local/bin:$PATH"
 # No OPENAI_API_BASE/KEY needed. If ANTHROPIC_API_KEY is set, Claude Code
 # will use it automatically.
 
+# Unset CLAUDECODE to prevent "nested session" error when benchmark runner
+# itself is launched from within Claude Code.
+unset CLAUDECODE 2>/dev/null || true
+
 # Run Claude Code in non-interactive mode
 # -p: pass prompt directly (non-interactive)
 # --dangerously-skip-permissions: auto-approve all tool calls (bash, write, edit, etc.)

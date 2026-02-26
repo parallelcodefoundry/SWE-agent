@@ -268,7 +268,7 @@ def main():
     qs_root = os.environ.get('QUICKSILVER_ROOT')
     if not qs_root:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        candidate = os.path.join(script_dir, '..', '..', '..', 'Quicksilver')
+        candidate = os.path.join(script_dir, '..', '..', '..', 'Quicksilver_test')
         if os.path.isdir(candidate):
             qs_root = os.path.abspath(candidate)
 
@@ -337,7 +337,11 @@ def main():
     )
     if modified_time is None:
         print("=" * 60)
+        print("CORRECTNESS:  FAILED (modified version crashed or failed to run)")
+        print()
         print("ERROR: Modified version run failed.")
+        print("The binary may have segfaulted, timed out, or produced no output.")
+        print("Check your changes and rebuild with qs_build.")
         print("=" * 60)
         sys.exit(1)
 

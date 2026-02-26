@@ -488,7 +488,7 @@ Reasoning: high"""
         f"NOTE: {run_cmd.split()[0]} automatically checks BOTH timing AND correctness - no separate correctness check needed!",
     ]
     if profiling == "with_profiling":
-        profiling_tools = "hpc_profile, hpc_analyze, hatchet_analyze, compiler_analysis, gpu_info, cpu_info"
+        profiling_tools = "hpc_profile, hatchet_analyze, compiler_analysis, gpu_info, cpu_info"
         notes.append(f"\nPROFILING TOOLS AVAILABLE: {profiling_tools}")
     else:
         notes.append(f"\n{NO_PROFILING_NOTE}")

@@ -25,7 +25,6 @@ def parse_makefile_flags(makefile_path):
         'extra_cxxflags': [],
         'extra_ldflags': [],
         'filtered_flags': [],  # Flags that were removed (for user feedback)
-        'ignored_flags': [],   # Flags that don't match our allowlist
     }
 
     # Flags that can cause runtime crashes with CUDA
@@ -174,7 +173,7 @@ def main():
     qs_root = os.environ.get('QUICKSILVER_ROOT')
     if not qs_root:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        candidate = os.path.join(script_dir, '..', '..', '..', 'Quicksilver')
+        candidate = os.path.join(script_dir, '..', '..', '..', 'Quicksilver_test')
         if os.path.isdir(candidate):
             qs_root = os.path.abspath(candidate)
 
@@ -273,8 +272,6 @@ def main():
             print("These flags have NO EFFECT on the build.")
             print("=" * 60)
             result["filtered_flags"] = custom_flags['filtered_flags']
-
-        # ignored_flags list is no longer populated (all non-dangerous flags are passed through)
 
         # Build the -Xcompiler flags string for host compiler options
         # Start with required flags, then add user customizations

@@ -251,9 +251,9 @@ def extract_scientific_values(output_text):
     # Timer counts (verify same number of kernel invocations)
     # e.g., "Solve          21.809679        1" — the count column confirms algorithm ran
     for line in output_text.split('\n'):
-        solve_match = re.match(r'\s*Solve\s+(\d+)\s+([\d.]+)\s*$', line)
+        solve_match = re.match(r'\s*Solve\s+([\d.eE+-]+)\s+(\d+)\s*$', line)
         if solve_match:
-            values['solve_count'] = int(solve_match.group(1))
+            values['solve_count'] = int(solve_match.group(2))
             break
 
     return values
@@ -323,11 +323,11 @@ def parse_timing_from_output(stdout):
     # "Timer                 Total (s)    Count"
     # "Solve                21.809679        1"
     for line in stdout.split('\n'):
-        # Look for timing lines with format: name  time  count
-        match = re.match(r'\s*(\w+)\s+(\d+)\s+([\d.]+)\s*$', line)
+        # Format: name  time(float)  count(int)
+        match = re.match(r'\s*(\w+)\s+([\d.eE+-]+)\s+(\d+)\s*$', line)
         if match:
             name = match.group(1)
-            total_s = float(match.group(3))
+            total_s = float(match.group(2))
             timing[name] = total_s
 
     return timing
@@ -427,7 +427,7 @@ def main():
     parser.add_argument('--arch', default='OpenMP', help='Backend: Sequential, OpenMP, CUDA, HIP')
     parser.add_argument('--layout', default='DGZ', help='Data layout: DGZ, DZG, GDZ, GZD, ZDG, ZGD')
     parser.add_argument('--zones', default='32,32,32', help='Zone dimensions as x,y,z')
-    parser.add_argument('--groups', type=int, default=32, help='Number of energy groups')
+    parser.add_argument('--groups', type=int, default=64, help='Number of energy groups')
     parser.add_argument('--niter', type=int, default=10, help='Number of iterations')
     parser.add_argument('--quad', type=int, default=8, help='Quadrature order')
     parser.add_argument('--np', type=int, default=1, help='Number of MPI ranks')
@@ -592,6 +592,13 @@ def main():
         result["error"] = "Execution timed out (>10 minutes)"
     except Exception as e:
         result["error"] = str(e)
+
+    # Print CORRECTNESS summary to stderr so benchmark runner can parse it.
+    # On success, format_speedup_summary already printed CORRECTNESS to stderr.
+    # On failure, we need to explicitly output CORRECTNESS: FAILED.
+    if not result["success"]:
+        error_msg = result.get("error", "unknown error")
+        print(f"\nCORRECTNESS:     FAILED (run failed: {error_msg})", file=sys.stderr)
 
     print(json.dumps(result, indent=2))
     sys.exit(0 if result["success"] else 1)

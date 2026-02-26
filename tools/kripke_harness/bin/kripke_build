@@ -20,7 +20,7 @@ def main():
     kripke_root = os.environ.get('KRIPKE_ROOT')
     if not kripke_root:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        candidate = os.path.join(script_dir, '..', '..', '..', 'Kripke')
+        candidate = os.path.join(script_dir, '..', '..', '..', 'Kripke_test')
         if os.path.isdir(candidate):
             kripke_root = os.path.abspath(candidate)
 

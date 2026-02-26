@@ -20,8 +20,8 @@ import json
 import re
 import time
 
-# Default MPI configuration — 4 ranks = 1 per GPU on Perlmutter A100 node
-DEFAULT_NP = 4
+# Default MPI configuration — 1 rank = single GPU (minimizes MPI overhead)
+DEFAULT_NP = 1
 
 # Pristine Laghos source (unmodified baseline)
 def _find_pristine_laghos():
@@ -45,8 +45,8 @@ PRISTINE_LAGHOS_ROOT = _find_pristine_laghos()
 # Default benchmark parameters
 DEFAULT_PROBLEM = 1  # Sedov blast
 DEFAULT_DIM = 2
-DEFAULT_RS = 3  # Refinement
-DEFAULT_TF = 0.8  # Final time
+DEFAULT_RS = 1  # Refinement — tuned for ~24s wall time on A100 with p1 dim2 np=1
+DEFAULT_TF = 0.4  # Final time
 DEFAULT_DEVICE = 'cuda'  # GPU device
 
 # Default tolerance for correctness
@@ -401,7 +401,11 @@ def main():
     )
     if modified_result is None:
         print("=" * 60)
+        print("CORRECTNESS:  FAILED (modified version crashed or failed to run)")
+        print()
         print("ERROR: Modified version run failed.")
+        print("The binary may have segfaulted, timed out, or produced no output.")
+        print("Check your changes and rebuild with laghos_build.")
         print("=" * 60)
         sys.exit(1)
 
