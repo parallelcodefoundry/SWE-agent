@@ -68,9 +68,9 @@ class CodexLauncher(FrameworkLauncher):
             api_base = os.environ.get("OPENAI_API_BASE", "")
             wire_api = "responses"  # External OpenAI uses Responses API
         else:
-            # Local vLLM
+            # Local vLLM — model name must match vLLM's registered name
             provider_id = "local-vllm"
-            model_id = "gpt-oss-120b"
+            model_id = "openai/gpt-oss-120b"
             api_base = f"http://{self.vllm_host}:{self.vllm_port}/v1"
             wire_api = "responses"
 
@@ -123,7 +123,7 @@ class CodexLauncher(FrameworkLauncher):
             wire_api = "responses"
         else:
             provider_id = "local-vllm"
-            model_id = "gpt-oss-120b"
+            model_id = "openai/gpt-oss-120b"
             api_base = f"http://{self.vllm_host}:{self.vllm_port}/v1"
             wire_api = "responses"
 

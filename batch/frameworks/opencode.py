@@ -71,10 +71,10 @@ class OpenCodeLauncher(FrameworkLauncher):
                     "local-vllm": {
                         "npm": "@ai-sdk/openai-compatible",
                         "options": {"baseURL": base_url, "apiKey": "dummy"},
-                        "models": {"gpt-oss-120b": {"name": "GPT-OSS 120B"}},
+                        "models": {"openai/gpt-oss-120b": {"name": "GPT-OSS 120B"}},
                     }
                 },
-                "model": "local-vllm/gpt-oss-120b",
+                "model": "local-vllm/openai/gpt-oss-120b",
                 # See comment above — must use object form, not string "allow"
                 "permission": {"*": "allow"},
             }
