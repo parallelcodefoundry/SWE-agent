@@ -18,7 +18,7 @@ agent:
 
       FILE EDITING GUIDANCE:
       - Primary focus: src/*.cc and src/*.hh source files
-      - Do NOT edit Makefiles or build configuration. The build harness always overrides CXX and CXXFLAGS. Makefile edits to compiler settings have no effect. Focus ONLY on optimizing source code (.cc, .hh files).
+      - You CAN edit the Makefile to add compiler flags (e.g., -funroll-loops, -ffast-math, -O3). The build harness reads CXXFLAGS from the Makefile and passes recognized flags to the compiler. Focus primarily on source code (.cc, .hh files) but build flag tuning is allowed.
       - Do NOT disable CUDA/GPU support - the goal is GPU performance optimization
 
       SUBMISSION:

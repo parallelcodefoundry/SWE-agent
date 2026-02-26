@@ -251,9 +251,9 @@ def extract_scientific_values(output_text):
     # Timer counts (verify same number of kernel invocations)
     # e.g., "Solve          21.809679        1" — the count column confirms algorithm ran
     for line in output_text.split('\n'):
-        solve_match = re.match(r'\s*Solve\s+([\d.]+)\s+(\d+)\s*$', line)
+        solve_match = re.match(r'\s*Solve\s+(\d+)\s+([\d.]+)\s*$', line)
         if solve_match:
-            values['solve_count'] = int(solve_match.group(2))
+            values['solve_count'] = int(solve_match.group(1))
             break
 
     return values
@@ -324,10 +324,10 @@ def parse_timing_from_output(stdout):
     # "Solve                21.809679        1"
     for line in stdout.split('\n'):
         # Look for timing lines with format: name  time  count
-        match = re.match(r'\s*(\w+)\s+([\d.]+)\s+(\d+)\s*$', line)
+        match = re.match(r'\s*(\w+)\s+(\d+)\s+([\d.]+)\s*$', line)
         if match:
             name = match.group(1)
-            total_s = float(match.group(2))
+            total_s = float(match.group(3))
             timing[name] = total_s
 
     return timing
@@ -430,10 +430,13 @@ def main():
     parser.add_argument('--groups', type=int, default=32, help='Number of energy groups')
     parser.add_argument('--niter', type=int, default=10, help='Number of iterations')
     parser.add_argument('--quad', type=int, default=8, help='Quadrature order')
-    parser.add_argument('--np', type=int, default=4, help='Number of MPI ranks')
+    parser.add_argument('--np', type=int, default=1, help='Number of MPI ranks')
     parser.add_argument('--procs', type=str, help='MPI decomposition as px,py,pz (must equal np)')
     parser.add_argument('--omp-threads', type=int, default=8, help='OpenMP threads per rank')
     parser.add_argument('--output', type=str, help='Output file path')
+    parser.add_argument('--baseline-only', action='store_true',
+                       help='Only run the baseline (pristine) version to establish reference timing. '
+                            'Use this before making changes to understand the baseline performance.')
     args = parser.parse_args()
 
     # Compute default procs decomposition if not specified
@@ -494,6 +497,24 @@ def main():
     # Run baseline with IDENTICAL parameters for fair comparison
     # Returns both timing and output for correctness checking
     baseline_timing, baseline_output = get_baseline(args, env)
+
+    if args.baseline_only:
+        if baseline_timing:
+            baseline_result = {
+                "success": True,
+                "baseline_only": True,
+                "baseline_timing": baseline_timing,
+                "message": "Baseline timing established. Make optimizations, rebuild with kripke_build, "
+                           "then run kripke_run (without --baseline-only) to compare.",
+            }
+        else:
+            baseline_result = {
+                "success": False,
+                "baseline_only": True,
+                "error": "Baseline run failed",
+            }
+        print(json.dumps(baseline_result, indent=2))
+        sys.exit(0 if baseline_result["success"] else 1)
 
     # Build Kripke command
     kripke_cmd = [

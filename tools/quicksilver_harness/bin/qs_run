@@ -259,6 +259,9 @@ def main():
     parser = argparse.ArgumentParser(description='Run Quicksilver benchmark (MPI + CUDA, multi-GPU)')
     parser.add_argument('--np', type=int, default=4, help='Number of MPI ranks (default: 4, one per GPU)')
     parser.add_argument('--omp-threads', type=int, default=8, help='OpenMP threads per rank (default: 8)')
+    parser.add_argument('--baseline-only', action='store_true',
+                       help='Only run the baseline (pristine) version to establish reference timing. '
+                            'Use this before making changes to understand the baseline performance.')
     args = parser.parse_args()
 
     # Find modified Quicksilver executable
@@ -313,6 +316,20 @@ def main():
         print("ERROR: Baseline run failed.")
         print("=" * 60)
         sys.exit(1)
+
+    if args.baseline_only:
+        # Baseline-only mode: just report baseline timing, no comparison
+        print("=" * 60)
+        print("QUICKSILVER BASELINE RESULTS")
+        print("=" * 60)
+        print()
+        print(f"BASELINE TIME:   {baseline_time:.2f} seconds")
+        print()
+        print("This is the reference timing from the unmodified application.")
+        print("Make your optimizations, rebuild with qs_build, then run qs_run (without --baseline-only)")
+        print("to compare your modified version against this baseline.")
+        print("=" * 60)
+        return
 
     # Run modified version
     modified_time, modified_output = run_quicksilver(

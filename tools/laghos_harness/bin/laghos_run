@@ -330,6 +330,9 @@ def main():
                        help='Disable partial assembly (use full assembly)')
     parser.add_argument('--np', type=int, default=DEFAULT_NP,
                        help=f'Number of MPI ranks (default: {DEFAULT_NP}, one per GPU)')
+    parser.add_argument('--baseline-only', action='store_true',
+                       help='Only run the baseline (pristine) version to establish reference timing. '
+                            'Use this before making changes to understand the baseline performance.')
     args = parser.parse_args()
 
     # Find modified Laghos executable
@@ -376,6 +379,20 @@ def main():
         sys.exit(1)
 
     baseline_time, baseline_energy, baseline_step, baseline_dt, baseline_output = baseline_result
+
+    if args.baseline_only:
+        print("=" * 60)
+        print("LAGHOS BASELINE RESULTS")
+        print("=" * 60)
+        print()
+        print(f"BASELINE TIME:   {baseline_time:.3f} seconds")
+        print(f"Final Energy:    {baseline_energy}")
+        print()
+        print("This is the reference timing from the unmodified application.")
+        print("Make your optimizations, rebuild with laghos_build, then run laghos_run")
+        print("(without --baseline-only) to compare your modified version against this baseline.")
+        print("=" * 60)
+        return
 
     # Run modified version
     modified_result = run_laghos(

@@ -48,11 +48,16 @@ tools:
         - MODIFIED TIME: Runtime of your version (seconds)
         - RESULT: Speedup or slowdown factor
 
-      NOTE: The benchmark takes ~50 seconds per run (~100 seconds total).
-      No arguments needed - uses a fixed, well-tested benchmark configuration.
+      NOTE: The benchmark takes ~50 seconds per run (~100 seconds total for both).
+      TIP: Use --baseline-only on your first run to get baseline timing without running the modified version.
 
       IMPORTANT: Always run qs_build after code changes before running qs_run!
-    arguments: []
+    arguments:
+      baseline_only:
+        type: "flag"
+        description: "Only run the baseline (pristine) version. Use this first to establish reference timing before making changes."
+        required: false
+        argument_format: "--baseline-only"
 
   qs_parse_timing:
     signature: "qs_parse_timing <output_file>"

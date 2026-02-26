@@ -1,7 +1,10 @@
 """SWE-agent framework launcher.
 
-Extracts SWE-agent-specific config generation and launch logic from
-HPCBenchmarkRunner, preserving the existing behavior exactly.
+Generates SWE-agent YAML configs by combining:
+  - config/hpc/llnl_base.yaml  (SWE-agent plumbing: tools, model, env vars)
+  - batch/frameworks/prompt.py  (shared prompts: system_template + instance_template)
+
+This ensures all frameworks share a single prompt source of truth.
 """
 
 import os
@@ -10,41 +13,46 @@ from pathlib import Path
 from typing import Optional
 
 
-from batch.frameworks.base import FrameworkLauncher, SESSION_TIMEOUT
+from batch.frameworks.base import (
+    FrameworkLauncher, SESSION_TIMEOUT, APP_EXECUTION_TIMEOUT, APP_ROOT_VAR,
+)
+
+
+# Per-app harness tool bundle
+APP_HARNESS_BUNDLE = {
+    "kripke": "tools/kripke_harness",
+    "laghos": "tools/laghos_harness",
+    "lulesh": "tools/lulesh_harness",
+    "quicksilver": "tools/quicksilver_harness",
+}
+
+# Profiling tool bundles (added when profiling == "with_profiling")
+PROFILING_BUNDLES = [
+    "tools/hpctoolkit",
+    "tools/hatchet",
+    "tools/system_info",
+    "tools/profiling",
+]
+
+# Common tool bundles (always included)
+COMMON_BUNDLES_BEFORE = [
+    "tools/registry",
+    "tools/edit_anthropic",
+]
+COMMON_BUNDLES_AFTER = [
+    "tools/review_on_submit_m",
+    "tools/forfeit",
+]
 
 
 class SweAgentLauncher(FrameworkLauncher):
     """Launcher for SWE-agent framework.
 
-    Uses YAML config files from config/hpc/ and runs via `sweagent run --config`.
-    This is the original framework — logic extracted from HPCBenchmarkRunner.
+    LLNL apps: prompts generated from prompt.py, injected into llnl_base.yaml.
+    GPA apps: prompts generated from prompt.py, injected into gpa_*.yaml.
     """
 
     name = "sweagent"
-
-    # Repo config templates (same as HPCBenchmarkRunner.REPO_CONFIG_TEMPLATES)
-    REPO_CONFIG_TEMPLATES = {
-        "kripke": {
-            "pristine_subdir": "Kripke",
-            "test_subdir": "Kripke_test",
-            "config_template": "config/hpc/kripke_{profiling}.yaml",
-        },
-        "laghos": {
-            "pristine_subdir": "Laghos",
-            "test_subdir": "Laghos_test",
-            "config_template": "config/hpc/laghos_{profiling}.yaml",
-        },
-        "lulesh": {
-            "pristine_subdir": "Lulesh",
-            "test_subdir": "Lulesh_test",
-            "config_template": "config/hpc/lulesh_{profiling}.yaml",
-        },
-        "quicksilver": {
-            "pristine_subdir": "Quicksilver",
-            "test_subdir": "Quicksilver_test",
-            "config_template": "config/hpc/quicksilver_{profiling}.yaml",
-        },
-    }
 
     def generate_config(
         self,
@@ -55,29 +63,50 @@ class SweAgentLauncher(FrameworkLauncher):
     ) -> Path:
         """Generate SWE-agent YAML config for this instance.
 
-        Reads the base config template, substitutes workspace paths,
-        injects SWE_AGENT_ROOT, and overrides model/API settings.
+        For LLNL apps: reads llnl_base.yaml template, generates prompts from
+        prompt.py, and injects both into the YAML via placeholder replacement.
         """
         if repo_name == "gpa":
             return self._generate_gpa_config(workspace, instance_id, output_dir)
 
-        tmpl = self.REPO_CONFIG_TEMPLATES[repo_name]
-        base_config_rel = tmpl["config_template"].format(profiling=self.profiling)
-        base_config_path = self.sweagent_root / base_config_rel
+        from batch.frameworks.prompt import build_sweagent_prompts, APP_TOOLS
 
+        # Generate prompts from shared prompt builder
+        prompts = build_sweagent_prompts(repo_name, str(workspace), self.profiling)
+
+        # Read base YAML template
+        base_config_path = self.sweagent_root / "config/hpc/llnl_base.yaml"
         with open(base_config_path) as f:
             config_content = f.read()
 
-        # Replace repo path with workspace
-        original_path = str(self.sweagent_root / tmpl["test_subdir"])
-        config_content = config_content.replace(original_path, str(workspace))
+        # Indent prompts for YAML (system_template and instance_template
+        # are under "|-" blocks indented 6 spaces)
+        sys_indented = _indent_yaml_block(prompts["system_template"], indent=6)
+        inst_indented = _indent_yaml_block(prompts["instance_template"], indent=6)
 
-        # Update ROOT env var
-        root_var = f"{repo_name.upper()}_ROOT"
         config_content = config_content.replace(
-            f"{root_var}: {original_path}",
-            f"{root_var}: {workspace}"
+            "      __SYSTEM_PROMPT__", sys_indented
         )
+        config_content = config_content.replace(
+            "      __INSTANCE_PROMPT__", inst_indented
+        )
+
+        # Per-app settings
+        tools = APP_TOOLS[repo_name]
+        run_cmd = tools["run"].split()[0]  # e.g., "kripke_run"
+        root_var = APP_ROOT_VAR[repo_name]
+        timeout = APP_EXECUTION_TIMEOUT[repo_name]
+
+        config_content = config_content.replace("__EXECUTION_TIMEOUT__", str(timeout))
+        config_content = config_content.replace("__APP_ROOT_VAR__", root_var)
+        config_content = config_content.replace("__APP_ROOT_PATH__", str(workspace))
+        config_content = config_content.replace("__REPO_PATH__", str(workspace))
+        config_content = config_content.replace("__RUN_CMD__", run_cmd)
+
+        # Build tool bundle list
+        bundles = self._build_bundle_list(repo_name)
+        bundle_yaml = "\n".join(f"      - path: {b}" for b in bundles)
+        config_content = config_content.replace("__BUNDLES__", bundle_yaml)
 
         # Inject SWE_AGENT_ROOT env var
         config_content = self._inject_sweagent_root(config_content)
@@ -245,6 +274,16 @@ timeout {SESSION_TIMEOUT} sweagent run --config {config_path} \\
             )
         return config_content
 
+    def _build_bundle_list(self, repo_name: str) -> list[str]:
+        """Build the ordered list of SWE-agent tool bundles for an app."""
+        bundles = list(COMMON_BUNDLES_BEFORE)
+        if repo_name in APP_HARNESS_BUNDLE:
+            bundles.append(APP_HARNESS_BUNDLE[repo_name])
+        if self.profiling == "with_profiling":
+            bundles.extend(PROFILING_BUNDLES)
+        bundles.extend(COMMON_BUNDLES_AFTER)
+        return bundles
+
     def _inject_sweagent_root(self, config_content: str) -> str:
         """Inject SWE_AGENT_ROOT into config env_variables."""
         sweagent_root_line = f"      SWE_AGENT_ROOT: {self.sweagent_root}"
@@ -255,3 +294,20 @@ timeout {SESSION_TIMEOUT} sweagent run --config {config_path} \\
             count=1
         )
         return config_content
+
+
+def _indent_yaml_block(text: str, indent: int = 6) -> str:
+    """Indent a multi-line string for YAML literal block scalar.
+
+    The first line gets the full indent. Subsequent lines get the same indent.
+    Empty lines are left empty (YAML literal block convention).
+    """
+    prefix = " " * indent
+    lines = text.splitlines()
+    result = []
+    for line in lines:
+        if line.strip():
+            result.append(prefix + line)
+        else:
+            result.append("")
+    return "\n".join(result)

@@ -259,9 +259,9 @@ The application source code is in {workspace}."""
 
     # First: build and get baseline
     if build_mode == "harness":
-        workflow_lines.append(f"{step}. Run {tools['run']} to get a baseline measurement BEFORE making any changes")
+        workflow_lines.append(f"{step}. Run {tools['run']} --baseline-only to get a baseline measurement BEFORE making any changes")
     else:
-        workflow_lines.append(f"{step}. Build the application (see BUILD INSTRUCTIONS below) and run {tools['run']} for baseline")
+        workflow_lines.append(f"{step}. Build the application (see BUILD INSTRUCTIONS below) and run {tools['run']} --baseline-only for baseline")
     step += 1
 
     # Profiling step (if available)
@@ -340,6 +340,213 @@ WORKFLOW:
 {completion}{codex_section}"""
 
     return prompt
+
+
+# =============================================================================
+# SWE-agent prompt builder (system + instance templates)
+# =============================================================================
+
+# Per-app key source files for SWE-agent instance_template
+APP_KEY_FILES = {
+    "kripke": "src/Kripke/Kernel/*.cpp, src/Kripke/Arch/*.h, but any file is fair game",
+    "laghos": "laghos.cpp, laghos_solver.cpp, laghos_assembly.cpp",
+    "lulesh": "cuda/src/lulesh.cu, cuda/src/allocator.cu",
+    "quicksilver": "src/*.cc, src/*.hh",
+}
+
+# Per-app file editing guidance for SWE-agent system_template
+APP_EDITING_GUIDANCE = {
+    "kripke": (
+        "- You CAN edit CMakeLists.txt to add compiler flags (e.g., -funroll-loops, -ffast-math, -O3). "
+        "The build harness reads CMake settings. Focus primarily on source code (.cpp, .h files) but build flag tuning is allowed."
+    ),
+    "laghos": (
+        "- You CAN edit the Makefile to add compiler flags (e.g., -funroll-loops, -ffast-math, -O3). "
+        "The build harness reads flags from the Makefile. Focus primarily on source code (.cpp, .cu, .cc, .hh files) but build flag tuning is allowed."
+    ),
+    "lulesh": (
+        "- You CAN edit the Makefile to add compiler flags (e.g., -funroll-loops, -ffast-math, -O3). "
+        "The build harness reads flags from the Makefile. Focus primarily on source code (.cu, .cpp files) but build flag tuning is allowed."
+    ),
+    "quicksilver": (
+        "- You CAN edit the Makefile to add compiler flags (e.g., -funroll-loops, -ffast-math, -O3). "
+        "The build harness reads CXXFLAGS from the Makefile and passes recognized flags to the compiler. "
+        "Focus primarily on source code (.cc, .hh files) but build flag tuning is allowed."
+    ),
+}
+
+# Per-app primary focus files for system_template
+APP_PRIMARY_FOCUS = {
+    "kripke": None,  # Kripke uses a broader scope message instead
+    "laghos": "laghos.cpp, laghos_solver.cpp, laghos_assembly.cpp",
+    "lulesh": "cuda/src/lulesh.cu, cuda/src/allocator.cu",
+    "quicksilver": "src/*.cc and src/*.hh source files",
+}
+
+
+def build_sweagent_prompts(
+    repo_name: str,
+    workspace: str,
+    profiling: str = "no_profiling",
+) -> dict:
+    """Build SWE-agent system_template and instance_template from shared constants.
+
+    Args:
+        repo_name: "kripke", "laghos", "lulesh", or "quicksilver"
+        workspace: Absolute path (will use {{working_dir}} Jinja2 variable)
+        profiling: "no_profiling" or "with_profiling"
+
+    Returns:
+        Dict with "system_template" and "instance_template" strings.
+    """
+    tools = APP_TOOLS[repo_name]
+    build_cmd = tools["build"]
+    run_cmd = tools["run"]
+    build_base = build_cmd.split()[0]  # e.g., "kripke_build"
+
+    # ── system_template ──────────────────────────────────────────────
+    # SWE-agent's system_template is the agent's persistent identity.
+    # Keep it focused on rules, not task details.
+
+    arch_section = ""
+    if repo_name == "kripke":
+        arch_section = """
+CRITICAL ARCHITECTURE REQUIREMENT:
+- You are optimizing for NVIDIA A100 GPUs
+- The application is PRE-BUILT with CUDA for A100 GPUs. Run {run_cmd} --baseline-only first to get a baseline measurement before making any changes.
+- You MUST use --arch CUDA for ALL {build_base} and {run_base} commands
+- Do NOT use --arch OpenMP or --arch Sequential - these are CPU backends and will not test GPU performance
+""".format(run_cmd=run_cmd, build_base=build_cmd.split()[0],
+           run_base=run_cmd.split()[0])
+    else:
+        arch_section = f"""
+CRITICAL BUILD REQUIREMENT:
+- The application is PRE-BUILT with CUDA for A100 GPUs. Run {run_cmd} --baseline-only first to get a baseline measurement before making any changes."""
+
+    # Build requirement section (common to all)
+    build_req = f"""
+- You MUST run {build_cmd} after EVERY source code edit before testing
+- Source changes have NO effect until you rebuild
+- Do NOT skip rebuilding - your changes will not be applied otherwise
+- If the build fails, call {build_base} --clean{' --arch CUDA' if repo_name == 'kripke' else ''} for a clean rebuild. Do NOT try to fix build issues manually."""
+
+    # File editing guidance
+    primary_focus = APP_PRIMARY_FOCUS[repo_name]
+    if primary_focus:
+        editing = f"""
+FILE EDITING GUIDANCE:
+- Primary focus: {primary_focus}
+{APP_EDITING_GUIDANCE[repo_name]}
+- Do NOT disable CUDA/GPU support - the goal is GPU performance optimization"""
+    else:
+        # Kripke uses broader "optimization scope" instead
+        editing = f"""
+{APP_EDITING_GUIDANCE[repo_name]}
+
+OPTIMIZATION SCOPE:
+- Explore the ENTIRE repository for optimization opportunities
+- Consider algorithmic improvements, data structure changes, memory layouts, etc.
+- Any valid performance optimization is welcome - not just GPU-specific changes
+- The key requirement is that you TEST with --arch CUDA to measure GPU performance"""
+
+    system_template = f"""\
+You are an autonomous agent that can interact with a computer to solve performance optimization tasks.
+{arch_section}{build_req}
+{editing}
+
+SUBMISSION:
+When you have made improvements and verified correctness, call the submit command.
+Reasoning: high"""
+
+    # ── instance_template ────────────────────────────────────────────
+    # SWE-agent's instance_template is the per-task prompt with {{working_dir}}.
+
+    # Workflow steps
+    workflow_lines = []
+    step = 1
+    workflow_lines.append(f"{step}. {run_cmd} --baseline-only - Get baseline timing BEFORE making any changes")
+    step += 1
+    if profiling == "with_profiling":
+        workflow_lines.append(f"{step}. hpc_profile / hatchet_analyze - Profile to identify hotspots")
+        step += 1
+    if repo_name == "kripke":
+        workflow_lines.append(f"{step}. Explore the repository to understand the codebase and identify optimization opportunities")
+    else:
+        workflow_lines.append(f"{step}. Analyze source code for bottlenecks ({APP_KEY_FILES[repo_name].split(', but')[0]})")
+    step += 1
+    workflow_lines.append(f"{step}. Edit source files to optimize")
+    step += 1
+    workflow_lines.append(f"{step}. {build_cmd} - REBUILD (required after every edit!)")
+    step += 1
+    workflow_lines.append(f"{step}. {run_cmd} - Measure improvement AND verify correctness")
+    step += 1
+    workflow_lines.append(f"{step}. submit - When done with improvements")
+    workflow = "\n".join(workflow_lines)
+
+    # Notes
+    notes = [
+        f"NOTE: {run_cmd.split()[0]} automatically checks BOTH timing AND correctness - no separate correctness check needed!",
+    ]
+    if profiling == "with_profiling":
+        profiling_tools = "hpc_profile, hpc_analyze, hatchet_analyze, compiler_analysis, gpu_info, cpu_info"
+        notes.append(f"\nPROFILING TOOLS AVAILABLE: {profiling_tools}")
+    else:
+        notes.append(f"\n{NO_PROFILING_NOTE}")
+
+    # Optimization scope for instance
+    if repo_name == "kripke":
+        scope = f"""
+OPTIMIZATION SCOPE:
+- Explore the entire repository for optimization opportunities
+- PRIORITIZE source code changes over compiler flags:
+  * Algorithmic improvements (reduce computational complexity)
+  * Data structure optimizations (memory layout, cache efficiency)
+  * Loop transformations (blocking, tiling, fusion)
+  * Parallelization improvements (better work distribution)
+- Compiler flag changes are acceptable but should NOT be your only optimization
+- Key files: {APP_KEY_FILES[repo_name]}"""
+    else:
+        scope = f"""
+SCOPE: Focus on the specific areas mentioned. Do NOT modify unrelated code.
+
+FILES TO EDIT: {APP_KEY_FILES[repo_name]}"""
+
+    # Kripke-specific critical note
+    if repo_name == "kripke":
+        critical = """
+CRITICAL:
+- Always use --arch CUDA (not OpenMP!) for builds and runs
+- Always rebuild with kripke_build --arch CUDA after editing source files!
+- If a build fails, carefully analyze the error before making changes
+- Do NOT add flags like -fno-exceptions or -fno-rtti (breaks RAJA/CAMP)"""
+    else:
+        critical = f"\nCRITICAL: Always rebuild with {build_cmd} after editing source files!"
+
+    instance_template = f"""\
+<uploaded_files>
+{{{{working_dir}}}}
+</uploaded_files>
+
+TASK: Optimize the runtime performance of {APP_DESCRIPTIONS[repo_name]}.
+
+The application is in {{{{working_dir}}}}.
+{"" if repo_name != "kripke" else '''
+IMPORTANT: You are optimizing for NVIDIA A100 GPUs.
+You MUST use --arch CUDA for all builds and runs. Do NOT use OpenMP or Sequential.
+'''}
+WORKFLOW:
+{workflow}
+
+{"".join(notes)}
+{scope}
+{critical}
+
+Thinking should be thorough."""
+
+    return {
+        "system_template": system_template,
+        "instance_template": instance_template,
+    }
 
 
 # =============================================================================

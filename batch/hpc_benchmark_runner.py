@@ -393,6 +393,16 @@ class HPCBenchmarkRunner:
 
             self.log(f"  Checked out base commit: {base_commit[:8]}")
 
+            # Add .gitignore for build artifacts so they don't pollute agent patches.
+            gitignore_path = workspace / ".gitignore"
+            build_ignores = "\n# Build artifacts (auto-added by benchmark runner)\nbuild/\n*.o\n*.a\n*.so\nCMakeCache.txt\nCMakeFiles/\ncmake_install.cmake\n"
+            if gitignore_path.exists():
+                with open(gitignore_path, "a") as f:
+                    f.write(build_ignores)
+            else:
+                with open(gitignore_path, "w") as f:
+                    f.write(build_ignores)
+
             # Symlink Laghos shared dependencies into workspace parent
             if repo_name == "laghos":
                 self._symlink_laghos_deps(workspace)
@@ -571,6 +581,17 @@ class HPCBenchmarkRunner:
             if repo_name == "laghos":
                 self._symlink_laghos_deps(workspace)
 
+            # Add .gitignore for build artifacts so they don't pollute agent patches.
+            # SWE-agent runs `git add -A` before submitting, which would stage build dirs.
+            gitignore_path = workspace / ".gitignore"
+            build_ignores = "\n# Build artifacts (auto-added by benchmark runner)\nbuild/\n*.o\n*.a\n*.so\nCMakeCache.txt\nCMakeFiles/\ncmake_install.cmake\n"
+            if gitignore_path.exists():
+                with open(gitignore_path, "a") as f:
+                    f.write(build_ignores)
+            else:
+                with open(gitignore_path, "w") as f:
+                    f.write(build_ignores)
+
             # Fix Kripke submodule references in workspace copy.
             # rsync excludes .git/modules/ (too large for 44+ submodules), but
             # submodule dirs still have .git pointer files referencing it.
@@ -681,11 +702,13 @@ class HPCBenchmarkRunner:
             )
         except subprocess.TimeoutExpired:
             result.agent_builds = False
+            result.success = False
             self.log("  [Validation] Build TIMED OUT")
             return
 
         if build_proc.returncode != 0:
             result.agent_builds = False
+            result.success = False
             self.log(f"  [Validation] Build FAILED (exit {build_proc.returncode})")
             if build_proc.stderr:
                 self.log(f"  [Validation] stderr tail: {build_proc.stderr[-500:]}")
@@ -714,6 +737,7 @@ class HPCBenchmarkRunner:
             )
         except subprocess.TimeoutExpired:
             result.agent_correctness = "timeout"
+            result.success = False
             self.log("  [Validation] Run TIMED OUT")
             return
 
@@ -726,6 +750,18 @@ class HPCBenchmarkRunner:
             result.agent_correctness = "failed"
         else:
             result.agent_correctness = "unknown"
+            # Save full run output for debugging "unknown" correctness
+            run_log_path = workspace.parent / f"{repo_name}_validation_run.log"
+            try:
+                with open(run_log_path, "w") as f:
+                    f.write(f"=== exit code: {run_proc.returncode} ===\n")
+                    f.write("=== STDOUT ===\n")
+                    f.write(run_proc.stdout or "(empty)")
+                    f.write("\n\n=== STDERR ===\n")
+                    f.write(run_proc.stderr or "(empty)")
+                self.log(f"  [Validation] Run output saved: {run_log_path}")
+            except Exception:
+                pass
 
         # --- Parse speedup ---
         if repo_name == "kripke":

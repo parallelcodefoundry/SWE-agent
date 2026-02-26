@@ -19,7 +19,7 @@ agent:
 
       FILE EDITING GUIDANCE:
       - Primary focus: laghos.cpp, laghos_solver.cpp, laghos_assembly.cpp
-      - Do NOT edit Makefiles, CMakeLists.txt, or build configuration. The build harness handles all compiler flags and CUDA setup. Focus ONLY on optimizing source code (.cpp, .cu, .cc, .hh files).
+      - You CAN edit the Makefile to add compiler flags (e.g., -funroll-loops, -ffast-math, -O3). The build harness reads flags from the Makefile. Focus primarily on source code (.cpp, .cu, .cc, .hh files) but build flag tuning is allowed.
       - Do NOT disable CUDA/GPU support - the goal is GPU performance optimization
 
       SUBMISSION:

@@ -31,10 +31,6 @@ def parse_makefile_flags(makefile_path):
     # Flags that can cause runtime crashes with CUDA
     DANGEROUS_FLAGS = ('-fno-exceptions', '-fno-rtti', '-fno-asynchronous-unwind-tables')
 
-    # Flags we recognize and can pass through
-    ALLOWED_PREFIXES = ('-O', '-funroll', '-ffast-math', '-march', '-mtune',
-                        '-fvect', '-ftree-vectorize', '-fno-', '-finline')
-
     if not os.path.isfile(makefile_path):
         return custom_flags
 
@@ -53,15 +49,11 @@ def parse_makefile_flags(makefile_path):
                 if not flag.startswith('-'):
                     continue
 
-                if flag.startswith(ALLOWED_PREFIXES):
-                    # Check if it's a dangerous flag
-                    if flag.startswith(DANGEROUS_FLAGS):
-                        custom_flags['filtered_flags'].append(flag)
-                    else:
-                        custom_flags['extra_cxxflags'].append(flag)
+                # Only filter flags known to crash CUDA; pass everything else through
+                if flag.startswith(DANGEROUS_FLAGS):
+                    custom_flags['filtered_flags'].append(flag)
                 else:
-                    # Flag doesn't match our allowlist
-                    custom_flags['ignored_flags'].append(flag)
+                    custom_flags['extra_cxxflags'].append(flag)
 
         # Look for LDFLAGS
         ldflags_pattern = r'^\s*LDFLAGS\s*[+:]?=\s*(.+)$'
@@ -282,15 +274,7 @@ def main():
             print("=" * 60)
             result["filtered_flags"] = custom_flags['filtered_flags']
 
-        if custom_flags['ignored_flags']:
-            print("=" * 60)
-            print("NOTE: The following Makefile flags were IGNORED (not recognized):")
-            for flag in custom_flags['ignored_flags']:
-                print(f"  - {flag} (IGNORED - not applied)")
-            print("Only optimization flags (-O, -f*, -march, -mtune) are passed through.")
-            print("The build always uses: nvcc with CUDA, -O3, -DHAVE_CUDA")
-            print("=" * 60)
-            result["ignored_flags"] = custom_flags['ignored_flags']
+        # ignored_flags list is no longer populated (all non-dangerous flags are passed through)
 
         # Build the -Xcompiler flags string for host compiler options
         # Start with required flags, then add user customizations

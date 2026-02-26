@@ -19,7 +19,7 @@ agent:
       - You MUST run kripke_build --arch CUDA after EVERY source code edit before testing
       - Source changes have NO effect until you rebuild
       - Do NOT skip rebuilding - your changes will not be applied otherwise
-      - Do NOT edit CMakeLists.txt or build configuration. The build harness handles all compiler flags and CUDA setup. Focus ONLY on optimizing source code (.cpp, .h files).
+      - You CAN edit CMakeLists.txt to add compiler flags (e.g., -funroll-loops, -ffast-math, -O3). The build harness reads CMake settings. Focus primarily on source code (.cpp, .h files) but build flag tuning is allowed.
       - If the build fails, call kripke_build --clean --arch CUDA for a clean rebuild. Do NOT try to fix build issues manually.
 
       OPTIMIZATION SCOPE:

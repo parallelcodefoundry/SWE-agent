@@ -96,3 +96,8 @@ tools:
         description: "Number of MPI ranks (default: 4, one per GPU)"
         required: false
         argument_format: "--np {{value}}"
+      - name: baseline_only
+        type: boolean
+        description: "Only run the baseline (pristine) version. Use this first to establish reference timing before making changes."
+        required: false
+        argument_format: "--baseline-only"
