@@ -83,6 +83,7 @@ agent:
     per_instance_call_limit: 200
   tools:
     execution_timeout: 600
+    total_execution_timeout: 3600
     tools_base_path: /tmp/sweagent
     env_variables:
       PAGER: cat
