@@ -21,6 +21,54 @@ class CodexLauncher(FrameworkLauncher):
 
     name = "codex"
 
+    # First-party OpenAI Codex models that should use the built-in "openai"
+    # provider (gets native apply_patch tool, model-specific features).
+    FIRST_PARTY_MODELS = {"gpt-5.3-codex", "gpt-5.2-codex", "o3", "o4-mini"}
+
+    def _build_config_flags(self) -> list[str]:
+        """Build -c config flags for Codex CLI."""
+        if self.model_name:
+            if "/" in self.model_name:
+                _, model_id = self.model_name.split("/", 1)
+            else:
+                model_id = self.model_name
+
+            if model_id in self.FIRST_PARTY_MODELS:
+                # First-party OpenAI model — use built-in provider for native
+                # apply_patch and model-specific features.
+                return [
+                    f"model={model_id}",
+                    "web_search=disabled",
+                ]
+            else:
+                # External model — use custom provider name to avoid collision
+                # with Codex built-in "openai" provider (or_insert semantics
+                # in config/mod.rs silently drops user overrides for built-ins).
+                provider_id = "ext"
+                api_base = os.environ.get("OPENAI_API_BASE", "")
+                return [
+                    f"model_provider={provider_id}",
+                    f"model_providers.{provider_id}.name={provider_id}",
+                    f"model_providers.{provider_id}.base_url={api_base}",
+                    f"model_providers.{provider_id}.env_key=OPENAI_API_KEY",
+                    f"model_providers.{provider_id}.wire_api=responses",
+                    f"model={model_id}",
+                    "web_search=disabled",
+                ]
+        else:
+            # Local vLLM
+            provider_id = "local-vllm"
+            api_base = f"http://{self.vllm_host}:{self.vllm_port}/v1"
+            return [
+                f"model_provider={provider_id}",
+                f"model_providers.{provider_id}.name={provider_id}",
+                f"model_providers.{provider_id}.base_url={api_base}",
+                f"model_providers.{provider_id}.env_key=OPENAI_API_KEY",
+                f"model_providers.{provider_id}.wire_api=responses",
+                "model=openai/gpt-oss-120b",
+                "web_search=disabled",
+            ]
+
     def generate_config(
         self,
         repo_name: str,
@@ -56,33 +104,9 @@ class CodexLauncher(FrameworkLauncher):
             )
 
         # Write a metadata file with the -c config flags for the launch command
-        if self.model_name:
-            # External model — use custom provider name to avoid collision
-            # with Codex built-in "openai" provider (or_insert semantics
-            # in config/mod.rs silently drops user overrides for built-ins).
-            if "/" in self.model_name:
-                _, model_id = self.model_name.split("/", 1)
-            else:
-                model_id = self.model_name
-            provider_id = "ext"
-            api_base = os.environ.get("OPENAI_API_BASE", "")
-            wire_api = "responses"  # External OpenAI uses Responses API
-        else:
-            # Local vLLM — model name must match vLLM's registered name
-            provider_id = "local-vllm"
-            model_id = "openai/gpt-oss-120b"
-            api_base = f"http://{self.vllm_host}:{self.vllm_port}/v1"
-            wire_api = "responses"
+        config_flags = self._build_config_flags()
 
-        config_flags = [
-            f"model_provider={provider_id}",
-            f"model_providers.{provider_id}.name={provider_id}",
-            f"model_providers.{provider_id}.base_url={api_base}",
-            f"model_providers.{provider_id}.env_key=OPENAI_API_KEY",
-            f"model_providers.{provider_id}.wire_api={wire_api}",
-            f"model={model_id}",
-            "web_search=disabled",
-        ]
+
 
         # Write metadata for reference
         meta_path = output_dir / f"{instance_id}_codex_config.txt"
@@ -111,31 +135,8 @@ class CodexLauncher(FrameworkLauncher):
         with open(prompt_file, "w") as f:
             f.write(prompt)
 
-        # Build -c config flags — use custom provider name "ext" for external
-        # models to avoid Codex built-in "openai" provider shadow (or_insert).
-        if self.model_name:
-            if "/" in self.model_name:
-                _, model_id = self.model_name.split("/", 1)
-            else:
-                model_id = self.model_name
-            provider_id = "ext"
-            api_base = os.environ.get("OPENAI_API_BASE", "")
-            wire_api = "responses"
-        else:
-            provider_id = "local-vllm"
-            model_id = "openai/gpt-oss-120b"
-            api_base = f"http://{self.vllm_host}:{self.vllm_port}/v1"
-            wire_api = "responses"
-
-        c_flags = (
-            f'-c "model_provider={provider_id}" '
-            f'-c "model_providers.{provider_id}.name={provider_id}" '
-            f'-c "model_providers.{provider_id}.base_url={api_base}" '
-            f'-c "model_providers.{provider_id}.env_key=OPENAI_API_KEY" '
-            f'-c "model_providers.{provider_id}.wire_api={wire_api}" '
-            f'-c "model={model_id}" '
-            f'-c "web_search=disabled"'
-        )
+        config_flags = self._build_config_flags()
+        c_flags = " ".join(f'-c "{f}"' for f in config_flags)
 
         shell_script = f"""\
 set -o pipefail  # propagate agent exit code through tee pipe
