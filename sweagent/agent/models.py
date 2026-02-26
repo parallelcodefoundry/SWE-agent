@@ -860,7 +860,7 @@ class LiteLLMModel(AbstractModel):
                     # Only one tool call per observations
                     "tool_call_id": history_item["tool_call_ids"][0],  # type: ignore
                 }
-            elif (tool_calls := history_item.get("tool_calls")) is not None:
+            elif (tool_calls := history_item.get("tool_calls")) is not None and tool_calls:
                 message = {"role": role, "content": history_item["content"], "tool_calls": tool_calls}
                 if thinking_blocks := history_item.get("thinking_blocks"):
                     message["thinking_blocks"] = thinking_blocks

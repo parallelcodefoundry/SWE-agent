@@ -74,7 +74,8 @@ Last updated: 2026-02-25 (session 26)
 ## Branch State
 
 - **Current branch**: `dev`
-- **Uncommitted changes**: 14 files (prompt redesign + build mode + harness + CLAUDE.md)
+- **Latest commit**: `d97afc87` — Prompt redesign, --build-mode flag, harness pivot, Kripke correctness
+- **Working tree**: clean
 
 ## Open Issues / TODOs
 
@@ -99,7 +100,7 @@ Last updated: 2026-02-25 (session 26)
 
 ## Next Steps
 
-1. **Commit s26 changes** — 14 files with prompt redesign, build mode, harness mods
+1. ~~**Commit s26 changes**~~ — DONE: `d97afc87` (14 files, +642/-500)
 2. **Interactive node validation** — Test one framework on one app with new prompts
 3. **Verify Codex anti-yielding** — Critical: does Codex actually implement instead of asking?
 4. **Test direct mode** — Single instance end-to-end

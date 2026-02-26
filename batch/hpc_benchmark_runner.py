@@ -571,8 +571,16 @@ class HPCBenchmarkRunner:
             if repo_name == "laghos":
                 self._symlink_laghos_deps(workspace)
 
-            # Apply Kripke git config fixes if needed
+            # Fix Kripke submodule references in workspace copy.
+            # rsync excludes .git/modules/ (too large for 44+ submodules), but
+            # submodule dirs still have .git pointer files referencing it.
+            # Symlink workspace .git/modules → test repo .git/modules so all
+            # gitdir pointers resolve correctly (read-only, no corruption risk).
             if repo_name == "kripke" and (workspace / ".git").exists():
+                test_repo_modules = Path(test_repo).resolve() / ".git" / "modules"
+                workspace_modules = workspace / ".git" / "modules"
+                if test_repo_modules.exists() and not workspace_modules.exists():
+                    workspace_modules.symlink_to(test_repo_modules)
                 subprocess.run(["git", "config", "--local", "status.submodulesummary", "false"], cwd=workspace, capture_output=True)
                 subprocess.run(["git", "config", "--local", "submodule.recurse", "false"], cwd=workspace, capture_output=True)
                 subprocess.run(["git", "config", "--local", "diff.ignoreSubmodules", "all"], cwd=workspace, capture_output=True)
