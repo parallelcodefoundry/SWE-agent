@@ -37,10 +37,11 @@ tools:
       consistent, low-variance results for reliable performance measurement.
 
       What it does:
-        1. Runs the BASELINE (unmodified Quicksilver) with the benchmark
-        2. Runs YOUR MODIFIED version with the same benchmark
-        3. Compares physics values to verify CORRECTNESS
-        4. Compares total runtime to measure SPEEDUP
+        1. Runs a warmup (discarded) to stabilize GPU timing
+        2. Runs the BASELINE (unmodified Quicksilver) with the benchmark
+        3. Runs YOUR MODIFIED version with the same benchmark
+        4. Compares physics values to verify CORRECTNESS
+        5. Compares total runtime to measure SPEEDUP
 
       Output shows:
         - CORRECTNESS: PASSED/FAILED (physics values match baseline)

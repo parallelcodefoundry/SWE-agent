@@ -44,22 +44,19 @@ tools:
 
       IMPORTANT: This tool automatically runs BOTH the pristine (unmodified)
       and modified Kripke with IDENTICAL parameters, then:
-        1. Compares TIMING to show speedup
-        2. Verifies CORRECTNESS by comparing configuration values
+        1. Runs a warmup (discarded) to stabilize GPU timing
+        2. Compares TIMING to show speedup
+        3. Verifies CORRECTNESS by comparing configuration values
 
       You do NOT need to call kripke_check_correct separately - this tool does both!
-
-      CRITICAL: Use the default parameters (4 MPI ranks, 8 OMP threads) to get
-      a meaningful performance comparison. Do NOT reduce to 1 MPI rank or
-      1 OMP thread as this defeats the purpose of parallel optimization testing.
 
       Default configuration (use these for fair comparison):
         - Backend: OpenMP
         - Layout: DGZ
         - Zones: 32,32,32
-        - Groups: 32
+        - Groups: 64
         - Iterations: 10
-        - MPI ranks: 4 (1 per GPU)
+        - MPI ranks: 1
         - OpenMP threads: 8 per rank
 
       Data layouts (6 nestings):
@@ -88,7 +85,7 @@ tools:
         argument_format: "--zones {{value}}"
       - name: groups
         type: integer
-        description: "Number of energy groups (default: 32)"
+        description: "Number of energy groups (default: 64)"
         required: false
         argument_format: "--groups {{value}}"
       - name: niter
@@ -98,7 +95,7 @@ tools:
         argument_format: "--niter {{value}}"
       - name: np
         type: integer
-        description: "Number of MPI ranks (default: 4)"
+        description: "Number of MPI ranks (default: 1)"
         required: false
         argument_format: "--np {{value}}"
       - name: omp_threads

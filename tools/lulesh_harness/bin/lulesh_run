@@ -14,6 +14,7 @@ import sys
 import json
 import re
 import time
+import statistics
 
 # Default MPI configuration — 1 rank = single GPU (minimizes MPI overhead).
 # Lulesh requires perfect cube number of ranks (1, 8, 27, 64, ...).
@@ -176,7 +177,7 @@ def validate_np_is_cube(np_ranks):
     return True
 
 
-def run_lulesh(exe_path, size, iterations, np_ranks=DEFAULT_NP, label=""):
+def run_lulesh(exe_path, size, iterations, np_ranks=DEFAULT_NP, label="", timeout=600):
     """Run LULESH with specified parameters.
 
     Uses mpirun for multi-GPU execution. Lulesh requires a perfect cube number
@@ -213,7 +214,7 @@ def run_lulesh(exe_path, size, iterations, np_ranks=DEFAULT_NP, label=""):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True,
-            timeout=600,  # 10 minute timeout
+            timeout=timeout,
             env=env
         )
         elapsed = time.time() - start_time
@@ -348,6 +349,10 @@ def main():
     parser.add_argument('--baseline-only', action='store_true',
                        help='Only run the baseline (pristine) version to establish reference timing. '
                             'Use this before making changes to understand the baseline performance.')
+    parser.add_argument('--timing-runs', type=int, default=1,
+                       help='Number of timing runs for each version (default: 1). Reports median time.')
+    parser.add_argument('--timeout-multiplier', type=float, default=3.0,
+                       help='Modified run timeout = baseline_time * multiplier (default: 3.0)')
     args = parser.parse_args()
 
     TARGET_GPU = args.gpu
@@ -389,22 +394,57 @@ def main():
     print(f"Domain decomposition: {cube_root}x{cube_root}x{cube_root}")
     print("=" * 60)
 
-    # Run baseline
-    baseline_time, baseline_energy, baseline_output = run_lulesh(
-        pristine_exe, args.size, args.iterations, args.np, "baseline (unmodified)"
-    )
-    if baseline_time is None:
-        print("=" * 60)
-        print("ERROR: Baseline run failed.")
-        print("=" * 60)
-        sys.exit(1)
+    num_runs = args.timing_runs
+
+    # --- Warmup run (discarded) ---
+    # First CUDA execution on a fresh node is slow (context init, Lustre page cache).
+    # Run once to warm up before collecting timing data.
+    print("Warmup run (discarded)...")
+    sys.stdout.flush()
+    warmup_t, _, _ = run_lulesh(pristine_exe, args.size, args.iterations, args.np, "warmup")
+    if warmup_t is None:
+        print("WARNING: Warmup run failed, proceeding anyway.")
+    else:
+        print(f"Warmup complete ({warmup_t:.3f}s)")
+    sys.stdout.flush()
+
+    # --- Baseline runs ---
+    baseline_times = []
+    baseline_energy = None
+    baseline_output = None
+
+    for i in range(num_runs):
+        run_label = f"baseline run {i+1}/{num_runs}" if num_runs > 1 else "baseline (unmodified)"
+        t, energy, output = run_lulesh(
+            pristine_exe, args.size, args.iterations, args.np, run_label
+        )
+        if t is None:
+            if i == 0:
+                print("=" * 60)
+                print("ERROR: Baseline run failed.")
+                print("=" * 60)
+                sys.exit(1)
+            print(f"  Baseline run {i+1} failed. Using {len(baseline_times)} successful runs.")
+            break
+        baseline_times.append(t)
+        if i == 0:
+            baseline_energy = energy
+            baseline_output = output
+
+    baseline_time = statistics.median(baseline_times)
 
     if args.baseline_only:
         print("=" * 60)
         print("LULESH BASELINE RESULTS")
         print("=" * 60)
         print()
-        print(f"BASELINE TIME:   {baseline_time:.3f} seconds")
+        if num_runs > 1:
+            print(f"BASELINE RUNS:   {len(baseline_times)}")
+            for i, t in enumerate(baseline_times):
+                print(f"  Run {i+1}: {t:.3f}s")
+            print(f"BASELINE TIME:   {baseline_time:.3f} seconds (median)")
+        else:
+            print(f"BASELINE TIME:   {baseline_time:.3f} seconds")
         print(f"Final Energy:    {baseline_energy}")
         print()
         print("This is the reference timing from the unmodified application.")
@@ -413,21 +453,46 @@ def main():
         print("=" * 60)
         return
 
-    # Run modified version
-    modified_time, modified_energy, modified_output = run_lulesh(
-        modified_exe, args.size, args.iterations, args.np, "modified version"
-    )
-    if modified_time is None:
-        print("=" * 60)
-        print("CORRECTNESS:  FAILED (modified version crashed or failed to run)")
-        print()
-        print("ERROR: Modified version run failed.")
-        print("The binary may have segfaulted, timed out, or produced no output.")
-        print("Check your changes and rebuild with lulesh_build.")
-        print("=" * 60)
-        sys.exit(1)
+    # --- Modified runs ---
+    modified_timeout = max(baseline_time * args.timeout_multiplier, 60)
+    modified_times = []
+    modified_energy = None
+    modified_output = None
+    timed_out = False
 
-    # Check correctness
+    for i in range(num_runs):
+        run_label = f"modified run {i+1}/{num_runs}" if num_runs > 1 else "modified version"
+        t, energy, output = run_lulesh(
+            modified_exe, args.size, args.iterations, args.np, run_label,
+            timeout=modified_timeout
+        )
+        if t is None:
+            if i == 0:
+                print("=" * 60)
+                print("CORRECTNESS:  FAILED (modified version crashed or failed to run)")
+                print()
+                print("ERROR: Modified version run failed.")
+                print("The binary may have segfaulted, timed out, or produced no output.")
+                print("Check your changes and rebuild with lulesh_build.")
+                print("=" * 60)
+                sys.exit(1)
+            print(f"  Modified run {i+1} failed/timed out. Stopping early.")
+            timed_out = True
+            break
+        modified_times.append(t)
+        if i == 0:
+            modified_energy = energy
+            modified_output = output
+        # Early stopping: if this run is way slower than baseline
+        if t > baseline_time * args.timeout_multiplier:
+            if num_runs > 1:
+                print(f"  Run {i+1} time ({t:.1f}s) exceeds {args.timeout_multiplier:.0f}x baseline ({baseline_time:.1f}s). Stopping early.")
+            timed_out = True
+            break
+
+    modified_time = statistics.median(modified_times)
+
+    # Check correctness (first run outputs only)
     correctness = check_correctness(baseline_output, modified_output)
 
     # Calculate speedup (handle edge cases)
@@ -459,6 +524,17 @@ def main():
     # Performance
     print(f"BASELINE TIME:   {baseline_time:.3f} seconds")
     print(f"MODIFIED TIME:   {modified_time:.3f} seconds")
+
+    if num_runs > 1:
+        print(f"TIMING RUNS:     {len(baseline_times)} baseline, {len(modified_times)} modified")
+        print(f"  Baseline per-run: {', '.join(f'{t:.3f}' for t in baseline_times)}")
+        print(f"  Modified per-run: {', '.join(f'{t:.3f}' for t in modified_times)}")
+        if len(baseline_times) > 1:
+            print(f"  Baseline stdev:   {statistics.stdev(baseline_times):.3f}s")
+        if len(modified_times) > 1:
+            print(f"  Modified stdev:   {statistics.stdev(modified_times):.3f}s")
+        if timed_out:
+            print(f"  NOTE: Modified runs stopped early (exceeded {args.timeout_multiplier:.0f}x baseline)")
     print()
 
     if speedup > 1.01:

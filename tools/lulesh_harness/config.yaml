@@ -35,15 +35,15 @@ tools:
     docstring: |
       Run LULESH benchmark and compare performance against baseline.
 
-      Runs with MPI across multiple GPUs (default: 8 ranks = 2x2x2 cube
-      on 4 GPUs, 2 ranks per GPU). Lulesh requires a perfect cube number
-      of MPI ranks (1, 8, 27, 64, ...).
+      Runs on a single GPU by default (np=1). Can scale to multiple GPUs
+      with --np (must be a perfect cube: 1, 8, 27, 64, ...).
 
       What it does:
-        1. Runs the BASELINE (unmodified LULESH) with the parameters
-        2. Runs YOUR MODIFIED version with the same parameters
-        3. Compares energy values to verify CORRECTNESS
-        4. Compares total runtime to measure SPEEDUP
+        1. Runs a warmup (discarded) to stabilize GPU timing
+        2. Runs the BASELINE (unmodified LULESH) with the parameters
+        3. Runs YOUR MODIFIED version with the same parameters
+        4. Compares energy values to verify CORRECTNESS
+        5. Compares total runtime to measure SPEEDUP
 
       Output shows:
         - CORRECTNESS: PASSED/FAILED (Final Origin Energy matches baseline)
@@ -51,18 +51,18 @@ tools:
         - MODIFIED TIME: Runtime of your version (seconds)
         - RESULT: Speedup or slowdown factor
 
-      Default parameters: size=30, iterations=100, np=8
+      Default parameters: size=150, iterations=5000, np=1 (~24s per run)
 
       IMPORTANT: Always run lulesh_build after code changes before running!
     arguments:
       - name: size
         type: integer
-        description: "Problem size - elements per side (default: 30)"
+        description: "Problem size - elements per side (default: 150)"
         required: false
         argument_format: "-s {{value}}"
       - name: iterations
         type: integer
-        description: "Number of iterations (default: 100)"
+        description: "Number of iterations (default: 5000)"
         required: false
         argument_format: "-i {{value}}"
       - name: gpu
@@ -72,7 +72,7 @@ tools:
         argument_format: "--gpu {{value}}"
       - name: np
         type: integer
-        description: "Number of MPI ranks — must be a perfect cube (default: 8)"
+        description: "Number of MPI ranks — must be a perfect cube (default: 1)"
         required: false
         argument_format: "--np {{value}}"
       - name: baseline_only

@@ -176,6 +176,7 @@ class HPCBenchmarkRunner:
         model_name: Optional[str] = None,
         framework: str = "sweagent",
         build_mode: str = "harness",
+        validation_runs: int = 10,
     ):
         self.output_dir = output_dir
         self.trajectory_dir = trajectory_dir
@@ -187,6 +188,7 @@ class HPCBenchmarkRunner:
         self.model_name = model_name
         self.framework = framework
         self.build_mode = build_mode
+        self.validation_runs = validation_runs
         self.sweagent_root = Path(__file__).parent.parent
         self.results: list[BenchmarkResult] = []
 
@@ -729,11 +731,16 @@ class HPCBenchmarkRunner:
         self.log("  [Validation] Build OK")
 
         # --- Run ---
-        self.log(f"  [Validation] Running {repo_name}...")
+        run_cmd = VALIDATION_RUN_CMD[repo_name]
+        if self.validation_runs > 1:
+            run_cmd += f" --timing-runs {self.validation_runs}"
+        # Timeout: base 600s (includes warmup + 1 run pair) + extra per additional pair (~120s)
+        run_timeout = 600 + max(0, self.validation_runs - 1) * 120
+        self.log(f"  [Validation] Running {repo_name} ({self.validation_runs} timing runs, timeout {run_timeout}s)...")
         try:
             run_proc = subprocess.run(
-                ["bash", "-c", f"{preamble}\n{VALIDATION_RUN_CMD[repo_name]}"],
-                capture_output=True, text=True, timeout=600
+                ["bash", "-c", f"{preamble}\n{run_cmd}"],
+                capture_output=True, text=True, timeout=run_timeout
             )
         except subprocess.TimeoutExpired:
             result.agent_correctness = "timeout"
@@ -769,6 +776,12 @@ class HPCBenchmarkRunner:
             try:
                 kripke_json = json.loads(run_proc.stdout)
                 result.agent_speedup = round(kripke_json["speedup"]["solve_speedup"], 4)
+                # Log multi-run info if present
+                multi_run = kripke_json.get("multi_run")
+                if multi_run:
+                    self.log(f"  [Validation] Multi-run: {multi_run['num_baseline_runs']}b/{multi_run['num_modified_runs']}m, "
+                            f"baseline_median={multi_run['baseline_solve_median']:.3f}s, "
+                            f"modified_median={multi_run['modified_solve_median']:.3f}s")
             except (json.JSONDecodeError, KeyError, TypeError):
                 pass
         else:
@@ -779,6 +792,11 @@ class HPCBenchmarkRunner:
                 bt, mt = float(bm.group(1)), float(mm.group(1))
                 if mt > 0:
                     result.agent_speedup = round(bt / mt, 4)
+
+            # Log multi-run details
+            timing_runs_match = re.search(r"TIMING RUNS:\s+(\d+)\s+baseline,\s+(\d+)\s+modified", output)
+            if timing_runs_match:
+                self.log(f"  [Validation] Multi-run: {timing_runs_match.group(1)}b/{timing_runs_match.group(2)}m")
 
         self.log(f"  [Validation] Correctness: {result.agent_correctness}")
         if result.agent_speedup is not None:
@@ -1543,6 +1561,12 @@ def main():
         default="harness",
         help="Build mode: harness (tools handle build) or direct (agent builds manually)"
     )
+    parser.add_argument(
+        "--validation-runs",
+        type=int,
+        default=10,
+        help="Number of timing runs per validation (default: 10). Uses median for speedup."
+    )
 
     args = parser.parse_args()
 
@@ -1585,6 +1609,7 @@ def main():
         model_name=args.model_name,
         framework=args.framework,
         build_mode=args.build_mode,
+        validation_runs=args.validation_runs,
     )
     runner.run_all(
         instances,

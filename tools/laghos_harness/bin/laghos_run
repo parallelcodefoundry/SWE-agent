@@ -18,6 +18,7 @@ import os
 import sys
 import json
 import re
+import statistics
 import time
 
 # Default MPI configuration — 1 rank = single GPU (minimizes MPI overhead)
@@ -148,7 +149,7 @@ def get_pristine_executable():
     return exe_path
 
 
-def run_laghos(exe_path, problem, dim, rs, tf, device, use_pa=True, np_ranks=DEFAULT_NP, label=""):
+def run_laghos(exe_path, problem, dim, rs, tf, device, use_pa=True, np_ranks=DEFAULT_NP, label="", timeout=600):
     """Run Laghos with specified parameters.
 
     Laghos is MPI-linked (via MFEM). When np > 1, uses mpirun for multi-GPU execution.
@@ -193,7 +194,7 @@ def run_laghos(exe_path, problem, dim, rs, tf, device, use_pa=True, np_ranks=DEF
             cwd=os.path.dirname(exe_path),
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=timeout,
             env=env
         )
         elapsed = time.time() - start_time
@@ -333,6 +334,10 @@ def main():
     parser.add_argument('--baseline-only', action='store_true',
                        help='Only run the baseline (pristine) version to establish reference timing. '
                             'Use this before making changes to understand the baseline performance.')
+    parser.add_argument('--timing-runs', type=int, default=1,
+                       help='Number of timing runs for each version (default: 1). Reports median time.')
+    parser.add_argument('--timeout-multiplier', type=float, default=3.0,
+                       help='Modified run timeout = baseline_time * multiplier (default: 3.0)')
     args = parser.parse_args()
 
     # Find modified Laghos executable
@@ -367,25 +372,66 @@ def main():
     print(f"Device: {args.device}, Partial Assembly: {use_pa}, MPI Ranks: {args.np}")
     print("=" * 60)
 
-    # Run baseline
-    baseline_result = run_laghos(
-        pristine_exe, args.problem, args.dim, args.rs, args.tf,
-        args.device, use_pa, args.np, "baseline (unmodified)"
-    )
-    if baseline_result is None:
-        print("=" * 60)
-        print("ERROR: Baseline run failed.")
-        print("=" * 60)
-        sys.exit(1)
+    num_runs = args.timing_runs
 
-    baseline_time, baseline_energy, baseline_step, baseline_dt, baseline_output = baseline_result
+    # --- Warmup run (discarded) ---
+    # First CUDA execution on a fresh node is slow (context init, Lustre page cache).
+    # Run once to warm up before collecting timing data.
+    print("Warmup run (discarded)...")
+    sys.stdout.flush()
+    warmup_result = run_laghos(
+        pristine_exe, args.problem, args.dim, args.rs, args.tf,
+        args.device, use_pa, args.np, "warmup"
+    )
+    if warmup_result is None:
+        print("WARNING: Warmup run failed, proceeding anyway.")
+    else:
+        print(f"Warmup complete ({warmup_result[0]:.3f}s)")
+    sys.stdout.flush()
+
+    # --- Baseline runs ---
+    baseline_times = []
+    baseline_energy = None
+    baseline_step = None
+    baseline_dt = None
+    baseline_output = None
+
+    for i in range(num_runs):
+        run_label = f"baseline run {i+1}/{num_runs}" if num_runs > 1 else "baseline (unmodified)"
+        result = run_laghos(
+            pristine_exe, args.problem, args.dim, args.rs, args.tf,
+            args.device, use_pa, args.np, run_label
+        )
+        if result is None:
+            if i == 0:
+                print("=" * 60)
+                print("ERROR: Baseline run failed.")
+                print("=" * 60)
+                sys.exit(1)
+            print(f"  Baseline run {i+1} failed. Using {len(baseline_times)} successful runs.")
+            break
+        t, energy, step, dt, output = result
+        baseline_times.append(t)
+        if i == 0:
+            baseline_energy = energy
+            baseline_step = step
+            baseline_dt = dt
+            baseline_output = output
+
+    baseline_time = statistics.median(baseline_times)
 
     if args.baseline_only:
         print("=" * 60)
         print("LAGHOS BASELINE RESULTS")
         print("=" * 60)
         print()
-        print(f"BASELINE TIME:   {baseline_time:.3f} seconds")
+        if num_runs > 1:
+            print(f"BASELINE RUNS:   {len(baseline_times)}")
+            for i, t in enumerate(baseline_times):
+                print(f"  Run {i+1}: {t:.3f}s")
+            print(f"BASELINE TIME:   {baseline_time:.3f} seconds (median)")
+        else:
+            print(f"BASELINE TIME:   {baseline_time:.3f} seconds")
         print(f"Final Energy:    {baseline_energy}")
         print()
         print("This is the reference timing from the unmodified application.")
@@ -394,24 +440,52 @@ def main():
         print("=" * 60)
         return
 
-    # Run modified version
-    modified_result = run_laghos(
-        modified_exe, args.problem, args.dim, args.rs, args.tf,
-        args.device, use_pa, args.np, "modified version"
-    )
-    if modified_result is None:
-        print("=" * 60)
-        print("CORRECTNESS:  FAILED (modified version crashed or failed to run)")
-        print()
-        print("ERROR: Modified version run failed.")
-        print("The binary may have segfaulted, timed out, or produced no output.")
-        print("Check your changes and rebuild with laghos_build.")
-        print("=" * 60)
-        sys.exit(1)
+    # --- Modified runs ---
+    modified_timeout = max(baseline_time * args.timeout_multiplier, 60)
+    modified_times = []
+    modified_energy = None
+    modified_step = None
+    modified_dt = None
+    modified_output = None
+    timed_out = False
 
-    modified_time, modified_energy, modified_step, modified_dt, modified_output = modified_result
+    for i in range(num_runs):
+        run_label = f"modified run {i+1}/{num_runs}" if num_runs > 1 else "modified version"
+        result = run_laghos(
+            modified_exe, args.problem, args.dim, args.rs, args.tf,
+            args.device, use_pa, args.np, run_label,
+            timeout=modified_timeout
+        )
+        if result is None:
+            if i == 0:
+                print("=" * 60)
+                print("CORRECTNESS:  FAILED (modified version crashed or failed to run)")
+                print()
+                print("ERROR: Modified version run failed.")
+                print("The binary may have segfaulted, timed out, or produced no output.")
+                print("Check your changes and rebuild with laghos_build.")
+                print("=" * 60)
+                sys.exit(1)
+            print(f"  Modified run {i+1} failed/timed out. Stopping early.")
+            timed_out = True
+            break
+        t, energy, step, dt, output = result
+        modified_times.append(t)
+        if i == 0:
+            modified_energy = energy
+            modified_step = step
+            modified_dt = dt
+            modified_output = output
+        # Early stopping: if this run is way slower than baseline
+        if t > baseline_time * args.timeout_multiplier:
+            if num_runs > 1:
+                print(f"  Run {i+1} time ({t:.1f}s) exceeds {args.timeout_multiplier:.0f}x baseline ({baseline_time:.1f}s). Stopping early.")
+            timed_out = True
+            break
 
-    # Check correctness
+    modified_time = statistics.median(modified_times)
+
+    # Check correctness (first run outputs only)
     correctness = check_correctness(baseline_output, modified_output)
 
     # Calculate speedup
@@ -440,6 +514,17 @@ def main():
     # Performance
     print(f"BASELINE TIME:   {baseline_time:.3f} seconds")
     print(f"MODIFIED TIME:   {modified_time:.3f} seconds")
+
+    if num_runs > 1:
+        print(f"TIMING RUNS:     {len(baseline_times)} baseline, {len(modified_times)} modified")
+        print(f"  Baseline per-run: {', '.join(f'{t:.3f}' for t in baseline_times)}")
+        print(f"  Modified per-run: {', '.join(f'{t:.3f}' for t in modified_times)}")
+        if len(baseline_times) > 1:
+            print(f"  Baseline stdev:   {statistics.stdev(baseline_times):.3f}s")
+        if len(modified_times) > 1:
+            print(f"  Modified stdev:   {statistics.stdev(modified_times):.3f}s")
+        if timed_out:
+            print(f"  NOTE: Modified runs stopped early (exceeded {args.timeout_multiplier:.0f}x baseline)")
     print()
 
     if speedup > 1.0:

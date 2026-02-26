@@ -11,6 +11,7 @@ import sys
 import json
 import time
 import re
+import statistics
 
 # Pristine Kripke source (unmodified)
 def _find_pristine_kripke():
@@ -115,7 +116,7 @@ def get_pristine_executable(arch='OpenMP'):
 
     return exe_path
 
-def run_baseline(args, env):
+def run_baseline(args, env, timeout=600):
     """Run pristine Kripke to establish baseline timing.
 
     IMPORTANT: Always runs with IDENTICAL parameters as the modified version
@@ -164,7 +165,7 @@ def run_baseline(args, env):
             cwd=os.path.dirname(exe_path),
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=timeout,
             env=env
         )
 
@@ -439,6 +440,10 @@ def main():
     parser.add_argument('--baseline-only', action='store_true',
                        help='Only run the baseline (pristine) version to establish reference timing. '
                             'Use this before making changes to understand the baseline performance.')
+    parser.add_argument('--timing-runs', type=int, default=1,
+                       help='Number of timing runs for each version (default: 1). Reports median time.')
+    parser.add_argument('--timeout-multiplier', type=float, default=3.0,
+                       help='Modified run timeout = baseline_time * multiplier (default: 3.0)')
     args = parser.parse_args()
 
     # Compute default procs decomposition if not specified
@@ -496,12 +501,39 @@ def main():
     env['OMP_PROC_BIND'] = 'spread'
     env['OMP_PLACES'] = 'threads'
 
-    # Run baseline with IDENTICAL parameters for fair comparison
-    # Returns both timing and output for correctness checking
-    baseline_timing, baseline_output = get_baseline(args, env)
+    num_runs = args.timing_runs
+
+    # --- Warmup run (discarded) ---
+    # First CUDA execution on a fresh node is slow (context init, Lustre page cache).
+    # Run once to warm up before collecting timing data.
+    print("Warmup run (discarded)...", file=sys.stderr)
+    warmup_timing, _ = run_baseline(args, env)
+    if warmup_timing is None or 'Solve' not in warmup_timing:
+        print("WARNING: Warmup run failed, proceeding anyway.", file=sys.stderr)
+    else:
+        print(f"Warmup complete ({warmup_timing['Solve']:.3f}s)", file=sys.stderr)
+
+    # --- Baseline runs ---
+    baseline_solve_times = []
+    baseline_timing = None
+    baseline_output = None
+
+    for i in range(num_runs):
+        if num_runs > 1:
+            print(f"Baseline run {i+1}/{num_runs}...", file=sys.stderr)
+        b_timing, b_output = run_baseline(args, env)
+        if b_timing is None or 'Solve' not in b_timing:
+            if i == 0:
+                break  # First baseline failed
+            print(f"  Baseline run {i+1} failed. Using {len(baseline_solve_times)} successful runs.", file=sys.stderr)
+            break
+        baseline_solve_times.append(b_timing['Solve'])
+        if i == 0:
+            baseline_timing = b_timing
+            baseline_output = b_output
 
     if args.baseline_only:
-        if baseline_timing:
+        if baseline_solve_times:
             baseline_result = {
                 "success": True,
                 "baseline_only": True,
@@ -509,6 +541,9 @@ def main():
                 "message": "Baseline timing established. Make optimizations, rebuild with kripke_build, "
                            "then run kripke_run (without --baseline-only) to compare.",
             }
+            if num_runs > 1:
+                baseline_result["baseline_solve_times"] = baseline_solve_times
+                baseline_result["baseline_solve_median"] = statistics.median(baseline_solve_times)
         else:
             baseline_result = {
                 "success": False,
@@ -518,7 +553,7 @@ def main():
         print(json.dumps(baseline_result, indent=2))
         sys.exit(0 if baseline_result["success"] else 1)
 
-    # Build Kripke command
+    # Build Kripke command for modified version
     kripke_cmd = [
         exe_path,
         '--arch', args.arch,
@@ -531,69 +566,131 @@ def main():
     ]
 
     # Always use mpirun for MPI execution (avoids nested srun hangs in batch mode).
-    # Bind each rank to a specific GPU via OMPI_COMM_WORLD_LOCAL_RANK to prevent
-    # CUDA illegal memory access from all ranks competing for the same GPU.
     if args.np > 1:
-        # Wrapper sets CUDA_VISIBLE_DEVICES per rank so each rank gets one GPU
         cmd = ['mpirun', '-np', str(args.np), '--bind-to', 'none', '--oversubscribe',
                'bash', '-c', 'export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK; exec "$@"',
                '--'] + kripke_cmd
     else:
         cmd = kripke_cmd
 
-    try:
-        print(f"Running: {' '.join(cmd)}", file=sys.stderr)
-        print(f"OMP_NUM_THREADS={args.omp_threads}", file=sys.stderr)
-        start_time = time.time()
+    # --- Modified runs ---
+    baseline_solve_median = statistics.median(baseline_solve_times) if baseline_solve_times else 600
+    modified_timeout = max(baseline_solve_median * args.timeout_multiplier, 60)
 
-        proc = subprocess.run(
-            cmd,
-            cwd=os.path.dirname(exe_path),
-            capture_output=True,
-            text=True,
-            timeout=600,  # 10 minute timeout
-            env=env
-        )
+    modified_solve_times = []
+    modified_timing = None
+    modified_output = None
+    correctness = None
+    timed_out = False
 
-        elapsed = time.time() - start_time
+    for i in range(num_runs):
+        run_label = f"modified run {i+1}/{num_runs}" if num_runs > 1 else "modified"
+        print(f"Running {run_label}...", file=sys.stderr)
+        print(f"  Command: {' '.join(cmd)}", file=sys.stderr)
 
-        result["returncode"] = proc.returncode
-        result["elapsed_seconds"] = elapsed
-        result["stdout"] = proc.stdout
-        result["stderr"] = proc.stderr[-2000:] if len(proc.stderr) > 2000 else proc.stderr
+        try:
+            start_time = time.time()
+            proc = subprocess.run(
+                cmd,
+                cwd=os.path.dirname(exe_path),
+                capture_output=True,
+                text=True,
+                timeout=modified_timeout,
+                env=env
+            )
+            elapsed = time.time() - start_time
 
-        if proc.returncode == 0:
-            result["success"] = True
+            if proc.returncode == 0:
+                m_timing = parse_timing_from_output(proc.stdout)
+                if m_timing and 'Solve' in m_timing:
+                    modified_solve_times.append(m_timing['Solve'])
+                    if i == 0:
+                        modified_timing = m_timing
+                        modified_output = proc.stdout
+                        result["returncode"] = proc.returncode
+                        result["elapsed_seconds"] = elapsed
+                        result["stdout"] = proc.stdout
+                        result["stderr"] = proc.stderr[-2000:] if len(proc.stderr) > 2000 else proc.stderr
+                        # Correctness check on first run only
+                        if baseline_output:
+                            correctness = check_correctness(baseline_output, proc.stdout)
+                            result["correctness"] = correctness
+                    # Early stopping
+                    if m_timing['Solve'] > baseline_solve_median * args.timeout_multiplier:
+                        if num_runs > 1:
+                            print(f"  Solve time ({m_timing['Solve']:.3f}s) exceeds {args.timeout_multiplier:.0f}x baseline ({baseline_solve_median:.3f}s). Stopping.", file=sys.stderr)
+                        timed_out = True
+                        break
+                else:
+                    if i == 0:
+                        result["error"] = "Failed to parse timing from modified run output"
+                        break
+                    timed_out = True
+                    break
+            else:
+                if i == 0:
+                    result["returncode"] = proc.returncode
+                    result["stderr"] = proc.stderr[-2000:] if len(proc.stderr) > 2000 else proc.stderr
+                    result["error"] = f"Modified run failed (exit {proc.returncode})"
+                    break
+                print(f"  Modified run {i+1} failed. Stopping early.", file=sys.stderr)
+                timed_out = True
+                break
 
-            # Parse timing from output
-            current_timing = parse_timing_from_output(proc.stdout)
-            result["timing"] = current_timing
+        except subprocess.TimeoutExpired:
+            if i == 0:
+                result["error"] = f"Modified run timed out (>{modified_timeout:.0f}s)"
+                break
+            print(f"  Modified run {i+1} timed out. Stopping early.", file=sys.stderr)
+            timed_out = True
+            break
+        except Exception as e:
+            if i == 0:
+                result["error"] = str(e)
+                break
+            timed_out = True
+            break
 
-            # Check correctness by comparing scientific values
-            correctness = None
-            if baseline_output:
-                correctness = check_correctness(baseline_output, proc.stdout)
-                result["correctness"] = correctness
+    # Calculate speedup using medians
+    if modified_solve_times and baseline_solve_times:
+        result["success"] = True
+        modified_solve_median = statistics.median(modified_solve_times)
 
-            # Calculate speedup vs baseline
-            if baseline_timing and current_timing:
-                speedup = calculate_speedup(baseline_timing, current_timing)
-                result["speedup"] = speedup
-                result["baseline_timing"] = baseline_timing
+        # Build timing dicts with median values for speedup calculation
+        baseline_for_speedup = dict(baseline_timing)
+        baseline_for_speedup['Solve'] = baseline_solve_median
+        modified_for_speedup = dict(modified_timing)
+        modified_for_speedup['Solve'] = modified_solve_median
 
-                # Print prominent speedup and correctness summary
-                print("\n" + format_speedup_summary(speedup, correctness, args), file=sys.stderr)
+        speedup = calculate_speedup(baseline_for_speedup, modified_for_speedup)
+        result["speedup"] = speedup
+        result["baseline_timing"] = baseline_timing
+        result["timing"] = modified_timing
 
-        # Save output to file if requested
-        if args.output:
-            with open(args.output, 'w') as f:
-                f.write(proc.stdout)
-            result["output_file"] = args.output
+        # Multi-run stats
+        if num_runs > 1:
+            result["multi_run"] = {
+                "num_baseline_runs": len(baseline_solve_times),
+                "num_modified_runs": len(modified_solve_times),
+                "baseline_solve_times": baseline_solve_times,
+                "modified_solve_times": modified_solve_times,
+                "baseline_solve_median": baseline_solve_median,
+                "modified_solve_median": modified_solve_median,
+                "early_stopped": timed_out,
+            }
+            if len(baseline_solve_times) > 1:
+                result["multi_run"]["baseline_solve_stdev"] = statistics.stdev(baseline_solve_times)
+            if len(modified_solve_times) > 1:
+                result["multi_run"]["modified_solve_stdev"] = statistics.stdev(modified_solve_times)
 
-    except subprocess.TimeoutExpired:
-        result["error"] = "Execution timed out (>10 minutes)"
-    except Exception as e:
-        result["error"] = str(e)
+        # Print prominent speedup and correctness summary
+        print("\n" + format_speedup_summary(speedup, correctness, args), file=sys.stderr)
+
+    # Save output to file if requested
+    if args.output and modified_output:
+        with open(args.output, 'w') as f:
+            f.write(modified_output)
+        result["output_file"] = args.output
 
     # Print CORRECTNESS summary to stderr so benchmark runner can parse it.
     # On success, format_speedup_summary already printed CORRECTNESS to stderr.
