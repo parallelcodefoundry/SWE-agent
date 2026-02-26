@@ -152,7 +152,7 @@ def run_baseline(args, env):
     # CUDA illegal memory access from all ranks competing for the same GPU.
     if args.np > 1:
         # Wrapper sets CUDA_VISIBLE_DEVICES per rank so each rank gets one GPU
-        cmd = ['mpirun', '-np', str(args.np), '--bind-to', 'none',
+        cmd = ['mpirun', '-np', str(args.np), '--bind-to', 'none', '--oversubscribe',
                'bash', '-c', 'export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK; exec "$@"',
                '--'] + kripke_cmd
     else:
@@ -512,7 +512,7 @@ def main():
     # CUDA illegal memory access from all ranks competing for the same GPU.
     if args.np > 1:
         # Wrapper sets CUDA_VISIBLE_DEVICES per rank so each rank gets one GPU
-        cmd = ['mpirun', '-np', str(args.np), '--bind-to', 'none',
+        cmd = ['mpirun', '-np', str(args.np), '--bind-to', 'none', '--oversubscribe',
                'bash', '-c', 'export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK; exec "$@"',
                '--'] + kripke_cmd
     else:
