@@ -163,6 +163,7 @@ export RUST_LOG=info
 # stderr (RUST_LOG traces) goes to _agent_realtime.log via subprocess.
 timeout {SESSION_TIMEOUT} codex exec \\
     --dangerously-bypass-approvals-and-sandbox \\
+    --enable apply_patch_freeform \\
     --skip-git-repo-check \\
     --json \\
     --ephemeral \\

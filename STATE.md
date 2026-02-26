@@ -1,56 +1,55 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-02-26 (session 29)
+Last updated: 2026-02-26 (session 30)
 
 ## Current Focus
 
-**Session 29: Fixed harness bugs found by code review, updated runtime defaults from A100 characterization, submitted 5 batch jobs (gpt-4o-mini + Claude Code).**
+**Session 30: Fixed 2 remaining harness bugs (Kripke regex column order + SWE-agent tool signatures), analyzed session 29 results, resubmitted all 5 benchmark jobs.**
 
-## Session 29 — Changes Implemented
+## Session 30 — Changes Implemented
 
-### Harness Bug Fixes
-1. **kripke_run timing regex** — Was `(\d+)\s+([\d.]+)` (int, float) but real output is `([\d.eE+-]+)\s+(\d+)` (float, int). `\d+` could never match `21.809679`. Fixed both `parse_timing_from_output()` and `extract_scientific_values()`.
-2. **CORRECTNESS: FAILED output** — All 4 run harnesses (kripke/laghos/lulesh/qs) now output `CORRECTNESS: FAILED` on crash/failure. Previously only output `ERROR` which benchmark runner doesn't parse.
-3. **Fallback path fixes** — qs_run, qs_build, kripke_build now fall back to `*_test` repos instead of pristine repos.
-4. **qs_build dead code** — Removed unused `ignored_flags` key and stale comment.
-5. **claude.py nested session** — Added `unset CLAUDECODE` to prevent "nested session" error when benchmark runner is launched from within Claude Code.
-6. **prompt.py phantom tool** — Removed non-existent `hpc_analyze` from profiling tools string.
-7. **Harness permissions** — All harness scripts chmod 755 (some were 710/600).
+### Bug Fixes
+1. **Kripke timer regex column order** — Session 29 "fix" still had columns reversed. Kripke source (Timing.cpp) prints `name count(int) seconds(float)` via `printf("%-16s %12d %12.5lf")`. Regex was matching `name float int`. Fixed in both `parse_timing_from_output()` and `extract_scientific_values()`.
+2. **SWE-agent tool signatures missing --baseline-only** — All 4 harness config.yaml files had `baseline_only` defined as an argument but NOT in the signature string. SWE-agent's Pydantic validation requires all args in the signature. Added `[--baseline-only]` to all 4 signatures.
+3. **qs_run config format** — Signature was empty string (no args), argument used dict format instead of list format. Fixed both.
 
-### Runtime Defaults Updated (from A100 characterization)
-8. **Kripke**: groups 32→64 (28.4s, 0.46% CV at zones=32³ niter=10 np=1)
-9. **Lulesh**: s=30→150, i=100→5000, np=8→1 (23.6s, 0.28% CV)
-10. **Laghos**: rs=3→1, tf=0.8→0.4, np=4→1 (23.8s wall time)
-
-### Batch Results Deep Dive (Session 27-28 Runs)
-Analyzed all 6 completed batch jobs. Root causes:
-- **SWE-agent vLLM**: Got furthest (20+ steps), made 1 real Laghos optimization. Model too weak to finish.
-- **Codex**: 120 tokens, 1 turn, needs_follow_up=false immediately. Model weakness.
-- **OpenHands**: Pydantic message format error on first API call to vLLM.
-- **Claude Code**: `CLAUDECODE` env var blocked nested session. Now fixed.
-- **OpenCode**: Rate limited, exited after 1 step.
-- **SWE-agent external**: 404 model not found.
-- 50% framework bugs, 40% model weakness, 10% infrastructure.
+### Session 29 Results Analysis
+- **Laghos timeout fixed**: 0/6 → 3/4 passing (runtime param tuning worked)
+- **Lulesh improved**: 0/6 "unknown" → 2/4 passing
+- **Kripke still broken**: regex bug caused all "unknown" (now fixed)
+- **SWE-agent never started**: config validation crash (now fixed)
+- **Claude Code job cancelled**: Never ran (resubmitted)
+- Build failures are now agent-caused (model weakness), not infrastructure
 
 ## Active Experiments
 
 | Job ID | Framework | Model | Apps | Status |
 |--------|-----------|-------|------|--------|
-| 49392491 | SWE-agent | gpt-4o-mini | all 4 LLNL | PENDING |
-| 49392492 | Codex | gpt-4o-mini | all 4 LLNL | PENDING |
-| 49392493 | OpenHands | gpt-4o-mini | all 4 LLNL | PENDING |
-| 49392496 | OpenCode | gpt-4o-mini | all 4 LLNL | PENDING |
-| 49392497 | Claude Code | claude-opus-4-6 | all 4 LLNL | PENDING |
-| 49392034 | — | — | Laghos char | RUNNING |
+| 49405192 | SWE-agent | gpt-4o-mini | all 4 LLNL | PENDING |
+| 49405193 | Codex | gpt-4o-mini | all 4 LLNL | PENDING |
+| 49405194 | OpenHands | gpt-4o-mini | all 4 LLNL | PENDING |
+| 49405195 | OpenCode | gpt-4o-mini | all 4 LLNL | PENDING |
+| 49405196 | Claude Code | claude-opus-4-6 | all 4 LLNL | PENDING |
 
-## Branch State
+## Completed Batch Results (Session 29 Runs)
 
-- **Current branch**: `dev`
-- **Latest commit**: `bb7d8f3d` — Session 29: Fix harness bugs, update defaults from characterization data
-- **Working tree**: clean (STATE.md/HANDOFF.md pending)
-- **Ahead of origin/dev**: ~17 commits (not yet pushed)
+| Job ID | Framework | Kripke | Laghos | Lulesh | Quicksilver |
+|--------|-----------|--------|--------|--------|-------------|
+| 49392491 | SWE-agent | config crash | PASSED 1.23x* | PASSED 0.95x* | PASSED 0.97x* |
+| 49392492 | Codex | BUILD FAIL | BUILD FAIL | BUILD FAIL | **PASSED 1.11x** |
+| 49392493 | OpenHands | unknown (timeout) | PASSED 1.02x | BUILD FAIL | unknown (timeout) |
+| 49392496 | OpenCode | BUILD FAIL | PASSED 1.04x | PASSED 0.95x | PASSED 1.04x |
+| 49392497 | Claude Code | CANCELLED | CANCELLED | CANCELLED | CANCELLED |
 
-## Completed Batch Results (Session 27-28)
+*SWE-agent results are baseline-only (agent never started due to config crash)
+
+### Session 29 Failure Analysis
+- **SWE-agent**: Config validation crash → agent never ran. All "results" are just pristine baselines.
+- **Codex (gpt-4o-mini)**: Destructive changes — spammed Kripke CMakeLists, deleted Laghos files, broke Lulesh CUDA. Only QS succeeded (compiler flags + kernel launch config → 1.11x).
+- **OpenHands**: Timed out on Kripke/QS (60 min each, no changes). Made moderate Laghos improvement. Destroyed Lulesh with 312KB rewrite.
+- **OpenCode**: Most consistent (3/4 passing). Kripke failed trying raw CUDA inside RAJA abstractions. Modest speedups (1.04x).
+
+## Completed Batch Results (Session 27-28 Runs)
 
 | Job ID | Framework | Kripke | Laghos | Lulesh | Quicksilver |
 |--------|-----------|--------|--------|--------|-------------|
@@ -70,40 +69,39 @@ Analyzed all 6 completed batch jobs. Root causes:
 - 23.6s wall time, 0.28% CV
 
 ### Laghos (RECOMMENDED: p1 dim2 rs=1 tf=0.4 np=1)
-- 23.8s wall time (single run — Laghos characterization job still running for variance data)
-- Alternative: p1 dim2 rs=2 tf=0.1 → 25.7s
+- 23.8s wall time (Laghos characterization job timed out — variance TBD)
+
+## Branch State
+
+- **Current branch**: `dev`
+- **Latest commit**: `82e6212e` — Fix Kripke timer regex column order + add --baseline-only to SWE-agent tool signatures
+- **Working tree**: clean (STATE.md pending)
+- **Ahead of origin/dev**: ~19 commits (not yet pushed)
 
 ## Open Issues / TODOs
 
-### Fixed This Session (Session 29)
-- [x] kripke_run timing regex (was completely broken)
-- [x] CORRECTNESS: FAILED output on all 4 harness crashes
-- [x] Fallback path fixes (qs_run, qs_build, kripke_build)
-- [x] Claude Code nested session (CLAUDECODE env var)
-- [x] Phantom hpc_analyze tool in prompt.py
-- [x] Harness permissions (chmod 755)
-- [x] Runtime characterization (Kripke, Lulesh, Laghos)
-- [x] Updated harness defaults from characterization data
-- [x] Submitted gpt-4o-mini batch runs (all 5 frameworks × 4 apps)
+### Fixed This Session (Session 30)
+- [x] Kripke timer regex column order (was STILL reversed after session 29 fix)
+- [x] SWE-agent tool signatures missing --baseline-only (Pydantic crash)
+- [x] qs_run empty signature + dict-style argument format
+- [x] Resubmitted all 5 benchmark jobs
 
 ### Still Open
-- [ ] **Laghos characterization variance** — Job 49392034 still running, need CV data
+- [ ] **Laghos characterization variance** — Job 49392034 timed out, need to rerun
 - [ ] **Old per-app YAML configs** — Can remove `config/hpc/{app}_{profiling}.yaml`
 - [ ] **GPA baseline build failures** — backprop/lavaMD missing C headers
 - [ ] **GPA BFS/Gaussian correctness** — Float precision from `__ldg()`
-- [ ] **Push dev to origin** — ~17 commits ready
+- [ ] **Push dev to origin** — ~19 commits ready
 
 ### Next Steps
-1. Check batch job results when they complete (49392491-49392497)
-2. Get Laghos variance data from characterization job (49392034)
-3. Push dev to origin
-4. Analyze gpt-4o-mini results vs previous gpt-oss-120b results
+1. Check batch job results when they complete (49405192-49405196)
+2. Push dev to origin
+3. Analyze session 30 results — expect Kripke correctness to work now + SWE-agent to actually run
 
 ## Recent Decisions
 
+- 2026-02-26 (s30): Confirmed Kripke Timing.cpp format: `printf("%-16s %12d %12.5lf", name, count, seconds)`
 - 2026-02-26 (s29): Use gpt-4o-mini for external model benchmarks (better than gpt-oss-120b)
 - 2026-02-26 (s29): All apps default to np=1 (single GPU) — minimizes MPI overhead, cleaner benchmarking
 - 2026-02-26 (s29): Runtime targets ~24s wall time per harness run (characterization-based)
 - 2026-02-26 (s28): SWE-agent prompts generated from prompt.py, not hardcoded in YAML
-- 2026-02-26 (s28): Kripke default MPI ranks reduced to 1
-- 2026-02-26 (s28): Only truly dangerous flags filtered in qs_build
