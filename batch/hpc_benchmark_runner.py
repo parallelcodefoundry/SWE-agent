@@ -556,7 +556,7 @@ class HPCBenchmarkRunner:
                     "--exclude=build",
                     f"{test_repo}/", f"{workspace}/"
                 ]
-                rsync_result = subprocess.run(rsync_cmd, capture_output=True, text=True, timeout=120)
+                rsync_result = subprocess.run(rsync_cmd, capture_output=True, text=True, timeout=300)
                 if rsync_result.returncode != 0:
                     self.log(f"  ERROR: rsync failed: {rsync_result.stderr}")
                     result.error_message = f"rsync failed: {rsync_result.stderr}"
