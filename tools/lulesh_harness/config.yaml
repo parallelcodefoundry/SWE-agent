@@ -17,6 +17,9 @@ tools:
       MPI is enabled by default. Lulesh uses 8 MPI ranks (2x2x2 cube) on
       4 GPUs. Use --no-mpi to disable if needed.
 
+      NOTE: The active Makefile is cuda/Makefile (NOT cuda/build/Makefile.CRAY,
+      which is a legacy file and is not used). Source files are in cuda/src/.
+
       Returns build status and any compilation errors.
     arguments:
       - name: clean
@@ -31,7 +34,7 @@ tools:
         argument_format: "--no-mpi"
 
   lulesh_run:
-    signature: "lulesh_run [<size>] [<iterations>] [<gpu>] [<np>] [--baseline-only]"
+    signature: "lulesh_run [<size>] [<iterations>] [<gpu>] [<np>] [--baseline_only]"
     docstring: |
       Run LULESH benchmark and compare performance against baseline.
 

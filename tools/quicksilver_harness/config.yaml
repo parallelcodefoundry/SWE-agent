@@ -29,7 +29,7 @@ tools:
         argument_format: "--clean"
 
   qs_run:
-    signature: "qs_run [--baseline-only]"
+    signature: "qs_run [--baseline_only]"
     docstring: |
       Run Quicksilver benchmark and compare performance against baseline.
 

@@ -409,6 +409,17 @@ class HPCBenchmarkRunner:
             if repo_name == "laghos":
                 self._symlink_laghos_deps(workspace)
 
+            # Remove confusing legacy files from Lulesh workspace
+            if repo_name == "lulesh":
+                for legacy_file in [
+                    "cuda/build/Makefile.CRAY",
+                    "openacc/build/Makefile",
+                    "stdpar/build/Makefile",
+                ]:
+                    legacy_path = workspace / legacy_file
+                    if legacy_path.exists():
+                        legacy_path.unlink()
+
             return workspace
 
         except subprocess.CalledProcessError as e:
@@ -593,6 +604,20 @@ class HPCBenchmarkRunner:
             else:
                 with open(gitignore_path, "w") as f:
                     f.write(build_ignores)
+
+            # Remove confusing legacy files from Lulesh workspace.
+            # Agents see cuda/build/Makefile.CRAY and think it's the real build file,
+            # then rewrite or delete the actual cuda/Makefile (the SRC_DIR trap).
+            if repo_name == "lulesh":
+                for legacy_file in [
+                    "cuda/build/Makefile.CRAY",
+                    "openacc/build/Makefile",
+                    "stdpar/build/Makefile",
+                ]:
+                    legacy_path = workspace / legacy_file
+                    if legacy_path.exists():
+                        legacy_path.unlink()
+                        self.log(f"  Removed confusing legacy file: {legacy_file}")
 
             # Fix Kripke submodule references in workspace copy.
             # rsync excludes .git/modules/ (too large for 44+ submodules), but

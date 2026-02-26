@@ -31,7 +31,7 @@ tools:
         argument_format: "--setup"
 
   laghos_run:
-    signature: "laghos_run [<problem>] [<dim>] [<rs>] [<tf>] [<device>] [<no_pa>] [<np>] [--baseline-only]"
+    signature: "laghos_run [<problem>] [<dim>] [<rs>] [<tf>] [<device>] [<no_pa>] [<np>] [--baseline_only]"
     docstring: |
       Run Laghos benchmark and compare performance against baseline.
 

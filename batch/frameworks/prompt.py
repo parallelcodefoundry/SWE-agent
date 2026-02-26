@@ -195,7 +195,8 @@ Use laghos_run for validation and timing only.""",
 BUILD INSTRUCTIONS (you must build manually — no build harness):
   cd cuda/
   make -j8
-The Makefile uses nvcc with --compiler-bindir=g++-12 and sm_80.
+The active Makefile is cuda/Makefile (NOT cuda/build/Makefile.CRAY, which is legacy).
+It uses nvcc with --compiler-bindir=g++-12 and sm_80. Source files are in cuda/src/.
 Use lulesh_run for validation and timing only.""",
 
     "quicksilver": """\
@@ -366,7 +367,8 @@ APP_EDITING_GUIDANCE = {
     ),
     "lulesh": (
         "- The baseline already builds with -O3 -arch=sm_80. "
-        "You CAN modify the Makefile and source code."
+        "You CAN modify the Makefile and source code.\n"
+        "- NOTE: The active Makefile is cuda/Makefile (NOT cuda/build/Makefile.CRAY, which is legacy and unused)."
     ),
     "quicksilver": (
         "- NOTE: The Makefile's CXXFLAGS are for an AMD HIP target and are NOT used by the build harness. "

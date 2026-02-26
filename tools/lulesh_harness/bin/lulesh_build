@@ -130,11 +130,27 @@ benchmark: $(TARGET)
 
 
 def ensure_makefile_exists(lulesh_root):
-    """Ensure Makefile exists in the test directory, generating if needed."""
+    """Ensure a valid Makefile exists in the test directory.
+
+    Checks for both missing and corrupted Makefiles. A Makefile is considered
+    corrupted if it's missing essential build flags (sm_80, g++-12, SRC_DIR).
+    This protects against agents rewriting the Makefile with legacy content
+    (e.g., from cuda/build/Makefile.CRAY which targets sm_35).
+    """
     makefile_path = os.path.join(lulesh_root, 'Makefile')
 
     if os.path.isfile(makefile_path):
-        return True  # Makefile already exists
+        # Validate the Makefile has essential content
+        try:
+            content = open(makefile_path).read()
+            # Must have sm_80 (A100), SRC_DIR, and g++-12 references
+            essential = ['sm_80', 'SRC_DIR', 'g++-12']
+            missing = [e for e in essential if e not in content]
+            if not missing:
+                return True  # Makefile exists and looks valid
+            print(f"WARNING: Makefile is corrupted (missing: {', '.join(missing)}). Regenerating...")
+        except Exception:
+            print("WARNING: Makefile is unreadable. Regenerating...")
 
     # Generate Makefile from embedded template
     print(f"Generating Makefile in {lulesh_root}...")
