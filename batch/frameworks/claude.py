@@ -42,15 +42,19 @@ class ClaudeCodeLauncher(FrameworkLauncher):
         claude_md = workspace / "CLAUDE.md"
         with open(claude_md, "w") as f:
             f.write("# HPC Optimization Task\n\n")
+            f.write(
+                "You are in non-interactive mode. There is NO human to respond.\n"
+                "NEVER ask for confirmation. Implement changes directly.\n"
+                "You MUST edit source files before stopping. Analysis alone means FAILURE.\n\n"
+            )
             f.write(prompt)
             f.write("\n\n")
             f.write(
                 "## Important Notes\n\n"
                 "- Build and run commands take 60-240 seconds. This is normal — do not interrupt them.\n"
-                "- Always use the harness tools (already in PATH) for building and running.\n"
-                "- Do NOT modify build configuration files (Makefiles, CMakeLists.txt).\n"
                 "- Test after every edit by rebuilding and running.\n"
                 "- Keep changes small and incremental.\n"
+                "- If a change doesn't improve performance, revert it and try something different.\n"
             )
 
         # Record version for reproducibility

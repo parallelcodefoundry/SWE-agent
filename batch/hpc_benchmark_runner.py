@@ -175,6 +175,7 @@ class HPCBenchmarkRunner:
         vllm_port: int = 8008,
         model_name: Optional[str] = None,
         framework: str = "sweagent",
+        build_mode: str = "harness",
     ):
         self.output_dir = output_dir
         self.trajectory_dir = trajectory_dir
@@ -185,6 +186,7 @@ class HPCBenchmarkRunner:
         self.vllm_port = vllm_port
         self.model_name = model_name
         self.framework = framework
+        self.build_mode = build_mode
         self.sweagent_root = Path(__file__).parent.parent
         self.results: list[BenchmarkResult] = []
 
@@ -197,6 +199,7 @@ class HPCBenchmarkRunner:
             vllm_port=vllm_port,
             model_name=model_name,
             profiling=profiling,
+            build_mode=build_mode,
         )
 
         # Build repo configs with absolute pristine and test paths
@@ -1485,9 +1488,16 @@ def main():
     parser.add_argument(
         "--framework",
         type=str,
-        choices=["sweagent", "opencode", "openhands", "codex"],
+        choices=["sweagent", "opencode", "openhands", "codex", "claude"],
         default="sweagent",
         help="Agent framework to use (default: sweagent)"
+    )
+    parser.add_argument(
+        "--build-mode",
+        type=str,
+        choices=["harness", "direct"],
+        default="harness",
+        help="Build mode: harness (tools handle build) or direct (agent builds manually)"
     )
 
     args = parser.parse_args()
@@ -1530,6 +1540,7 @@ def main():
         vllm_port=args.vllm_port,
         model_name=args.model_name,
         framework=args.framework,
+        build_mode=args.build_mode,
     )
     runner.run_all(
         instances,

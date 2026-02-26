@@ -1,119 +1,106 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-02-25 (session 24)
-
-## Active Experiments
-
-**10 benchmark jobs submitted** — 5 frameworks × (LLNL + GPA). All infra fixes applied. Waiting for results.
-
-| Job ID | Framework | Apps | Nodes | Status |
-|--------|-----------|------|-------|--------|
-| 49366706 | Codex | LLNL (4 apps) | 4 | QUEUED |
-| 49366707 | SWE-agent | LLNL (4 apps) | 4 | QUEUED |
-| 49366708 | OpenCode | LLNL (4 apps) | 4 | QUEUED |
-| 49366709 | OpenHands | LLNL (4 apps) | 4 | QUEUED |
-| 49366710 | Claude Code | LLNL (4 apps) | 4 | QUEUED |
-| 49366711 | Codex | GPA | 1 | QUEUED |
-| 49366712 | SWE-agent | GPA | 1 | QUEUED |
-| 49366713 | OpenCode | GPA | 1 | QUEUED |
-| 49366714 | OpenHands | GPA | 1 | QUEUED |
-| ~~49366715~~ | ~~Claude Code~~ | ~~GPA~~ | ~~1~~ | ~~CANCELLED per user~~ |
-
-All use `--base` mode, `openai/gpt-4.1-mini` external model (except Claude Code which uses Anthropic API).
+Last updated: 2026-02-25 (session 26)
 
 ## Current Focus
 
-**Session 24 complete.** All infra fixes committed and validated. Benchmark reruns submitted. Next session: check results.
+**Session 26: Implemented prompt redesign, build mode flag, harness pivot, Kripke correctness strengthening, and scope refactoring.**
 
-## Last Session (Session 24)
+## Session 26 — Changes Implemented
 
-### Infrastructure Fixes (this session)
-- **Fixed OpenHands timeout** — `no_change_timeout_seconds` 300→600 in `openhands_runner.py:97`
-- **Fixed Codex timeout** — `CODEX_DEFAULT_EXEC_TIMEOUT_MS` 300000→600000 in `codex.py:147`
-- **Refactored framework launchers** — Added `get_spack_setup()` and `build_shell_preamble()` to base class. Claude/Codex/OpenCode use full preamble; OpenHands/SWE-agent use `get_spack_setup()`.
-- **Fixed kripke_build redundant import** — `import shutil` inside CUDA conditional shadowed top-level import, causing `UnboundLocalError`. Removed redundant import.
-- **Fixed test repo reset** — `reset_test_repo()` was dead code (never called). Added `git reset HEAD` to handle staged files, now called before workspace creation in base mode.
-- **Updated `run_full_matrix.sh`** — Added 5th framework (claude), configurable model/frameworks/GPA flags.
+### 1. Prompt Redesign (`batch/frameworks/prompt.py`) — COMPLETE
+- **New structure**: Role + Autonomy → Build Target → Task → Workflow → Tools → Completion
+- **Autonomy directive**: "NEVER ask for confirmation. Implement changes directly."
+- **Non-interactive directive** (Codex, Claude): "You are in non-interactive mode. There is NO human to respond."
+- **Per-app essential flags**: Explicit build requirements for Kripke, Laghos, Lulesh, Quicksilver
+- **Removed**: "FORBIDDEN ACTIONS" block, "Do NOT edit Makefiles" restriction, "Thinking should be thorough"
+- **Removed**: Optimization strategy suggestions (no longer telling agents what to optimize)
+- **Added**: WHAT YOU CAN CHANGE / WHAT YOU MUST NOT CHANGE sections
+- **Build mode support**: harness mode shows tools, direct mode shows build instructions
 
-### Validation Results
-- **Kripke build with g++-12**: PASSED on compute node (job 49366003, node nid001185)
-- **Claude CLI availability**: PASSED — version 2.1.58 at `~/.local/bin/claude`
+### 2. Build Mode Flag — COMPLETE
+- `--build-mode {harness|direct}` added to:
+  - `batch/hpc_benchmark_runner.py` (argparse + HPCBenchmarkRunner.__init__)
+  - `batch/run_benchmark.sh` (passthrough to Python runner)
+  - `batch/frameworks/__init__.py` (factory function)
+  - `batch/frameworks/base.py` (FrameworkLauncher.__init__ + get_prompt)
+- Harness mode (default): current behavior with relaxed restrictions
+- Direct mode: agent gets build instructions in prompt, *_run still available
 
-### Previous Session (23) Fixes
-- kripke_build: `CMAKE_CUDA_HOST_COMPILER=g++-12`
-- GPA CUDA: Removed global `cudatoolkit/12.4`, per-app loading
-- Validation build logging: Full stdout+stderr to file
-- All 5 launchers: `repo_name` passthrough to `get_module_loads()`
+### 3. Harness Modifications — COMPLETE
+- **kripke_build**: Checks if agent modified CMakeLists.txt; if so, preserves agent's CUDA flags while ensuring host compiler + architecture
+- **qs_build**: Passes through agent's -O flags (was stripping them), warns if agent changed CXX
+
+### 4. Kripke Correctness Check — COMPLETE
+- `kripke_run:extract_scientific_values()` now parses:
+  - Configuration params: iterations, zones, groups (exact match)
+  - Physics values: total_unknowns, unknowns_per_direction, directions, phi (float with tolerance)
+  - Timer counts: solve_count (verify algorithm ran)
+- Tolerance changed from 1e-10 to 1e-6 (allows fast-math variance)
+
+### 5. Framework Launcher Updates — COMPLETE
+- **codex.py**: AGENTS.md includes anti-yielding directive at top
+- **claude.py**: CLAUDE.md includes anti-yielding directive, removed "Do NOT modify build configuration" instruction
+
+### 6. CLAUDE.md Scope Update — COMPLETE
+- Updated project description (base mode as primary, no expert commits framing)
+- Added build mode documentation
+- Updated key commands to show base mode examples
+- Removed SWE-fficiency references from main docs
+- Preserved dataset/ for future use
+
+### NOT Done (deferred)
+- Branch cleanup (moving expert commit code to feature branch) — minimal impact, base mode already bypasses
+- STATE.md / HANDOFF.md update for scope (doing now)
+- Integration testing on compute node (requires interactive session)
+- GPA prompt update (already has autonomy via shared directive, minor)
 
 ## Previous Sessions
 
+- **Session 25** (2026-02-26): Analyzed benchmark results (6/9 jobs), fixed MPICH_DIR, Claude argparse, Laghos g++-12, OpenHands Lmod, Kripke GPU binding
+- **Session 24** (2026-02-25): All infra fixes committed. 9 benchmark jobs submitted.
 - **Session 23** (2026-02-25): Deep investigation of LLNL failures. Fixed kripke build, GPA CUDA, logging.
 - **Session 22** (2026-02-25): Fixed logging, sbatch, vLLM, added Claude Code. First 5-fw benchmark (partial).
-- **Session 21** (2026-02-17): Phase 2B complete (Goals 7-9). 37/37 regression pass.
-- **Session 20** (2026-02-17): Goals 5-6, SWE-fficiency re-curation to 12 parallel instances.
 
 ## Recent Decisions
 
-- 2026-02-25 (s24): Framework launchers use `build_shell_preamble()` base class method to reduce duplication
-- 2026-02-25 (s24): Test repos auto-reset before base mode workspace creation
-- 2026-02-25 (s24): OpenHands/Codex timeouts set to 600s/600000ms (10 min) for harness commands
-- 2026-02-25 (s23): kripke_build needs `CMAKE_CUDA_HOST_COMPILER=g++-12` for nvcc on Perlmutter
-- 2026-02-25 (s23): `get_module_loads(repo_name)` API change — GPA-aware CUDA loading
-- 2026-02-25 (s23): Removed global `cudatoolkit/12.4` from run_benchmark.sh Phase 1
-- 2026-02-25 (s22): Use `gpt-4.1-mini` ($0.40/$1.60 per 1M tokens) for external model benchmarks
-- 2026-02-25 (s22): Added Claude Code as 5th framework (Anthropic API, no vLLM needed)
-
-## Completed Experiments
-
-| Name | Job ID | Result |
-|------|--------|--------|
-| **5-fw LLNL rerun (s24)** | 49366706-10 | SUBMITTED — pending |
-| **5-fw GPA rerun (s24)** | 49366711-15 | SUBMITTED — pending |
-| **Kripke build validation (s24)** | 49366003 | PASSED — g++-12 fix works |
-| **5-fw LLNL gpt-4.1-mini (s22)** | 49348466-71,77 | Partial — see s23 analysis |
-| **5-fw GPA gpt-4.1-mini (s22)** | 49348467-73,78 | ALL FAILED — CUDA 12.4 vs 12.9 bug (now fixed) |
-| **Goal 7: 3 agents on SWE-fficiency (s21)** | 49055388 | **Codex produced patch** — SWE-agent/OpenHands install failed |
-| **Goal 8: 37-instance regression (s21)** | login node | **37/37 PASS** |
-| **Full 4×4 matrix (s15)** | 48889171 | **14/16 PASS** |
+- 2026-02-25 (s26): Base mode is primary benchmark mode (no expert comparison)
+- 2026-02-25 (s26): Two build modes: harness (default) and direct (agent builds manually)
+- 2026-02-25 (s26): Agents CAN now edit Makefiles and CMakeLists.txt
+- 2026-02-25 (s26): Essential flags specified explicitly in prompt (not strategy suggestions)
+- 2026-02-25 (s26): Anti-yielding language for Codex and Claude Code
+- 2026-02-25 (s26): Expert commit comparison and SWE-fficiency deferred to feature branch
 
 ## Branch State
 
 - **Current branch**: `dev`
-- **Latest commit**: `f7a1ec53` — Fix test repo reset
+- **Uncommitted changes**: 14 files (prompt redesign + build mode + harness + CLAUDE.md)
 
-## Recent Commits (Session 24)
+## Open Issues / TODOs
 
-- `f7a1ec53` — Fix test repo reset: unstage files + call before workspace creation
-- `4a9fd7ea` — Fix kripke_build redundant import + update full matrix script
-- `44bf5ee2` — Fix framework timeouts + refactor launchers to use base class preamble
-- `6e1c88ba` — WIP: Save sessions 22-23 — benchmark debugging + infra fixes
+### Infrastructure — Still open
+- [ ] **SWE-agent kripke git submodule** — `blt/../.git/modules/blt` broken in workspace copy
+- [ ] **SWE-agent gpt-4.1-mini empty tool_calls** — API returns empty array, LiteLLM rejects it
+- [ ] **GPA baseline build failures** — backprop/lavaMD missing C headers; exatensor/srad driver issue
+- [ ] **GPA BFS/Gaussian correctness** — Float precision from `__ldg()` causes mismatches
 
-## Open Issues
-
-### Infrastructure (fixed, pending rerun results)
-- ~~**OpenHands tool timeout too short**~~ — FIXED s24
-- ~~**Codex command timeout too short**~~ — FIXED s24
-- ~~**Claude Code runs failed**~~ — FIXED s22 (vLLM skip), validated s24
-- ~~**kripke_build CUDA host compiler**~~ — FIXED s23, validated s24
-- ~~**GPA CUDA global override**~~ — FIXED s23, pending rerun validation
-- ~~**Test repo reset dead code**~~ — FIXED s24
-- **SWE-agent kripke git submodule** — `blt/../.git/modules/blt` broken in workspace copy (not fixed)
-- **SWE-agent gpt-4.1-mini empty tool_calls** — API returns empty array, LiteLLM rejects it (model quirk)
-
-### Agent Quality (not infrastructure)
-- **gpt-4.1-mini exploration spiral** — agents analyze code endlessly without making edits
-- **Lulesh massive reformatting** — SWE-agent/OpenHands reformat entire files instead of optimizing
-- **GPA lulesh missing source** — empty LULESH/ dir in GPA-Benchmark repo (upstream issue)
+### Validation Needed (s26 changes)
+- [ ] **Prompt quality** — Run 1 agent on interactive node to verify new prompt produces better behavior
+- [ ] **Harness mode** — Test kripke_build with modified CMakeLists.txt on compute node
+- [ ] **Direct mode** — Test end-to-end on interactive node
+- [ ] **Kripke correctness** — Verify strengthened check catches bad modifications
+- [ ] **Full regression** — Run 1 framework on 4 LLNL apps to verify no breakage
 
 ### Longer-term
-- ~~**Framework launcher code duplication**~~ — FIXED s24
-- **SWE-fficiency agent install** — SWE-agent/OpenHands need Python 3.10+ but containers have 3.9
-- **Merge dev into local/main** — Phase 2B is complete
+- [ ] **Merge dev into local/main** — Phase 2B + s25/s26 fixes ready
+- [ ] **Full production benchmark** — 5 frameworks × 4 apps × {harness, direct} modes
+- [ ] **Consider stronger model** — gpt-4.1-mini too weak; test gpt-4.1 or claude-sonnet
+- [ ] **Expert commit comparison** — Move to feature/expert-commits-swefficiency branch
 
 ## Next Steps
 
-1. **Check benchmark results** — 10 jobs queued (49366706-49366715)
-2. **Analyze rerun results** — Compare with s22 run to measure impact of fixes
-3. **Address remaining SWE-agent issues** — git submodule, empty tool_calls
-4. **Full production benchmark** — all 37 instances × 5 frameworks (if reruns look good)
-5. **Merge dev → local/main** — All fixes are stable
+1. **Commit s26 changes** — 14 files with prompt redesign, build mode, harness mods
+2. **Interactive node validation** — Test one framework on one app with new prompts
+3. **Verify Codex anti-yielding** — Critical: does Codex actually implement instead of asking?
+4. **Test direct mode** — Single instance end-to-end
+5. **Full benchmark rerun** — 5 frameworks × 4 LLNL apps with new prompts

@@ -45,7 +45,10 @@ def _clean_env_for_tmux():
         "SWEAGENT_", "SWE_AGENT_",
         "KRIPKE_", "LAGHOS_", "LULESH_", "QUICKSILVER_",
         "INSIDE_BATCH_RUN", "HF_HOME", "XDG_",
-        "OPENMPI", "MPI", "OMPI_",
+        "OPENMPI", "MPI", "OMPI_", "MPICH",
+        # BASH_ENV sources Lmod init in non-interactive bash subshells (build commands);
+        # MODULEPATH tells Lmod where to find modulefiles; LMOD_CMD is the Lmod binary
+        "BASH_ENV", "MODULEPATH", "LMOD_CMD", "LMOD_DIR", "LMOD_PKG",
     )
     to_remove = [k for k in os.environ if not any(k.startswith(p) for p in keep_prefixes)]
     for k in to_remove:

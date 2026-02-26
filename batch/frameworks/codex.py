@@ -38,7 +38,14 @@ class CodexLauncher(FrameworkLauncher):
         # Write AGENTS.md to workspace for Codex to discover
         agents_md = workspace / "AGENTS.md"
         with open(agents_md, "w") as f:
-            f.write(f"# HPC Optimization Task\n\n{prompt}\n\n")
+            f.write("# HPC Optimization Task\n\n")
+            f.write(
+                "CRITICAL: You are in non-interactive mode. There is NO human to respond.\n"
+                "NEVER output \"Would you like...\" or \"Shall I...\" — just DO IT.\n"
+                "You MUST edit source files before stopping. Analysis alone means FAILURE.\n\n"
+            )
+            f.write(prompt)
+            f.write("\n\n")
             # Add explicit timeout guidance for AGENTS.md (Codex reads this)
             f.write(
                 "## Shell Command Timeouts\n\n"

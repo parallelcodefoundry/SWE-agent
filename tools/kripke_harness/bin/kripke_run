@@ -31,8 +31,10 @@ def _find_pristine_kripke():
 
 PRISTINE_KRIPKE_ROOT = _find_pristine_kripke()
 
-# Default tolerance for correctness checking
-DEFAULT_TOLERANCE = 1e-10
+# Default tolerance for correctness checking (relative error)
+# Kripke is deterministic, so we use a tight tolerance.
+# Allow small floating-point variance from reordering/fast-math.
+DEFAULT_TOLERANCE = 1e-6
 
 def get_pristine_executable(arch='OpenMP'):
     """Get path to pristine Kripke executable, building if needed.
@@ -146,9 +148,13 @@ def run_baseline(args, env):
     ]
 
     # Always use mpirun for MPI execution (avoids nested srun hangs in batch mode).
-    # OpenMPI auto-detects SLURM and handles GPU binding via CUDA_VISIBLE_DEVICES.
+    # Bind each rank to a specific GPU via OMPI_COMM_WORLD_LOCAL_RANK to prevent
+    # CUDA illegal memory access from all ranks competing for the same GPU.
     if args.np > 1:
-        cmd = ['mpirun', '-np', str(args.np), '--bind-to', 'none'] + kripke_cmd
+        # Wrapper sets CUDA_VISIBLE_DEVICES per rank so each rank gets one GPU
+        cmd = ['mpirun', '-np', str(args.np), '--bind-to', 'none',
+               'bash', '-c', 'export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK; exec "$@"',
+               '--'] + kripke_cmd
     else:
         cmd = kripke_cmd
 
@@ -191,32 +197,64 @@ def get_baseline(args, env):
 def extract_scientific_values(output_text):
     """Extract SCIENTIFIC values from Kripke output for correctness comparison.
 
-    NOTE: This excludes timing/performance metrics because those naturally vary
+    Parses both configuration parameters (integer-exact) and physics values
+    (floating point with tolerance). Kripke outputs:
+    - Configuration: niter, zones, groups, directions, unknowns
+    - Physics: particle flux (Unknowns per direction), total unknowns, throughput
+
+    NOTE: Timing/throughput metrics are excluded because those naturally vary
     between runs and are NOT correctness indicators.
     """
     values = {}
 
-    # Kripke doesn't have cycle-by-cycle output like Quicksilver
-    # Look for solution values or residual norms if present
-    # For now, we'll compare the timer counts as a proxy for correctness
-    # (same number of iterations = same algorithmic behavior)
+    # --- Configuration parameters (must match exactly) ---
 
-    # Look for iteration count
+    # Iteration count
     iter_match = re.search(r'niter\s*[=:]\s*(\d+)', output_text, re.IGNORECASE)
     if iter_match:
         values['iterations'] = int(iter_match.group(1))
 
-    # Look for zone counts
+    # Zone counts
     zones_match = re.search(r'zones\s*[=:]\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', output_text)
     if zones_match:
         values['zones_x'] = int(zones_match.group(1))
         values['zones_y'] = int(zones_match.group(2))
         values['zones_z'] = int(zones_match.group(3))
 
-    # Look for groups
+    # Groups
     groups_match = re.search(r'groups\s*[=:]\s*(\d+)', output_text, re.IGNORECASE)
     if groups_match:
         values['groups'] = int(groups_match.group(1))
+
+    # --- Physics / problem size values (correctness indicators) ---
+
+    # Total number of unknowns (depends on zones, groups, directions, decomposition)
+    unknowns_match = re.search(r'Total\s+(?:Number\s+of\s+)?Unknowns\s*[=:]\s*([\d.eE+\-]+)', output_text, re.IGNORECASE)
+    if unknowns_match:
+        values['total_unknowns'] = float(unknowns_match.group(1))
+
+    # Unknowns per direction (key physics parameter)
+    upd_match = re.search(r'Unknowns\s+per\s+direction\s*[=:]\s*([\d.eE+\-]+)', output_text, re.IGNORECASE)
+    if upd_match:
+        values['unknowns_per_direction'] = float(upd_match.group(1))
+
+    # Number of directions (quadrature-dependent)
+    dirs_match = re.search(r'(?:Total\s+)?(?:Number\s+of\s+)?[Dd]irections\s*[=:]\s*(\d+)', output_text)
+    if dirs_match:
+        values['directions'] = int(dirs_match.group(1))
+
+    # Look for any "phi" or flux values in the output (some Kripke versions print them)
+    phi_match = re.search(r'phi\s*[=:]\s*([\d.eE+\-]+)', output_text, re.IGNORECASE)
+    if phi_match:
+        values['phi'] = float(phi_match.group(1))
+
+    # Timer counts (verify same number of kernel invocations)
+    # e.g., "Solve          21.809679        1" — the count column confirms algorithm ran
+    for line in output_text.split('\n'):
+        solve_match = re.match(r'\s*Solve\s+([\d.]+)\s+(\d+)\s*$', line)
+        if solve_match:
+            values['solve_count'] = int(solve_match.group(2))
+            break
 
     return values
 
@@ -470,9 +508,13 @@ def main():
     ]
 
     # Always use mpirun for MPI execution (avoids nested srun hangs in batch mode).
-    # OpenMPI auto-detects SLURM and handles GPU binding via CUDA_VISIBLE_DEVICES.
+    # Bind each rank to a specific GPU via OMPI_COMM_WORLD_LOCAL_RANK to prevent
+    # CUDA illegal memory access from all ranks competing for the same GPU.
     if args.np > 1:
-        cmd = ['mpirun', '-np', str(args.np), '--bind-to', 'none'] + kripke_cmd
+        # Wrapper sets CUDA_VISIBLE_DEVICES per rank so each rank gets one GPU
+        cmd = ['mpirun', '-np', str(args.np), '--bind-to', 'none',
+               'bash', '-c', 'export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK; exec "$@"',
+               '--'] + kripke_cmd
     else:
         cmd = kripke_cmd
 

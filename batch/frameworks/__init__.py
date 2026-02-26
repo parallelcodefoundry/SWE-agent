@@ -13,6 +13,7 @@ def get_launcher(
     vllm_port: int = 8008,
     model_name: Optional[str] = None,
     profiling: str = "no_profiling",
+    build_mode: str = "harness",
 ) -> FrameworkLauncher:
     """Create a framework-specific launcher instance.
 
@@ -23,6 +24,7 @@ def get_launcher(
         vllm_port: vLLM server port
         model_name: Optional model name override (for external APIs)
         profiling: "no_profiling" or "with_profiling"
+        build_mode: "harness" or "direct"
 
     Returns:
         FrameworkLauncher subclass instance
@@ -33,6 +35,7 @@ def get_launcher(
         vllm_port=vllm_port,
         model_name=model_name,
         profiling=profiling,
+        build_mode=build_mode,
     )
 
     if framework == "sweagent":

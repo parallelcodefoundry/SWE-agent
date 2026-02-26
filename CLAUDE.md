@@ -1,6 +1,6 @@
 # HPC Agent Benchmark Suite
 
-LLM agent benchmark for HPC code optimization. Tests whether coding agents (SWE-agent, Openhands, Claude Code, Codex, Cursor, OpenCode) can optimize real proxy apps on NERSC Perlmutter (A100 GPUs). Built on SWE-agent; `main` tracks upstream, `local` is our working branch. Create feature branches off `local`.
+LLM agent benchmark for HPC code optimization. Tests whether coding agents (SWE-agent, OpenHands, Claude Code, Codex, OpenCode) can optimize real proxy apps on NERSC Perlmutter (A100 GPUs). Base mode is the primary benchmark mode: one instance per app, agents optimize from clean source. Built on SWE-agent; `main` tracks upstream, `dev` is our working branch.
 
 ## Session Workflow
 
@@ -18,8 +18,9 @@ IMPORTANT: Follow this workflow for EVERY session.
 - `tools/{hatchet,hpctoolkit,nsight_*,profiling}/` — Profiling tool wrappers
 - `config/hpc/` — SWE-agent YAML configs (`{app}_{with|no}_profiling.yaml`)
 - `batch/` — `run_benchmark.sh` (entrypoint), `hpc_benchmark_runner.py`
+- `batch/frameworks/` — Per-framework launchers + shared `prompt.py`
 - `scripts/` — `setup_apps.sh`, `reset_test_repos.sh`
-- `dataset/` — `curated_perf_commits.json` (expert optimization commits)
+- `dataset/` — `curated_perf_commits.json` (preserved for future use, not loaded by default)
 - `{Kripke,Laghos,Lulesh,Quicksilver}/` — Pristine app clones (NEVER modify)
 - `{Kripke,Laghos,Lulesh,Quicksilver}_test/` — Working copies for agent experiments
 - `mfem/`, `hypre/`, `metis-4.0.3/` — Shared Laghos dependencies
@@ -40,14 +41,19 @@ module load python cmake openmpi/5.0.7 cuda/12.4
 ./scripts/reset_test_repos.sh                    # all apps
 ./scripts/reset_test_repos.sh --lulesh --kripke  # specific apps
 
-# Run benchmarks
-sbatch batch/run_benchmark.sh                          # all apps, benchmark mode
-sbatch batch/run_benchmark.sh --base --lulesh          # base mode, single app
-sbatch batch/run_benchmark.sh --instance-id kripke__07b2b60d  # single commit
+# Run benchmarks (base mode is primary)
+sbatch batch/run_benchmark.sh --base --lulesh --framework claude
+sbatch batch/run_benchmark.sh --base --kripke --framework codex --external-model
+sbatch batch/run_benchmark.sh --base --build-mode direct --lulesh  # agent builds manually
 
 # Python env
 source ~/envs/sweagent/bin/activate
 ```
+
+## Build Modes
+
+- **`harness` (default)**: Harness tools (`*_build`, `*_run`) handle compilation. Agent edits source and optionally build config; harness ensures essential flags are preserved.
+- **`direct`**: Agent runs cmake/make/nvcc directly. Only `*_run` is available for validation and timing. Build instructions are provided in the prompt.
 
 ## Critical Rules
 

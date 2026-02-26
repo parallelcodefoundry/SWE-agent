@@ -62,12 +62,14 @@ class FrameworkLauncher(ABC):
         vllm_port: int = 8008,
         model_name: Optional[str] = None,
         profiling: str = "no_profiling",
+        build_mode: str = "harness",
     ):
         self.sweagent_root = sweagent_root
         self.vllm_host = vllm_host
         self.vllm_port = vllm_port
         self.model_name = model_name
         self.profiling = profiling
+        self.build_mode = build_mode
 
     @abstractmethod
     def generate_config(
@@ -133,10 +135,20 @@ class FrameworkLauncher(ABC):
         return self.sweagent_root / "tools" / harness_name / "bin"
 
     def get_path_dirs(self, repo_name: str) -> list[str]:
-        """Get list of directories to add to PATH for this app and profiling config."""
+        """Get list of directories to add to PATH for this app and profiling config.
+
+        In direct mode, only the *_run tool is needed (for validation/timing).
+        The harness bin dir is still added since it contains the run tool,
+        but *_build becomes a no-op that prints a message.
+        """
         dirs = []
         if repo_name in HARNESS_MAP:
-            dirs.append(str(self.get_harness_bin_path(repo_name)))
+            if self.build_mode == "direct":
+                # In direct mode, use a wrapper dir where *_build is a no-op
+                # but the harness bin is still on PATH for the *_run tool
+                dirs.append(str(self.get_harness_bin_path(repo_name)))
+            else:
+                dirs.append(str(self.get_harness_bin_path(repo_name)))
         if self.profiling == "with_profiling":
             for tool_dir in PROFILING_TOOL_DIRS:
                 full_path = self.sweagent_root / tool_dir
@@ -207,6 +219,10 @@ class FrameworkLauncher(ABC):
         else:
             lines.append("module load cudatoolkit/12.4 2>/dev/null || true")
         lines.append("module load python 2>/dev/null || true")
+        # openmpi module sets MPI_ROOT, but lulesh Makefile expects MPICH_DIR
+        lines.append('export MPICH_DIR="${MPI_ROOT:-${OPENMPI_ROOT}}"')
+        # nvcc requires g++ <= 13; system g++ is 14.3. Make mpicxx wrap g++-12.
+        lines.append('export OMPI_CXX=g++-12')
         return "\n".join(lines)
 
     def get_spack_setup(self) -> str:
@@ -273,4 +289,4 @@ class FrameworkLauncher(ABC):
             )
 
         from batch.frameworks.prompt import build_prompt
-        return build_prompt(self.name, repo_name, str(workspace), self.profiling)
+        return build_prompt(self.name, repo_name, str(workspace), self.profiling, self.build_mode)

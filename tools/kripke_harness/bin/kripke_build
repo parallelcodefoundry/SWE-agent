@@ -57,6 +57,20 @@ def main():
         # Create build directory
         os.makedirs(build_dir, exist_ok=True)
 
+        # Check if agent has modified CMakeLists.txt
+        cmakelists_path = os.path.join(kripke_root, 'CMakeLists.txt')
+        agent_modified_cmake = False
+        try:
+            check = subprocess.run(
+                ['git', 'diff', '--name-only', 'HEAD', '--', 'CMakeLists.txt'],
+                cwd=kripke_root, capture_output=True, text=True
+            )
+            if check.returncode == 0 and 'CMakeLists.txt' in check.stdout:
+                agent_modified_cmake = True
+                print("NOTE: Agent modified CMakeLists.txt — respecting agent's build config", file=sys.stderr)
+        except Exception:
+            pass
+
         # Configure CMake
         print(f"Configuring Kripke with {args.arch}...", file=sys.stderr)
 
@@ -71,11 +85,22 @@ def main():
 
         # Add CUDA-specific flags
         if args.arch == 'CUDA':
-            cmake_args.append('-DCMAKE_CUDA_ARCHITECTURES=80')
-            cmake_args.append('-DCMAKE_CUDA_FLAGS=--extended-lambda --expt-relaxed-constexpr')
-            # nvcc requires GCC ≤13; system default may be 14+
+            # Always ensure host compiler is compatible (essential safety)
             host_cxx = shutil.which('g++-12') or shutil.which('g++-11') or 'g++'
-            cmake_args.append(f'-DCMAKE_CUDA_HOST_COMPILER={host_cxx}')
+
+            if agent_modified_cmake:
+                # Agent modified CMakeLists — only add essential flags that
+                # the agent may not have set (host compiler for nvcc compat).
+                # Don't override CUDA flags since agent may have customized them.
+                cmake_args.append(f'-DCMAKE_CUDA_HOST_COMPILER={host_cxx}')
+                # Ensure architecture is still A100
+                cmake_args.append('-DCMAKE_CUDA_ARCHITECTURES=80')
+                print(f"  Preserving agent's CUDA flags, ensuring host compiler={host_cxx}", file=sys.stderr)
+            else:
+                # Default: full harness control
+                cmake_args.append('-DCMAKE_CUDA_ARCHITECTURES=80')
+                cmake_args.append('-DCMAKE_CUDA_FLAGS=--extended-lambda --expt-relaxed-constexpr')
+                cmake_args.append(f'-DCMAKE_CUDA_HOST_COMPILER={host_cxx}')
 
         config_proc = subprocess.run(
             cmake_args,

@@ -88,6 +88,7 @@ Framework Selection:
                         (default: sweagent)
 
 Run Configuration:
+  --build-mode MODE     Build mode: harness (default) or direct (agent builds manually)
   --base                Run on current state of test repos (skip dataset/git checkout)
   --num-runs N          Number of complete benchmark runs (default: 1)
   --num-probs N         Max problems (commits) per application (default: all)
@@ -164,6 +165,7 @@ NUM_PROBS=""
 PROFILING="no_profiling"
 MODEL_NAME=""
 FRAMEWORK="sweagent"
+BUILD_MODE="harness"
 APPS=()
 INSTANCE_IDS=()
 
@@ -222,6 +224,15 @@ while [[ $# -gt 0 ]]; do
             if [[ ! "$FRAMEWORK" =~ ^(sweagent|opencode|openhands|codex|claude)$ ]]; then
                 echo "ERROR: Unknown framework: $FRAMEWORK"
                 echo "  Valid values: sweagent, opencode, openhands, codex, claude"
+                exit 1
+            fi
+            shift 2
+            ;;
+        --build-mode)
+            BUILD_MODE="$2"
+            if [[ ! "$BUILD_MODE" =~ ^(harness|direct)$ ]]; then
+                echo "ERROR: Unknown build mode: $BUILD_MODE"
+                echo "  Valid values: harness, direct"
                 exit 1
             fi
             shift 2
@@ -374,6 +385,7 @@ done
 echo ""
 echo "Configuration:"
 echo "  Framework: ${FRAMEWORK}"
+echo "  Build mode: ${BUILD_MODE}"
 echo "  SWE-Agent root: ${SWEAGENT_ROOT}"
 if [[ "$BASE_MODE" == "true" ]]; then
     echo "  Mode: BASE (run on current test repos)"
@@ -641,6 +653,7 @@ build_runner_args() {
         "--vllm-host" "${VLLM_HOST}"
         "--vllm-port" "${VLLM_PORT}"
         "--framework" "${FRAMEWORK}"
+        "--build-mode" "${BUILD_MODE}"
     )
 
     if [[ -n "$MODEL_NAME" ]]; then

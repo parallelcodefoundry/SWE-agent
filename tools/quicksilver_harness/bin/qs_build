@@ -296,28 +296,68 @@ def main():
         # Start with required flags, then add user customizations
         xcompiler_flags = ['-fopenmp']
         if custom_flags['extra_cxxflags']:
-            # Remove any -O flags from user flags since we're using -O3 for nvcc
-            user_flags = [f for f in custom_flags['extra_cxxflags'] if not f.startswith('-O')]
+            # Pass through ALL user optimization flags, including -O flags
+            # (agent may intentionally set -O2 or -Ofast instead of our default -O3)
+            user_flags = custom_flags['extra_cxxflags']
             xcompiler_flags.extend(user_flags)
             if user_flags:
                 print(f"User Makefile flags APPLIED (host compiler): {' '.join(user_flags)}")
                 result["user_cxxflags"] = user_flags
+            # If agent set a different -O flag, use it instead of default -O3
+            user_has_O_flag = any(f.startswith('-O') for f in user_flags)
+        else:
+            user_has_O_flag = False
 
         xcompiler_str = ','.join(xcompiler_flags)
 
         # CUDA build flags for A100 (sm_80)
         # MPI + CUDA + OpenMP for multi-GPU execution
         # -lineinfo enables source line mapping for GPU code (needed for profiling)
-        # Base CXXFLAGS - always use CUDA with -O3
-        cxxflags = f'-DHAVE_CUDA -std=c++11 -O3 -lineinfo -Xptxas -v -gencode=arch=compute_80,code=sm_80 --compiler-bindir={host_compiler} -Xcompiler {xcompiler_str}'
+        # Use agent's -O flag if set, otherwise default to -O3
+        opt_flag = '-O3'
+        if user_has_O_flag:
+            # Agent set an optimization level — use theirs
+            for f in custom_flags['extra_cxxflags']:
+                if f.startswith('-O'):
+                    opt_flag = f
+                    break
+            print(f"Using agent's optimization flag: {opt_flag}")
 
-        # Inform about build configuration (CXX in Makefile is ALWAYS overridden)
+        cxxflags = f'-DHAVE_CUDA -std=c++11 {opt_flag} -lineinfo -Xptxas -v -gencode=arch=compute_80,code=sm_80 --compiler-bindir={host_compiler} -Xcompiler {xcompiler_str}'
+
+        # Check if agent changed CXX in Makefile
+        agent_cxx_change = False
+        try:
+            check = subprocess.run(
+                ['git', 'diff', '--name-only', 'HEAD', '--', 'Makefile'],
+                cwd=src_dir, capture_output=True, text=True
+            )
+            if check.returncode == 0 and 'Makefile' in check.stdout:
+                # Check if CXX was specifically changed
+                diff_out = subprocess.run(
+                    ['git', 'diff', 'HEAD', '--', 'Makefile'],
+                    cwd=src_dir, capture_output=True, text=True
+                )
+                if diff_out.returncode == 0 and 'CXX' in diff_out.stdout:
+                    agent_cxx_change = True
+        except Exception:
+            pass
+
+        if agent_cxx_change:
+            print("")
+            print("WARNING: Agent modified CXX in Makefile, but CXX is overridden to nvcc")
+            print("  for CUDA compilation. Agent's CXX change will NOT take effect.")
+            print("  CUDA requires nvcc as the compiler. Source code changes ARE applied.")
+            print("")
+
+        # Inform about build configuration
         print("")
-        print("BUILD CONFIGURATION (these settings OVERRIDE Makefile):")
-        print(f"  CXX = {nvcc}  (Makefile CXX setting is ignored)")
-        print(f"  Optimization: -O3 (always, -O flags in Makefile are ignored)")
+        print("BUILD CONFIGURATION (essential settings enforced):")
+        print(f"  CXX = {nvcc}  (CUDA requires nvcc)")
+        print(f"  Optimization: {opt_flag}")
         print(f"  GPU: CUDA sm_80 (A100)")
         print(f"  MPI: {'enabled' if mpi_flags else 'disabled'}")
+        print(f"  Host compiler: {host_compiler}")
         print(f"  Host compiler flags: {xcompiler_str}")
         print("")
 
