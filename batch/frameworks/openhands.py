@@ -48,7 +48,7 @@ class OpenHandsLauncher(FrameworkLauncher):
         config_lines = [
             f"model = {model}",
             f"api_base = {base_url}",
-            f"max_iterations = 50",
+            f"max_iterations = 200",
             f"workspace = {workspace}",
             f"tools = terminal, file_editor",
         ]
@@ -122,7 +122,7 @@ PYTHONPATH="{sweagent_root}:${{PYTHONPATH:-}}" timeout {SESSION_TIMEOUT} python3
     --workspace "{workspace}" \\
     --prompt-file "{prompt_file}" \\
     --trajectory-file "{traj_file}" \\
-    --max-iterations 50
+    --max-iterations 200
 """
         return shell_script
 

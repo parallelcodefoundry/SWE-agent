@@ -50,7 +50,7 @@ agent:
     api_key: "dummy"
     name: openai/openai/gpt-oss-120b
     per_instance_cost_limit: 0
-    per_instance_call_limit: 50
+    per_instance_call_limit: 200
   tools:
     execution_timeout: 300
     tools_base_path: /tmp/sweagent
