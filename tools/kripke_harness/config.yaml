@@ -37,7 +37,7 @@ tools:
         argument_format: "--clean"
 
   kripke_run:
-    signature: "kripke_run [<arch>] [<layout>] [<zones>] [<groups>] [<niter>] [<np>] [<omp_threads>]"
+    signature: "kripke_run [<arch>] [<layout>] [<zones>] [<groups>] [<niter>] [<np>] [<omp_threads>] [--baseline-only]"
     docstring: |
       Run Kripke with specified parameters using MPI.
       This tool checks BOTH performance AND correctness in a single run.

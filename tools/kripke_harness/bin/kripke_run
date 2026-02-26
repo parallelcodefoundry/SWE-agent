@@ -249,11 +249,12 @@ def extract_scientific_values(output_text):
         values['phi'] = float(phi_match.group(1))
 
     # Timer counts (verify same number of kernel invocations)
-    # e.g., "Solve          21.809679        1" — the count column confirms algorithm ran
+    # e.g., "  Solve                 1      28.22815" — count column confirms algorithm ran
+    # Source: Timing.cpp printf("  %-16s  %12d  %12.5lf\n", name, count, seconds)
     for line in output_text.split('\n'):
-        solve_match = re.match(r'\s*Solve\s+([\d.eE+-]+)\s+(\d+)\s*$', line)
+        solve_match = re.match(r'\s*Solve\s+(\d+)\s+([\d.eE+-]+)\s*$', line)
         if solve_match:
-            values['solve_count'] = int(solve_match.group(2))
+            values['solve_count'] = int(solve_match.group(1))
             break
 
     return values
@@ -320,14 +321,15 @@ def parse_timing_from_output(stdout):
     timing = {}
 
     # Parse timer output lines like:
-    # "Timer                 Total (s)    Count"
-    # "Solve                21.809679        1"
+    # "  Timer              Count        Seconds"
+    # "  Solve                 1      28.22815"
+    # Source: Timing.cpp printf("  %-16s  %12d  %12.5lf\n", name, count, seconds)
     for line in stdout.split('\n'):
-        # Format: name  time(float)  count(int)
-        match = re.match(r'\s*(\w+)\s+([\d.eE+-]+)\s+(\d+)\s*$', line)
+        # Format: name  count(int)  seconds(float)
+        match = re.match(r'\s*(\w+)\s+(\d+)\s+([\d.eE+-]+)\s*$', line)
         if match:
             name = match.group(1)
-            total_s = float(match.group(2))
+            total_s = float(match.group(3))
             timing[name] = total_s
 
     return timing

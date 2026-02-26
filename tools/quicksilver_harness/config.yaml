@@ -29,7 +29,7 @@ tools:
         argument_format: "--clean"
 
   qs_run:
-    signature: "qs_run"
+    signature: "qs_run [--baseline-only]"
     docstring: |
       Run Quicksilver benchmark and compare performance against baseline.
 
@@ -53,8 +53,8 @@ tools:
 
       IMPORTANT: Always run qs_build after code changes before running qs_run!
     arguments:
-      baseline_only:
-        type: "flag"
+      - name: baseline_only
+        type: boolean
         description: "Only run the baseline (pristine) version. Use this first to establish reference timing before making changes."
         required: false
         argument_format: "--baseline-only"
