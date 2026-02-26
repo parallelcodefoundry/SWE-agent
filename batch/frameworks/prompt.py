@@ -358,24 +358,20 @@ APP_KEY_FILES = {
 APP_EDITING_GUIDANCE = {
     "kripke": (
         "- The baseline already builds with -O3 (CMAKE_BUILD_TYPE=Release). "
-        "You CAN add extra CUDA flags (e.g., -use_fast_math) via CMakeLists.txt. "
-        "Focus primarily on source code (.cpp, .h files) — algorithmic and kernel optimizations have the most impact."
+        "You CAN modify CMakeLists.txt and source code."
     ),
     "laghos": (
         "- The baseline already builds with -O3 via MFEM's config. "
-        "You CAN add extra flags (e.g., -use_fast_math, -funroll-loops) to the Makefile or CMakeLists.txt. "
-        "Focus primarily on source code (.cpp, .cu, .cc, .hh files) — algorithmic and kernel optimizations have the most impact."
+        "You CAN modify the Makefile, CMakeLists.txt, and source code."
     ),
     "lulesh": (
         "- The baseline already builds with -O3 -arch=sm_80. "
-        "You CAN add extra flags (e.g., -use_fast_math, -funroll-loops) to the Makefile. "
-        "Focus primarily on source code (.cu, .cpp files) — kernel optimizations have the most impact."
+        "You CAN modify the Makefile and source code."
     ),
     "quicksilver": (
         "- NOTE: The Makefile's CXXFLAGS are for an AMD HIP target and are NOT used by the build harness. "
         "The harness already builds with -O3 -arch=sm_80. Do NOT waste time changing -g to -O3 — it has no effect. "
-        "You CAN add extra flags (e.g., -funroll-loops, -use_fast_math) which the harness will pick up. "
-        "Focus primarily on source code (.cc, .hh files) for real optimizations."
+        "You CAN modify the Makefile and source code."
     ),
 }
 
