@@ -1,89 +1,90 @@
-# HANDOFF — Session 26: Prompt Redesign + Build Mode + Harness Pivot
+# HANDOFF — Session 27: Bug Fixes + Timeout Tuning + Production Runs
 
-Last updated: 2026-02-25 (session 26)
+Last updated: 2026-02-25 (session 27)
 
 ## Current Phase
 
-**Implemented prompt redesign, --build-mode flag, harness modifications, and Kripke correctness strengthening. All changes verified with automated tests. Ready for compute-node validation.**
+**Fixed 6 bugs and 3 timeout issues. First production vLLM runs submitted. Sweagent vLLM job running, 4 more queued. Interactive verification in progress.**
 
-## Goal Progress (Session 26 Checklist)
+## Goal Progress (Session 27 Checklist)
 
-- [x] Goal 1: Rewrite prompt.py with new structure (role → build target → task → workflow → tools → completion)
-- [x] Goal 2: Add per-app essential build flags (Kripke/Laghos/Lulesh/QS)
-- [x] Goal 3: Add autonomy directive + anti-yielding for Codex/Claude
-- [x] Goal 4: Add --build-mode {harness|direct} to runner, shell script, launcher factory
-- [x] Goal 5: Update kripke_build to respect agent CMakeLists changes
-- [x] Goal 6: Update qs_build to pass through agent's -O flags
-- [x] Goal 7: Strengthen kripke_run correctness check (parse physics values)
-- [x] Goal 8: Update Codex AGENTS.md with anti-yielding
-- [x] Goal 9: Update Claude CLAUDE.md with anti-yielding, remove "don't edit Makefiles"
-- [x] Goal 10: Update CLAUDE.md scope (base mode primary, remove SWE-fficiency)
-- [x] Goal 11: Automated tests pass (all 4 apps × 2 modes × 5 frameworks)
-- [ ] Goal 12: Commit changes
-- [ ] Goal 13: Compute-node validation (interactive session)
-- [ ] Goal 14: Full benchmark rerun
+- [x] Goal 1: Fix Kripke submodule symlink after rsync
+- [x] Goal 2: Fix gpt-4.1-mini empty tool_calls crash
+- [x] Goal 3: Fix vLLM model name mismatch (Codex/OpenCode)
+- [x] Goal 4: Fix rsync timeout (120→300s)
+- [x] Goal 5: Fix mpirun --oversubscribe for kripke_run
+- [x] Goal 6: Bump per_instance_call_limit 50→200
+- [x] Goal 7: Bump OpenHands max_iterations 50→200
+- [x] Goal 8: Add total_execution_timeout: 3600 to all HPC configs
+- [x] Goal 9: Submit 5 sbatch vLLM production runs
+- [x] Goal 10: Launch interactive verification
+- [ ] Goal 11: Check other framework timeout limits (OpenHands, Codex, OpenCode)
+- [ ] Goal 12: Analyze completed benchmark results
+- [ ] Goal 13: Investigate vLLM inference speed
 
-## What Was Done This Session (26)
+## Commits This Session (7 commits)
 
-### Prompt Redesign (Goals 1-3)
-- **File**: `batch/frameworks/prompt.py` (complete rewrite)
-- **Changes**: New prompt structure with 6 sections. Removed FORBIDDEN ACTIONS, "Do NOT edit Makefiles". Added autonomy directive, essential flags, WHAT YOU CAN/MUST NOT CHANGE. Anti-yielding for Codex/Claude.
-- **Removed**: `SYSTEM_CONTEXT` dict (replaced by `ESSENTIAL_FLAGS` + `CHANGE_RULES`), `APP_NOTES` dict (strategy suggestions removed)
-- **Added**: `AUTONOMY_DIRECTIVE`, `NON_INTERACTIVE_DIRECTIVE`, `BUILD_TARGET`, `CHANGE_RULES`, `ESSENTIAL_FLAGS`, `DIRECT_BUILD_INSTRUCTIONS`
+| Commit | Description |
+|--------|-------------|
+| `616da3fe` | Fix Kripke submodule symlink + empty tool_calls |
+| `79ad85b8` | Bump call limits 50→200 |
+| `b559729e` | Fix vLLM model name for Codex/OpenCode |
+| `80f82570` | Bump rsync timeout 120→300s |
+| `b1834f03` | Add --oversubscribe to kripke_run mpirun |
+| `7c9bcd71` | Add total_execution_timeout: 3600 |
+| (pending) | STATE.md update |
 
-### Build Mode Flag (Goal 4)
-- **Files**: `batch/hpc_benchmark_runner.py`, `batch/run_benchmark.sh`, `batch/frameworks/__init__.py`, `batch/frameworks/base.py`
-- **Changes**: `--build-mode {harness|direct}` flows from CLI → runner → launcher → prompt
+## Active SLURM Jobs
 
-### Harness Modifications (Goals 5-6)
-- **kripke_build**: Checks `git diff HEAD -- CMakeLists.txt`; if modified, only adds host compiler + arch (preserves agent's CUDA flags)
-- **qs_build**: No longer strips -O flags from agent's Makefile; agent can set -O2, -Ofast, etc.
+| Job ID | Framework | Model | Mode | Status |
+|--------|-----------|-------|------|--------|
+| 49385453 | sweagent | vLLM gpt-oss-120b | base/LLNL | RUNNING |
+| 49385456 | openhands | vLLM gpt-oss-120b | base/LLNL | PENDING |
+| 49385461 | claude | Anthropic API | base/LLNL | PENDING |
+| 49387755 | codex | vLLM gpt-oss-120b | base/LLNL | PENDING |
+| 49387756 | opencode | vLLM gpt-oss-120b | base/LLNL | PENDING |
 
-### Kripke Correctness (Goal 7)
-- **kripke_run**: `extract_scientific_values()` now parses total_unknowns, unknowns_per_direction, directions, phi, solve_count
-- Tolerance relaxed from 1e-10 to 1e-6
+**Note**: These runs do NOT have the total_execution_timeout fix (committed after submission). Sweagent results may show premature termination. Codex/OpenCode DO have the model name fix.
 
-### Framework Updates (Goals 8-9)
-- **codex.py**: AGENTS.md now starts with anti-yielding directive
-- **claude.py**: CLAUDE.md starts with anti-yielding, removed "Don't modify build configuration"
+## Known Issues for Next Session
+
+### Must Address
+1. **Other framework timeout limits** — Check if OpenHands, Codex, OpenCode have similar execution time limits that need bumping:
+   - OpenHands: `no_change_timeout_seconds=600` in `openhands_runner.py` — may kill agent if it's building for >10 min without visible changes
+   - Codex: `CODEX_DEFAULT_EXEC_TIMEOUT_MS=600000` (10 min per command) — probably fine
+   - OpenCode: Check if there's a session/execution timeout
+   - Claude Code: `--max-turns 200` — probably fine
+
+2. **vLLM gpt-oss-120b inference speed** — ~2 min per API call. At 200 call limit, a full run would take ~400 min (6.7 hours) — way over the 3600s session timeout. Options:
+   - Increase GPU memory utilization (currently 0.60)
+   - Check if TP=4 is optimal for this model
+   - Consider using gpt-4.1-mini via external API for faster iteration (accepts lower quality)
+
+3. **Resubmit all runs** after confirming timeout fix works — current batch may produce partial results
+
+### Observations from Results So Far
+- **gpt-4.1-mini** (external API): Fast (~$0.12/instance), but too weak for CUDA/RAJA code. Couldn't handle template metaprogramming. Made syntax errors.
+- **gpt-oss-120b** (vLLM): Very slow inference. Quicksilver hit 1800s execution timeout at only 20 API calls. Other apps may fare better if builds are faster.
+- **Lulesh sweagent/vLLM**: +124,567 lines — agent dumped huge content instead of making surgical edits. Model may be hallucinating.
+
+## Files to Read First (Next Session)
+
+1. `STATE.md` — Full session 27 state
+2. `squeue -u krydzy` — Check if jobs completed
+3. `batch_results/benchmark_20260225_223943_49385453/` — Sweagent vLLM results
+4. `batch_results/interactive_v2_*/` — Interactive verification results
+5. `.planning/HANDOFF.md` — This file
 
 ## Files Modified This Session
 
 | File | Change |
 |------|--------|
-| `batch/frameworks/prompt.py` | Major rewrite — new prompt structure |
-| `batch/hpc_benchmark_runner.py` | Added `--build-mode` CLI arg + pass to runner |
-| `batch/run_benchmark.sh` | Added `--build-mode` parsing + passthrough |
-| `batch/frameworks/__init__.py` | Added `build_mode` to factory function |
-| `batch/frameworks/base.py` | Added `build_mode` to launcher, pass to prompt |
-| `batch/frameworks/codex.py` | Anti-yielding in AGENTS.md |
-| `batch/frameworks/claude.py` | Anti-yielding in CLAUDE.md, removed restrictions |
-| `tools/kripke_harness/bin/kripke_build` | Respect agent CMakeLists changes |
-| `tools/quicksilver_harness/bin/qs_build` | Pass through agent -O flags |
-| `tools/kripke_harness/bin/kripke_run` | Strengthen correctness: parse physics values |
-| `CLAUDE.md` | Updated scope, added build mode docs |
-| `STATE.md` | Updated with s26 progress |
+| `sweagent/agent/models.py` | Filter empty tool_calls arrays (line 863) |
+| `batch/hpc_benchmark_runner.py` | Kripke submodule symlink + rsync timeout 300s |
+| `batch/frameworks/codex.py` | vLLM model name `openai/gpt-oss-120b` |
+| `batch/frameworks/opencode.py` | vLLM model name `openai/gpt-oss-120b` |
+| `batch/frameworks/openhands.py` | max_iterations 50→200 |
+| `tools/kripke_harness/bin/kripke_run` | --oversubscribe for mpirun |
+| `config/hpc/*.yaml` (10 files) | call_limit 200, total_execution_timeout 3600 |
+| `STATE.md` | Updated |
 | `.planning/HANDOFF.md` | Updated |
-
-## Plan Reference
-
-Implementation plan: `/global/homes/k/krydzy/.claude/plans/elegant-gathering-rabin.md`
-- Steps 1-6: COMPLETE
-- Step 7 (direct mode implementation): COMPLETE (via prompt + build_mode flag)
-- Step 8 (integration testing): TODO (needs interactive compute node)
-
-## Files to Read First (Next Session)
-
-1. `STATE.md` — Full s26 changes and next steps
-2. `batch/frameworks/prompt.py` — New prompt template (verify it looks good)
-3. Check `squeue -u krydzy` — Any running jobs
-4. `.planning/HANDOFF.md` — This file
-
-## Validation Plan (for next session)
-
-1. Get interactive node: `salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m2404`
-2. Test prompt: print final prompt for one app and verify it reads well
-3. Test harness mode: run `kripke_build --arch CUDA` with a modified CMakeLists.txt
-4. Test direct mode: run `python3 batch/hpc_benchmark_runner.py --base --app kripke --build-mode direct --framework codex --external-model`
-5. Test Kripke correctness: run `kripke_run --arch CUDA` and check physics values parsed
-6. Full regression: one framework on all 4 apps
