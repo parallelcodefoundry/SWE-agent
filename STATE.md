@@ -1,93 +1,98 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-02-25 (session 27)
+Last updated: 2026-02-26 (session 28)
 
 ## Current Focus
 
-**Session 27: Bug fixes, timeout tuning, and first production benchmark runs with vLLM gpt-oss-120b.**
+**Session 28: Unified SWE-agent prompts into prompt.py, added --baseline-only flag, fixed harness bugs, analyzed completed batch results.**
 
-## Session 27 — Changes Implemented
+## Session 28 — Changes Implemented
 
-### Bug Fixes
-1. **Kripke submodule symlink** (`hpc_benchmark_runner.py`) — Symlink `workspace/.git/modules` → `test_repo/.git/modules` so gitdir pointers resolve after rsync. VERIFIED working.
-2. **gpt-4.1-mini empty tool_calls** (`sweagent/agent/models.py:863`) — Filter empty `tool_calls` arrays before sending to API. One-line fix: `and tool_calls`.
-3. **vLLM model name mismatch** (`codex.py`, `opencode.py`) — Changed `gpt-oss-120b` → `openai/gpt-oss-120b` to match vLLM registration.
-4. **rsync timeout** (`hpc_benchmark_runner.py:559`) — Bumped from 120s to 300s. Was never committed despite being in working tree.
-5. **mpirun --oversubscribe** (`kripke_run`) — Added to both baseline and main run paths. Fixes MPI slot errors.
-6. **Stale .pyc caches** — Cleaned multiple times; caused Claude framework argparse rejection.
+### Prompt Unification (main deliverable)
+1. **`build_sweagent_prompts()` in prompt.py** — New function generates `system_template` + `instance_template` for SWE-agent using the same shared constants all other frameworks use. Single source of truth for all 5 frameworks.
+2. **`config/hpc/llnl_base.yaml`** — New single YAML template with placeholders. Replaces 8 per-app YAML configs for SWE-agent plumbing (model, tools, env vars, demonstrations).
+3. **`sweagent.py` refactored** — `generate_config()` now calls `build_sweagent_prompts()` from prompt.py and injects into `llnl_base.yaml`. Removed `REPO_CONFIG_TEMPLATES` dict. Added `_build_bundle_list()` for dynamic tool bundles.
 
-### Timeout / Limit Tuning
-7. **per_instance_call_limit: 50→200** (all 10 HPC YAML configs) — SWE-agent was hitting 50 API call limit before iterating on build failures.
-8. **OpenHands max_iterations: 50→200** (`openhands.py`) — Same issue.
-9. **total_execution_timeout: 3600** (all 10 HPC YAML configs) — SWE-agent default 1800s cumulative command time too low for HPC builds. Quicksilver agent killed at 20 API calls.
+### Harness Improvements
+4. **`--baseline-only` flag** — Added to all 4 run harnesses (kripke_run, laghos_run, lulesh_run, qs_run), their config.yaml files, and prompt.py workflow. Agents can now get baseline timing without confusion from variance.
+5. **Makefile edit restriction removed** — All 8 SWE-agent YAML configs changed from "Do NOT edit Makefiles" to "You CAN edit Makefile to add flags". Root cause of agent refusing to optimize build flags.
+6. **qs_build flag allowlist removed** — Only dangerous flags (fno-exceptions, fno-rtti) are filtered now. Previously silently dropped flags like `-g`.
 
-### Benchmark Runs Submitted
-- **5 sbatch jobs** (vLLM gpt-oss-120b, base mode, 4 LLNL apps):
-  - sweagent (49385453) — RUNNING, partial results
-  - openhands (49385456) — PENDING
-  - claude (49385461) — PENDING
-  - codex (49387755) — PENDING (resubmitted after model name fix)
-  - opencode (49387756) — PENDING (resubmitted after model name fix)
-- **Interactive verification** (perlmutter-executor, gpt-4.1-mini) — running on compute node
+### Validation Bug Fixes
+7. **`result.success = False` on early returns** — `_validate_agent_changes()` in hpc_benchmark_runner.py now sets success=False on build timeout, build failure, and run timeout. Previously laghos showed success=True despite timeout.
+8. **`.gitignore` for build artifacts** — Written to workspaces after creation. Prevents SWE-agent's `git add -A` from staging 300K+ lines of build artifacts.
+9. **Debug logging for unknown correctness** — Saves full run stdout/stderr when correctness is "unknown".
 
-### Earlier Completed Runs (this session, pre-fixes)
-- codex sbatch (49385454) — ALL 4 FAILED: vLLM model name 404
-- interactive_verify_kripke — sweagent ran 448s, build failed (gpt-4.1-mini too weak for RAJA)
-- interactive_v2_kripke — rsync timeout (120s, now fixed to 300s)
+### Kripke-specific Fixes
+10. **Timing parser regex** — Fixed column order in `parse_timing_from_output()` and `extract_scientific_values()` (was name/float/int, actual output is name/int/float).
+11. **Default `--np` changed 4→1** — Multi-rank MPI hangs with OpenMPI 5.0.7 on Perlmutter.
+
+## Completed Batch Results (Session 27-28)
+
+| Job ID | Framework | Kripke | Laghos | Lulesh | Quicksilver |
+|--------|-----------|--------|--------|--------|-------------|
+| 49385453 | sweagent (vLLM) | builds, unknown | builds, timeout | builds, unknown | no build |
+| 49385454 | sweagent (ext) | crash 60s | crash 27s | builds, unknown | crash 31s |
+| 49385456 | openhands | builds, unknown | builds, timeout | builds, unknown | **passed 1.00x** |
+| 49385461 | claude | builds, unknown | builds, timeout | builds, unknown | **passed 1.03x** |
+| 49387755 | codex | builds, unknown | builds, timeout | builds, unknown | **passed 1.06x** |
+| 49387756 | opencode | builds, unknown | builds, timeout | builds, unknown | passed 0.92x |
+
+**Key patterns**: All agents produce `patch=0` (zero source changes). Quicksilver is only app working E2E. Kripke/Lulesh fail on correctness parsing (regex bug, now fixed). Laghos always times out at 600s.
 
 ## Previous Sessions
 
+- **Session 27** (2026-02-25): Bug fixes (6), timeout tuning (3), first production vLLM runs
 - **Session 26** (2026-02-25): Prompt redesign, --build-mode flag, harness pivot, Kripke correctness
-- **Session 25** (2026-02-26): Analyzed benchmark results (6/9 jobs), fixed MPICH_DIR, Claude argparse, Laghos g++-12
+- **Session 25** (2026-02-26): Analyzed benchmark results, fixed MPICH_DIR, Claude argparse, Laghos g++-12
 - **Session 24** (2026-02-25): All infra fixes committed. 9 benchmark jobs submitted.
 
 ## Branch State
 
 - **Current branch**: `dev`
-- **Latest commit**: `7c9bcd71` — Add total_execution_timeout: 3600
-- **Working tree**: clean
-- **Ahead of origin/dev**: 12 commits (not yet pushed)
+- **Latest commit**: `d749ac9c` — WIP: Session 28 — unified SWE-agent prompts, --baseline-only, harness fixes
+- **Working tree**: clean (STATE.md pending)
+- **Ahead of origin/dev**: 14 commits (not yet pushed)
 
 ## Open Issues / TODOs
 
 ### Infrastructure — Fixed this session
-- [x] **SWE-agent kripke git submodule** — Fixed: symlink .git/modules
-- [x] **SWE-agent gpt-4.1-mini empty tool_calls** — Fixed: filter empty arrays
-- [x] **Codex/OpenCode vLLM model name** — Fixed: use `openai/gpt-oss-120b`
-- [x] **rsync timeout** — Fixed: 120s → 300s
-- [x] **mpirun oversubscribe** — Fixed: added flag
-- [x] **Agent iteration limits** — Fixed: 50→200 calls, 1800→3600s execution
+- [x] Unified SWE-agent prompts into prompt.py
+- [x] Added --baseline-only flag to all run harnesses
+- [x] Removed Makefile edit restriction from SWE-agent configs
+- [x] Removed qs_build flag allowlist
+- [x] Fixed validation success flag on early returns
+- [x] Added .gitignore for build artifacts
+- [x] Fixed kripke_run timing parser regex
+- [x] Fixed kripke_run default np 4→1
 
 ### Infrastructure — Still open
+- [ ] **Harness runtime characterization** — Need to test Kripke/Laghos/Lulesh with various parameters on compute node to find configs completing in 10-60s with <2% variance (like the Quicksilver Coral2_P2_1 table). See HANDOFF.md for full plan.
+- [ ] **Laghos validation timeout** — 600s not enough for laghos_run baseline+modified. Need shorter problem or higher timeout.
+- [ ] **Lulesh validation crash** — Modified version segfaults; harness outputs "ERROR" not "CORRECTNESS: FAILED".
+- [ ] **Old per-app YAML configs** — `config/hpc/{app}_{profiling}.yaml` still exist but are no longer used by sweagent.py. Can be removed or kept as reference.
 - [ ] **GPA baseline build failures** — backprop/lavaMD missing C headers; exatensor/srad driver issue
 - [ ] **GPA BFS/Gaussian correctness** — Float precision from `__ldg()` causes mismatches
-- [ ] **Other framework execution time limits** — OpenHands has `no_change_timeout_seconds=600`, Codex has `CODEX_DEFAULT_EXEC_TIMEOUT_MS=600000`. Check if these need bumping similar to SWE-agent's total_execution_timeout.
-- [ ] **vLLM gpt-oss-120b inference speed** — ~2 min per API call observed (quicksilver). May need TP tuning, higher GPU mem util, or different model.
-
-### Validation — In progress
-- [x] **Prompt quality** — Verified: new prompt generates correctly
-- [x] **Harness mode** — Verified: kripke_build succeeds, submodule symlink works
-- [ ] **Direct mode** — Interactive verification queued (test 4)
-- [x] **Kripke correctness** — Agent ran, validation caught bad build correctly
-- [ ] **Full regression** — sbatch runs in progress
 
 ### Longer-term
-- [ ] **Merge dev into local/main** — 12 commits ahead, all fixes ready
-- [ ] **Full production benchmark** — 5 frameworks × 4 apps × {harness, direct} modes
-- [ ] **Consider stronger model** — gpt-4.1-mini too weak for RAJA/CUDA; gpt-oss-120b slow via vLLM
+- [ ] **Push dev to origin** — 14 commits ready
+- [ ] **Full production benchmark** — 5 frameworks × 4 apps with all fixes applied
+- [ ] **Consider stronger model** — gpt-oss-120b via vLLM is slow; agents need better models to actually produce optimizations
 - [ ] **Expert commit comparison** — Move to feature/expert-commits-swefficiency branch
 
 ## Recent Decisions
 
-- 2026-02-25 (s27): total_execution_timeout must be set explicitly in HPC configs (SWE-agent default 1800s insufficient)
-- 2026-02-25 (s27): vLLM model names must include full path (`openai/gpt-oss-120b`) to match registration
-- 2026-02-25 (s27): rsync timeout for Kripke needs 300s (224MB data on loaded filesystem)
+- 2026-02-26 (s28): SWE-agent prompts now generated from prompt.py, not hardcoded in YAML configs
+- 2026-02-26 (s28): Kripke default MPI ranks reduced to 1 (multi-rank hangs with OpenMPI 5.0.7)
+- 2026-02-26 (s28): Only truly dangerous flags filtered in qs_build (removed allowlist approach)
+- 2026-02-25 (s27): total_execution_timeout must be set explicitly in HPC configs
+- 2026-02-25 (s27): vLLM model names must include full path (`openai/gpt-oss-120b`)
 
 ## Next Steps
 
-1. **Check other framework timeout limits** — OpenHands no_change_timeout, Codex exec timeout, OpenCode session limits
-2. **Analyze sweagent vLLM results** — Job 49385453 partial results coming in
-3. **Wait for sbatch queue** — 4 jobs pending, should start as nodes free up
-4. **Investigate vLLM inference speed** — Consider higher GPU mem util or different TP size
-5. **Resubmit with all fixes** — Once current batch completes, resubmit with timeout fixes
-6. **Push dev to origin** — 12 commits ready
+1. **Characterize harness runtimes** — Run Kripke/Laghos/Lulesh with various params on compute node, build timing tables (see HANDOFF.md)
+2. **Analyze batch results thoroughly** — Background agent was launched but interrupted; need to check actual agent logs for openhands/claude/codex/opencode
+3. **Resubmit benchmark runs** — With all session 28 fixes (unified prompts, --baseline-only, regex fix, etc.)
+4. **Fix Laghos timeout** — Either reduce problem size or increase validation timeout
+5. **Fix Lulesh harness** — Output "CORRECTNESS: FAILED" on crash instead of "ERROR"
+6. **Push dev to origin** — 14 commits ready
