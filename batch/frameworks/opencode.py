@@ -121,6 +121,10 @@ fi
 # OpenCode config via env var
 export OPENCODE_CONFIG_CONTENT="$(cat '{config_path}')"
 
+# Override OpenCode's internal bash tool timeout (default 120s = 2 min).
+# Harness build+run commands can take 60-240s; 120s kills them mid-execution.
+export OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS=600000  # 10 min
+
 # Run OpenCode in headless mode with debug logging.
 # --log-level DEBUG --print-logs sends debug traces to stderr,
 # which subprocess.run merges into _agent_realtime.log via stderr=STDOUT.
