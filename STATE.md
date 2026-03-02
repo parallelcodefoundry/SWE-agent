@@ -1,72 +1,59 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-02-26 (session 31)
+Last updated: 2026-03-02 (session 32)
 
-## Current Focus
+## Last Session (Session 32)
 
-**Session 31: Added multi-run timing with warmup to all harnesses, pushed dev to origin, updated config YAMLs with characterization defaults.**
+### Analysis & Plots
+1. Created `analysis/plot_results.py` — generates 6 figures (speedup heatmaps per session + combined, build success rates, error summary table, error timeline)
+2. Generated `batch_results/results_summary.json` (6 jobs, 24 app-level results) and `batch_results/error_narrative.json` (86 issues in 6 categories) via subagents
+3. Fixed y-axis label rendering on heatmaps (names were concatenated)
 
-## Session 31 — Changes Implemented
+### Results Investigation — Key Findings
+4. **QS harness overrides all agent Makefile flags** — `qs_build` passes CXX/CXXFLAGS/CPPFLAGS/LDFLAGS as make command-line args, silently ignoring agent changes. Codex "1.11x" QS speedup was noise (agent's `-g` → `-O3` change had no effect; harness already builds with `-O3`).
+5. **Laghos N/C runs show 0.98x–1.23x variance** — baseline-vs-baseline noise is huge. Any reported speedup under ~1.3x is indistinguishable from noise.
+6. **Lulesh N/C runs consistently ~0.94x** — systematic 5% bias where "modified" (same exe!) runs slower than baseline. Suggests measurement ordering effect.
+7. **SWE-agent STILL crashing** despite --baseline_only signature fix. Job 49410718 shows `RuntimeError: Invalid configuration` in realtime logs. Another config issue beyond the signature fix.
+8. **No agent produced a real optimization** — across all frameworks × apps × sessions, all reported speedups are either noise (within N/C variance) or correctness failures (OpenCode Lulesh 3.41x with `correctness: failed`).
+9. **Patch analysis**: OpenHands/OpenCode Laghos patches add `-O3 -use_fast_math` to CMakeLists — these DO take effect in Laghos harness (no flag overrides), but CMake Release mode already uses `-O3` for CXX and `-O2` for CUDA, so benefit is marginal. OpenCode deleted entire CMakeLists and replaced with 3 flag lines (broken).
 
-### Multi-Run Timing (all 4 harness run scripts)
-1. **`--timing-runs N`** argument (default 1) — Number of timing repetitions per version. Reports median.
-2. **`--timeout-multiplier`** argument (default 3.0) — Modified run timeout = baseline_time * multiplier. Early stops if exceeded.
-3. **Warmup run** — Single discarded run before timed loop. Warms CUDA context + Lustre page cache. Fixed 69s cold-start issue observed in testing.
-4. **Median-based speedup** — `BASELINE TIME` and `MODIFIED TIME` use medians when multiple runs. Per-run times, stdev reported when N > 1.
-5. **Configurable timeout** in run functions — Was hardcoded 600s/300s, now parameter.
-
-### Benchmark Runner (`hpc_benchmark_runner.py`)
-6. **`--validation-runs N`** CLI arg (default 10) — Passed as `--timing-runs N` to harnesses for final validation.
-7. **Scaled timeout** — `600 + (N-1) * 120` seconds for multi-run validation.
-8. **Multi-run stats logging** — Parses TIMING RUNS and Kripke multi_run JSON.
-
-### Config YAML Updates (stale defaults fixed)
-9. **Lulesh**: s=150, i=5000, np=1 (was s=30, i=100, np=8)
-10. **Kripke**: groups=64, np=1 (was groups=32, np=4). Removed "CRITICAL: use 4 MPI ranks" advice.
-11. **Laghos**: rs=1, tf=0.4, np=1 (was rs=3, tf=0.8, np=4)
-12. **All**: Added warmup step to tool docstrings.
-
-### Other
-13. **Pushed dev to origin** — 22 commits pushed (`0fe0fa38..8bd1e207`).
-14. **Flag naming**: Renamed `--num-runs` to `--timing-runs` in harnesses to avoid confusion with `--run-number` (experiment iteration) in benchmark runner.
-
-### Test Results (Perlmutter A100)
-- **Lulesh --timing-runs 3 --baseline-only (s=30 i=100)**: PASSED. Shows 3 per-run times + median. Backward-compatible with default.
-- **Lulesh --timing-runs 3 full comparison (s=30 i=100)**: PASSED. TIMING RUNS, per-run, stdev all correct.
-- **Lulesh default (timing-runs=1)**: PASSED. No extra output, identical to pre-change.
-- **Kripke --timing-runs 3 --baseline-only**: PASSED. JSON includes baseline_solve_times + median.
-- **Kripke --timing-runs 3 full**: PASSED. JSON multi_run dict with all stats.
-- **Lulesh warmup test (s=150 i=5000)**: PASSED. Warmup: 22.210s, runs: 22.189/22.196/22.219s (30ms spread).
-
-### Key Finding: CUDA Cold-Start
-- First run on fresh GPU node took 69s for a 0.4s problem (s=30 i=100)
-- Caused by CUDA context init + Lustre page cache cold
-- Warmup run absorbs this; timed runs are consistent (~30ms spread at 22s)
-- Median also handles it, but explicit warmup is cleaner
+### Session 31 Runs Completed (All 5 Jobs)
+10. All 5 SLURM jobs (49405192-49410718) have completed. See results table below.
 
 ## Active Experiments
 
-| Job ID | Framework | Model | Apps | Status |
-|--------|-----------|-------|------|--------|
-| 49405194 | OpenHands | gpt-4o-mini | all 4 LLNL | RUNNING |
-| 49405192 | SWE-agent | gpt-4o-mini | all 4 LLNL | PENDING |
-| 49405195 | OpenCode | gpt-4o-mini | all 4 LLNL | PENDING |
-| 49405196 | Claude Code | claude-opus-4-6 | all 4 LLNL | PENDING |
-| 49407271 | Codex | gpt-5.3-codex | all 4 LLNL | PENDING |
+All jobs COMPLETED.
 
-Note: These jobs use the OLD harness code (pre-multi-run). Results will still be single-shot. Multi-run validation applies to future runs.
+| Job ID | Framework | Model | Status | Kripke | Laghos | Lulesh | Quicksilver |
+|--------|-----------|-------|--------|--------|--------|--------|-------------|
+| 49405192 | SWE-agent | gpt-4o-mini | DONE | N/C 0.93x | N/C 1.23x | N/C 0.95x | N/C 1.05x |
+| 49405194 | OpenHands | gpt-4o-mini | DONE | 0.99x (bad unroll) | 1.00x (CMake flags) | BUILD FAIL | N/C timeout |
+| 49405195 | OpenCode | gpt-4o-mini | DONE | CRASH | BUILD FAIL (solver.cpp) | 3.41x FAIL correct | CRASH |
+| 49405196 | Claude Code | claude-opus-4-6 | DONE | N/C 1.02x | N/C 0.98x | N/C 0.94x | TIMEOUT |
+| 49407271 | Codex | gpt-5.3-codex | DONE | N/C 1.01x | N/C 0.99x | N/C 0.94x | TIMEOUT |
+| 49410718 | SWE-agent (fix) | gpt-4o-mini | DONE | N/C 1.02x | N/C 1.10x | N/C 0.94x | TIMEOUT |
+
+**N/C** = No real changes (only .gitignore boilerplate). Speedups are baseline-vs-baseline noise.
 
 ## Completed Batch Results (Session 29 Runs)
 
 | Job ID | Framework | Kripke | Laghos | Lulesh | Quicksilver |
 |--------|-----------|--------|--------|--------|-------------|
-| 49392491 | SWE-agent | config crash | PASSED 1.23x* | PASSED 0.95x* | PASSED 0.97x* |
-| 49392492 | Codex (4o-mini) | BUILD FAIL | BUILD FAIL | BUILD FAIL | PASSED 1.11x |
-| 49392493 | OpenHands | unknown (timeout 60m) | PASSED 1.02x | BUILD FAIL (312KB) | unknown (timeout 60m) |
-| 49392496 | OpenCode | BUILD FAIL | PASSED 1.04x | PASSED 0.95x | PASSED 1.04x |
-| 49392497 | Claude Code | CANCELLED | CANCELLED | CANCELLED | CANCELLED |
+| 49392491 | SWE-agent | N/C (crash) | N/C 1.23x* | N/C 0.95x* | N/C 0.97x* |
+| 49392492 | Codex (4o-mini) | BUILD FAIL | BUILD FAIL | BUILD FAIL | 1.11x (noise) |
+| 49392493 | OpenHands | N/C (timeout) | 1.02x (CMake flags) | BUILD FAIL (312KB) | N/C (timeout) |
+| 49392496 | OpenCode | BUILD FAIL | 1.04x (CMake flags) | N/C 0.95x | 1.04x (cudaMalloc) |
 
-*SWE-agent results are baseline-only (agent never started due to config crash)
+*All speedups marked N/C are within measurement noise range
+
+## Harness Flag Handling Audit
+
+| Harness | Build System | Agent Flags Respected? | Issue |
+|---------|-------------|----------------------|-------|
+| **Quicksilver** | Make | **NO** — CXX/CXXFLAGS/LDFLAGS overridden via make CLI args | **NEEDS FIX** |
+| **Kripke** | CMake | YES — detects git diff CMakeLists.txt, adapts | OK |
+| **Lulesh** | Make (template) | YES — if Makefile passes validation (sm_80, SRC_DIR, g++-12) | OK |
+| **Laghos** | Make | YES — no overrides at all, just `make -j8` | OK |
 
 ## Characterization Results
 
@@ -75,48 +62,48 @@ Note: These jobs use the OLD harness code (pre-multi-run). Results will still be
 | Kripke | zones=32³ groups=64 niter=10 np=1 | 28.4s | 0.46% | Aligned |
 | Lulesh | s=150 i=5000 np=1 | 23.6s | 0.28% | Aligned |
 | Laghos | p1 dim2 rs=1 tf=0.4 np=1 | 23.8s | TBD | Aligned |
-| Quicksilver | Coral2_P2_1 np=4 | ~50s | 0.5% | Not updated in harness (np=4 unchanged) |
+| Quicksilver | Coral2_P2_1 np=4 | ~50s | 0.5% | Not updated in harness |
 
 ## Branch State
 
 - **Current branch**: `dev`
-- **Latest commit**: `1608f2cf` — WIP: Add multi-run timing, warmup, and baseline-based timeout
+- **Latest commit**: `6d60d683` — WIP: Session 32 — analysis plots, results investigation, harness flag audit
 - **Working tree**: clean (untracked: 5 Laghos characterization scripts in scripts/)
-- **Origin/dev**: up to date (pushed this session)
+- **Origin/dev**: 1 commit ahead (session 32 WIP not yet pushed)
 
 ## Open Issues / TODOs
 
-### Fixed This Session (Session 31)
-- [x] Push dev to origin (~22 commits)
-- [x] Multi-run timing for statistical rigor
-- [x] Warmup run for CUDA cold-start
-- [x] Stale config YAML defaults
-- [x] Flag naming confusion (--num-runs → --timing-runs)
+### Planned (Session 33) — See Plan File
+- [ ] **Fix QS harness flag passthrough** — stop overriding agent Makefile flags (plan at `.claude/plans/nifty-cuddling-piglet.md`)
+- [ ] **Investigate SWE-agent continued crash** — still failing with `RuntimeError: Invalid configuration` despite signature fix
+- [ ] **Update results + plots** — add new job data, annotate noise range on heatmaps
+- [ ] **Laghos timing variance** — N/C range 0.98x-1.23x is too high for meaningful speedup detection
 
 ### Still Open
-- [ ] **Quicksilver characterization not reflected in harness** — np=4 still default, no characterization-based update
-- [ ] **EDQUOT disk quota** — User says fixed, .claude dir is in home (not symlinked), batch_results on scratch (13GB)
-- [ ] **Laghos characterization variance** — Job timed out, need to rerun for CV data
+- [ ] **Quicksilver consistent timeout** — All 5 frameworks timeout on QS. May need longer timeout or smaller problem.
+- [ ] **Quicksilver characterization not reflected in harness** — np=4 still default
+- [ ] **Lulesh systematic bias** — N/C runs show ~0.94x consistently (ordering effect?)
+- [ ] **Laghos characterization variance** — Job timed out, need rerun for CV data
 - [ ] **GPA baseline build failures** — backprop/lavaMD missing C headers
 - [ ] **GPA BFS/Gaussian correctness** — Float precision from `__ldg()`
-- [ ] **Lulesh SRC_DIR trap** — Agents struggle with `SRC_DIR = src` vs `cuda/src/`
-- [ ] **Laghos/QS not tested with warmup** — Only Lulesh and Kripke tested on GPU
-
-## Next Steps
-
-1. Check batch job results when they complete (49405192-49407271)
-2. Test Laghos and Quicksilver warmup+multi-run on GPU (only Lulesh/Kripke tested so far)
-3. Update Quicksilver harness defaults from characterization (np=4 → np=1?)
-4. Investigate Lulesh SRC_DIR trap — agents keep getting confused
-5. Rerun Laghos characterization for variance data
 
 ## Recent Decisions
 
-- 2026-02-26 (s31): Warmup run added to all harnesses — discarded run before timing loop absorbs CUDA cold-start (69s → 22s)
-- 2026-02-26 (s31): --timing-runs (not --num-runs) to avoid confusion with --run-number
+- 2026-03-02 (s32): QS harness needs to follow Kripke pattern — detect agent Makefile changes, only enforce essentials (nvcc, sm_80, g++-12, MPI)
+- 2026-03-02 (s32): All reported "speedups" from sessions 29+31 are within measurement noise. No agent has produced a real optimization yet.
+- 2026-03-02 (s32): Laghos harness correctly respects agent flags (no overrides). Kripke and Lulesh also OK.
+- 2026-02-26 (s31): Warmup run added to all harnesses — discarded run before timing loop absorbs CUDA cold-start
+- 2026-02-26 (s31): --timing-runs for harnesses, --validation-runs for benchmark runner, --run-number for experiment iteration
 - 2026-02-26 (s31): Default validation_runs=10 in benchmark runner, default timing_runs=1 in harnesses
-- 2026-02-26 (s31): Config YAMLs updated with characterization defaults (s=150/groups=64/rs=1/np=1)
-- 2026-02-26 (s31): Build time is NOT included in harness timing (confirmed: get_pristine_executable() runs before timing loop)
+- 2026-02-26 (s31): Config YAMLs updated with characterization defaults
+- 2026-02-26 (s31): Build time is NOT included in harness timing
 - 2026-02-26 (s30): Kripke Timing.cpp confirmed: name, count, seconds order
-- 2026-02-26 (s30): First-party Codex models use built-in openai provider
 - 2026-02-26 (s30): All baselines already -O3 optimized
+
+## Next Steps
+
+1. Fix QS harness flag passthrough (Part 1 of plan)
+2. Investigate and fix SWE-agent continued crash (Part 4 of plan)
+3. Update results data + regenerate plots with all job data (Part 3 of plan)
+4. Address Laghos timing variance and Lulesh measurement bias
+5. Resubmit benchmark runs after fixes
