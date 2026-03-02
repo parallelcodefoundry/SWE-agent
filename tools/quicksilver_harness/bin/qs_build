@@ -162,6 +162,35 @@ def find_mpi_flags():
     return None
 
 
+def detect_agent_makefile_changes(src_dir):
+    """Check if agent modified the Makefile via git diff."""
+    try:
+        result = subprocess.run(
+            ['git', 'diff', '--name-only', 'HEAD', '--', 'Makefile'],
+            cwd=src_dir, capture_output=True, text=True
+        )
+        return result.returncode == 0 and 'Makefile' in result.stdout
+    except Exception:
+        return False
+
+
+def validate_agent_makefile(makefile_path):
+    """Check agent's Makefile has essential CUDA/GPU flags.
+
+    Returns (is_valid, list_of_missing_essentials).
+    """
+    try:
+        content = open(makefile_path).read()
+        essentials = {
+            'gpu_arch': any(s in content for s in ['sm_80', 'compute_80']),
+            'cuda': any(s in content for s in ['nvcc', 'HAVE_CUDA', 'cuda']),
+        }
+        missing = [k for k, v in essentials.items() if not v]
+        return len(missing) == 0, missing
+    except Exception:
+        return False, ['unreadable']
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='Build Quicksilver (MPI + CUDA + OpenMP, multi-GPU)')
@@ -273,98 +302,98 @@ def main():
             print("=" * 60)
             result["filtered_flags"] = custom_flags['filtered_flags']
 
-        # Build the -Xcompiler flags string for host compiler options
-        # Start with required flags, then add user customizations
-        xcompiler_flags = ['-fopenmp']
-        if custom_flags['extra_cxxflags']:
-            # Pass through ALL user optimization flags, including -O flags
-            # (agent may intentionally set -O2 or -Ofast instead of our default -O3)
-            user_flags = custom_flags['extra_cxxflags']
-            xcompiler_flags.extend(user_flags)
-            if user_flags:
-                print(f"User Makefile flags APPLIED (host compiler): {' '.join(user_flags)}")
-                result["user_cxxflags"] = user_flags
-            # If agent set a different -O flag, use it instead of default -O3
-            user_has_O_flag = any(f.startswith('-O') for f in user_flags)
-        else:
-            user_has_O_flag = False
+        # Detect if agent modified the Makefile
+        agent_modified = detect_agent_makefile_changes(src_dir)
 
-        xcompiler_str = ','.join(xcompiler_flags)
+        if agent_modified:
+            # Agent modified Makefile — validate and respect their flags
+            makefile_path = os.path.join(src_dir, 'Makefile')
+            valid, missing = validate_agent_makefile(makefile_path)
 
-        # CUDA build flags for A100 (sm_80)
-        # MPI + CUDA + OpenMP for multi-GPU execution
-        # -lineinfo enables source line mapping for GPU code (needed for profiling)
-        # Use agent's -O flag if set, otherwise default to -O3
-        opt_flag = '-O3'
-        if user_has_O_flag:
-            # Agent set an optimization level — use theirs
-            for f in custom_flags['extra_cxxflags']:
-                if f.startswith('-O'):
-                    opt_flag = f
-                    break
-            print(f"Using agent's optimization flag: {opt_flag}")
+            if valid:
+                print("")
+                print("Agent modified Makefile — respecting agent's build config")
+                print(f"  Enforcing: CXX={nvcc} (CUDA requires nvcc)")
+                print(f"  Host compiler: {host_compiler}")
+                print(f"  MPI: {'enabled' if mpi_flags else 'disabled'}")
+                print("")
 
-        cxxflags = f'-DHAVE_CUDA -std=c++11 {opt_flag} -lineinfo -Xptxas -v -gencode=arch=compute_80,code=sm_80 --compiler-bindir={host_compiler} -Xcompiler {xcompiler_str}'
+                # Only override CXX to ensure nvcc is used
+                build_cmd = ['make', '-j8', f'CXX={nvcc}']
 
-        # Check if agent changed CXX in Makefile
-        agent_cxx_change = False
-        try:
-            check = subprocess.run(
-                ['git', 'diff', '--name-only', 'HEAD', '--', 'Makefile'],
-                cwd=src_dir, capture_output=True, text=True
-            )
-            if check.returncode == 0 and 'Makefile' in check.stdout:
-                # Check if CXX was specifically changed
-                diff_out = subprocess.run(
-                    ['git', 'diff', 'HEAD', '--', 'Makefile'],
-                    cwd=src_dir, capture_output=True, text=True
-                )
-                if diff_out.returncode == 0 and 'CXX' in diff_out.stdout:
-                    agent_cxx_change = True
-        except Exception:
-            pass
+                # Set env vars for agent's Makefile to reference
+                build_env['HOST_CXX'] = host_compiler
+                build_env['CUDA_HOME'] = cuda_path
+                if mpi_flags:
+                    build_env['MPI_INCLUDE'] = mpi_flags['include_flags']
+                    build_env['MPI_LINK'] = mpi_flags['lib_flags']
 
-        if agent_cxx_change:
+                result["agent_makefile_respected"] = True
+            else:
+                print(f"WARNING: Agent's Makefile missing essentials ({missing})")
+                print("Falling back to harness-controlled build")
+                agent_modified = False
+
+        if not agent_modified:
+            # Default path — full harness control
+            # Build the -Xcompiler flags string for host compiler options
+            xcompiler_flags = ['-fopenmp']
+            if custom_flags['extra_cxxflags']:
+                user_flags = custom_flags['extra_cxxflags']
+                xcompiler_flags.extend(user_flags)
+                if user_flags:
+                    print(f"User Makefile flags APPLIED (host compiler): {' '.join(user_flags)}")
+                    result["user_cxxflags"] = user_flags
+                user_has_O_flag = any(f.startswith('-O') for f in user_flags)
+            else:
+                user_has_O_flag = False
+
+            xcompiler_str = ','.join(xcompiler_flags)
+
+            # Use agent's -O flag if set, otherwise default to -O3
+            opt_flag = '-O3'
+            if user_has_O_flag:
+                for f in custom_flags['extra_cxxflags']:
+                    if f.startswith('-O'):
+                        opt_flag = f
+                        break
+                print(f"Using agent's optimization flag: {opt_flag}")
+
+            cxxflags = f'-DHAVE_CUDA -std=c++11 {opt_flag} -lineinfo -Xptxas -v -gencode=arch=compute_80,code=sm_80 --compiler-bindir={host_compiler} -Xcompiler {xcompiler_str}'
+
             print("")
-            print("WARNING: Agent modified CXX in Makefile, but CXX is overridden to nvcc")
-            print("  for CUDA compilation. Agent's CXX change will NOT take effect.")
-            print("  CUDA requires nvcc as the compiler. Source code changes ARE applied.")
+            print("BUILD CONFIGURATION (harness-controlled defaults):")
+            print(f"  CXX = {nvcc}  (CUDA requires nvcc)")
+            print(f"  Optimization: {opt_flag}")
+            print(f"  GPU: CUDA sm_80 (A100)")
+            print(f"  MPI: {'enabled' if mpi_flags else 'disabled'}")
+            print(f"  Host compiler: {host_compiler}")
+            print(f"  Host compiler flags: {xcompiler_str}")
             print("")
 
-        # Inform about build configuration
-        print("")
-        print("BUILD CONFIGURATION (essential settings enforced):")
-        print(f"  CXX = {nvcc}  (CUDA requires nvcc)")
-        print(f"  Optimization: {opt_flag}")
-        print(f"  GPU: CUDA sm_80 (A100)")
-        print(f"  MPI: {'enabled' if mpi_flags else 'disabled'}")
-        print(f"  Host compiler: {host_compiler}")
-        print(f"  Host compiler flags: {xcompiler_str}")
-        print("")
+            # LDFLAGS - base + MPI + any user customizations
+            ldflags = f'-L{cuda_path}/lib64 -lcudart -lcuda -lgomp'
+            if mpi_link:
+                ldflags += f' {mpi_link}'
+            if custom_flags['extra_ldflags']:
+                ldflags += ' ' + ' '.join(custom_flags['extra_ldflags'])
+                print(f"User Makefile flags (linker): {' '.join(custom_flags['extra_ldflags'])}")
+                result["user_ldflags"] = custom_flags['extra_ldflags']
 
-        # LDFLAGS - base + MPI + any user customizations
-        ldflags = f'-L{cuda_path}/lib64 -lcudart -lcuda -lgomp'
-        if mpi_link:
-            ldflags += f' {mpi_link}'
-        if custom_flags['extra_ldflags']:
-            ldflags += ' ' + ' '.join(custom_flags['extra_ldflags'])
-            print(f"User Makefile flags (linker): {' '.join(custom_flags['extra_ldflags'])}")
-            result["user_ldflags"] = custom_flags['extra_ldflags']
+            # CPPFLAGS: CUDA compilation flags + OpenMP + MPI defines + includes
+            cppflags = f'-x cu -dc -DHAVE_OPENMP -I{cuda_path}/include'
+            if mpi_defines:
+                cppflags += f' {mpi_defines}'
+            if mpi_include:
+                cppflags += f' {mpi_include}'
 
-        # CPPFLAGS: CUDA compilation flags + OpenMP + MPI defines + includes
-        cppflags = f'-x cu -dc -DHAVE_OPENMP -I{cuda_path}/include'
-        if mpi_defines:
-            cppflags += f' {mpi_defines}'
-        if mpi_include:
-            cppflags += f' {mpi_include}'
-
-        build_cmd = [
-            'make', '-j8',
-            f'CXX={nvcc}',
-            f'CXXFLAGS={cxxflags}',
-            f'CPPFLAGS={cppflags}',
-            f'LDFLAGS={ldflags}'
-        ]
+            build_cmd = [
+                'make', '-j8',
+                f'CXX={nvcc}',
+                f'CXXFLAGS={cxxflags}',
+                f'CPPFLAGS={cppflags}',
+                f'LDFLAGS={ldflags}'
+            ]
 
         proc = subprocess.run(
             build_cmd,

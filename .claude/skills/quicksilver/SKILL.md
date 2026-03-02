@@ -23,7 +23,7 @@ python3 tools/quicksilver_harness/bin/qs_build
 python3 tools/quicksilver_harness/bin/qs_build --clean   # clean rebuild
 ```
 
-The build harness uses `nvcc` with `g++-12`, passes recognized user flags through `-Xcompiler`, and filters flags that break CUDA. Always enables: `-DHAVE_CUDA`, `-DHAVE_OPENMP`, `-std=c++11`, `-O3`.
+The build harness uses `nvcc` with `g++-12`. If the agent modifies the Makefile, the harness respects agent flags (only enforcing `CXX=nvcc`). Otherwise, uses safe defaults: `-DHAVE_CUDA`, `-DHAVE_OPENMP`, `-std=c++11`, `-O3`.
 
 ### g++-12 Requirement
 **nvcc is incompatible with g++ 13+ when using `-std=c++11`.** Harness handles via `--compiler-bindir`.
@@ -47,7 +47,7 @@ The harness extracts per-cycle physics values (`absorb`, `scatter`, `fission`, `
 
 - **g++ 13 errors** -- Ensure `--compiler-bindir` points to `g++-12`; harness does this automatically.
 - **"nvcc not found"** -- On a login node; CUDA builds require a compute node with GPUs.
-- **Harness overrides Makefile flags** -- Edits to `CXX`/`CXXFLAGS` have no direct effect.
+- **Makefile changes are respected** -- If you modify the Makefile, the harness detects your changes and only enforces `CXX=nvcc`. If you don't modify the Makefile, the harness uses full default flags (`-O3`, `-std=c++11`, `sm_80`).
 - **Linker errors with `-dc`** -- All `.cc` files compiled as CUDA with `-x cu -dc`; new files must be included.
 - **Executable not found** -- Binary is at `src/qs`, not repo root.
 - **Particle conservation warnings** -- Optimization broke physics; revert changes.

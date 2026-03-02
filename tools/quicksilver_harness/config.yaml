@@ -15,10 +15,10 @@ tools:
         - Features: OpenMP, CUDA GPU support (no MPI)
 
       Makefile customization:
-        You CAN add optimization flags to the Makefile and they will be respected:
-        - CXXFLAGS: Add flags like -funroll-loops, -ffast-math, -ftree-vectorize
-          (these are passed to the host compiler via -Xcompiler)
-        - LDFLAGS: Add linker flags like -L, -l, -Wl,
+        If you modify the Makefile, the harness will detect your changes and
+        respect your build config (only enforcing CXX=nvcc for CUDA compilation).
+        You CAN freely modify CXXFLAGS, CPPFLAGS, LDFLAGS, and optimization flags.
+        If you don't modify the Makefile, the harness uses safe defaults (-O3, sm_80).
 
       Returns build status and any compilation errors.
     arguments:
@@ -29,7 +29,7 @@ tools:
         argument_format: "--clean"
 
   qs_run:
-    signature: "qs_run [--baseline_only]"
+    signature: "qs_run [<baseline_only>]"
     docstring: |
       Run Quicksilver benchmark and compare performance against baseline.
 

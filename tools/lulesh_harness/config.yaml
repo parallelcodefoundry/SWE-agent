@@ -34,7 +34,7 @@ tools:
         argument_format: "--no-mpi"
 
   lulesh_run:
-    signature: "lulesh_run [<size>] [<iterations>] [<gpu>] [<np>] [--baseline_only]"
+    signature: "lulesh_run [<size>] [<iterations>] [<gpu>] [<np>] [<baseline_only>]"
     docstring: |
       Run LULESH benchmark and compare performance against baseline.
 
