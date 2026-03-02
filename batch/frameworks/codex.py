@@ -36,10 +36,17 @@ class CodexLauncher(FrameworkLauncher):
             if model_id in self.FIRST_PARTY_MODELS:
                 # First-party OpenAI model — use built-in provider for native
                 # apply_patch and model-specific features.
-                return [
+                flags = [
                     f"model={model_id}",
                     "web_search=disabled",
                 ]
+                # Override base URL if OPENAI_API_BASE is set (e.g. regional
+                # endpoint us.api.openai.com). Without this, the built-in
+                # "openai" provider hardcodes api.openai.com and gets 401.
+                api_base = os.environ.get("OPENAI_API_BASE", "")
+                if api_base:
+                    flags.append(f"model_providers.openai.base_url={api_base}")
+                return flags
             else:
                 # External model — use custom provider name to avoid collision
                 # with Codex built-in "openai" provider (or_insert semantics

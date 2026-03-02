@@ -1,141 +1,111 @@
-# HANDOFF — Session 32 → Session 33
+# HANDOFF — Session 34 → Session 35
 
-Last updated: 2026-03-02 (session 32)
+Last updated: 2026-03-02 (session 34)
 
 ## What We Were Working On
 
-Session 32: Analyzed all benchmark results from sessions 29+31. Created analysis plots (6 figures). Discovered that QS harness overrides all agent Makefile flags. Found that no agent has produced a real optimization — all reported speedups are measurement noise or correctness failures. Planned harness fix + SWE-agent crash investigation.
+Session 34: Implemented the 3 remaining infrastructure fixes identified in session 33's failure analysis. All known infrastructure bugs are now resolved.
 
 ## Goal Progress
-- [x] Goal 0: Load state, check jobs
-- [x] Goal 1: Investigate SWE-agent crash (signature fix from session 31) → Fix worked partially but SWE-agent STILL crashing
-- [x] Goal 2: Fix SWE-agent config signature (`--baseline-only` → `--baseline_only`) + Lulesh SRC_DIR trap → Committed c0c68d0d
-- [x] Goal 3: Relaunch failed SWE-agent run → Job 49410718
-- [x] Goal 4: Create analysis plots (heatmaps, build success, error summary) → 6 plots in `analysis/figures/`
-- [x] Goal 5: Analyze all completed benchmark results → See findings below
-- [x] Goal 6: Audit all 4 harness flag handling → QS broken, others OK
-- [x] Goal 7: Write plan for QS harness fix + continued analysis → `.claude/plans/nifty-cuddling-piglet.md`
-- [ ] **Goal 8: Fix QS harness flag passthrough** ← START HERE
-- [ ] Goal 9: Investigate SWE-agent continued crash (beyond signature fix)
-- [ ] Goal 10: Update results data + regenerate plots with all job data
-- [ ] Goal 11: Address Laghos timing variance (N/C range 0.98x-1.23x)
+- [x] Goal 0: Commit previous changes (session 33)
+- [x] Goal 1: Fix SWE-agent config signatures (session 33)
+- [x] Goal 2: Fix QS harness flag passthrough (session 33)
+- [x] Goal 3: Update results_summary.json + plots (session 33)
+- [x] Goal 4: Update QS SKILL.md (session 33)
+- [x] Goal 5: Deep failure analysis of session 32 jobs (session 33)
+- [x] Goal 6: Fix Codex gpt-5.3 API hostname bug
+- [x] Goal 7: Fix Claude Code --verbose flag
+- [x] Goal 8: Fix Lulesh Makefile deletion issue
+- [ ] **Goal 9: Resubmit benchmark runs with all fixes** ← START HERE
+- [ ] Goal 10: Address Laghos timing variance / Lulesh measurement bias
 
-## Critical Findings
+## Fixes Applied This Session
 
-### Code Version Timeline
-Jobs used DIFFERENT code versions depending on start time:
-- **Session 29 jobs** (49392491-96): OLD code — no multi-run, no warmup, old defaults
-- **49405192 (SWE-agent) + 49405194 (OpenHands)**: After session 30, BEFORE multi-run/warmup/signature fix
-- **49405195-49410718 (OpenCode/Claude/Codex/SWE-agent fix)**: After ALL commits including multi-run timing, warmup, signature fix
+### Fix 1: Codex API Hostname Bug
+**File**: `batch/frameworks/codex.py:36-48`
+**Change**: First-party models now pass `OPENAI_API_BASE` as `model_providers.openai.base_url` override to the Codex CLI. Without this, the built-in "openai" provider hardcodes `api.openai.com`, which gets 401 when the API key is tied to `us.api.openai.com`.
 
-### All Speedups Are Noise
-- Laghos N/C (baseline-vs-baseline) runs range 0.98x–1.23x — 25% variance
-- Lulesh N/C runs consistently ~0.94x — systematic bias, not random
-- Kripke N/C runs ~1.01-1.02x — within noise
-- The OpenHands/OpenCode Laghos CMakeLists flag changes (adding `-O3 -use_fast_math`) are the only "real" changes that took effect, but CMake Release mode already uses `-O3` for CXX — marginal CUDA `-O2` → `-O3` bump
-- Codex QS "1.11x" was noise — harness overrides Makefile flags
+### Fix 2: Claude Code --verbose Flag
+**File**: `batch/frameworks/claude.py:135`
+**Change**: Added `--verbose` to the `claude -p` CLI invocation. Claude Code v2.1.59 requires this flag when using `--output-format stream-json` — without it, the CLI exits immediately with zero tokens.
 
-### QS Harness Flag Override Problem
-`tools/quicksilver_harness/bin/qs_build` lines 361-367:
-```python
-build_cmd = ['make', '-j8',
-    f'CXX={nvcc}',           # overrides Makefile
-    f'CXXFLAGS={cxxflags}',  # overrides Makefile
-    f'CPPFLAGS={cppflags}',  # overrides Makefile
-    f'LDFLAGS={ldflags}'     # overrides Makefile
-]
-```
-Agent Makefile edits are silently ignored. Should follow Kripke pattern (detect agent changes, only enforce essentials).
+### Fix 3: Lulesh Makefile Deletion
+**Repos**: `Lulesh/` (pristine) and `Lulesh_test/`
+**Change**: Option C — removed 3 legacy trap files AND committed proper `cuda/Makefile`:
+- **Removed**: `cuda/build/Makefile.CRAY` (sm_35, Cray asyncpe), `openacc/build/Makefile` (pgCC, cc35), `stdpar/build/Makefile` (nvc++)
+- **Added**: `cuda/Makefile` (nvcc, sm_80, g++-12, MPI) — identical to harness embedded template
+- Both repos have separate commits for this change
 
-### SWE-agent Still Crashing
-Job 49410718 realtime log ends with `RuntimeError: Invalid configuration. Please check the above output.` — same Pydantic error as before the signature fix. There's ANOTHER config issue beyond `--baseline_only`.
+### Updated: Lulesh SKILL.md
+- Updated build section to note Makefile is committed to repo
+- Added "Legacy Makefiles removed" to Common Issues section
 
-## Session 32 Commits
+## All Infrastructure Fixes Summary
 
-```
-6d60d683 WIP: Session 32 — analysis plots, results investigation, harness flag audit
-c0c68d0d Fix SWE-agent signature crash + Lulesh SRC_DIR trap defenses
-```
+| # | Fix | Session | Status |
+|---|-----|---------|--------|
+| 1 | SWE-agent `[--baseline_only]` → `[<baseline_only>]` | 33 | Done |
+| 2 | QS harness flag passthrough | 33 | Done |
+| 3 | Codex API hostname (OPENAI_API_BASE) | 34 | Done |
+| 4 | Claude Code --verbose flag | 34 | Done |
+| 5 | Lulesh legacy Makefile removal + cuda/Makefile commit | 34 | Done |
 
 ## Files Modified This Session
 
 | File | Change |
 |------|--------|
-| `analysis/plot_results.py` | NEW — generates 6 figures from results_summary.json and error_narrative.json |
-| `analysis/figures/*.png` | NEW — 6 plot files (heatmaps, build success, error summary, timeline) |
-| `tools/kripke_harness/config.yaml` | Signature fix: `--baseline-only` → `--baseline_only` |
-| `tools/laghos_harness/config.yaml` | Signature fix |
-| `tools/lulesh_harness/config.yaml` | Signature fix + Makefile location note in docstring |
-| `tools/quicksilver_harness/config.yaml` | Signature fix |
-| `batch/frameworks/prompt.py` | Lulesh-specific note about active Makefile |
-| `batch/hpc_benchmark_runner.py` | Remove legacy Makefiles from Lulesh workspaces |
-| `tools/lulesh_harness/bin/lulesh_build` | Makefile integrity validation (sm_80, SRC_DIR, g++-12) |
-
-## Plan for Next Session
-
-Detailed plan at `.claude/plans/nifty-cuddling-piglet.md`:
-
-1. **Part 4**: Investigate SWE-agent continued crash — read full realtime logs, find remaining config mismatches
-2. **Part 1**: Fix QS harness flag passthrough — follow Kripke pattern (detect agent changes, only enforce essentials)
-3. **Part 2**: Verify Kripke + Lulesh harnesses are OK (likely no changes)
-4. **Part 3**: Update results_summary.json with new jobs, regenerate plots, annotate noise range
+| `batch/frameworks/codex.py:36-48` | First-party models pass OPENAI_API_BASE |
+| `batch/frameworks/claude.py:135` | Added --verbose flag |
+| `.claude/skills/lulesh/SKILL.md:34,53-54` | Updated for committed Makefile |
+| `Lulesh/cuda/Makefile` | NEW: Committed proper Perlmutter Makefile |
+| `Lulesh/cuda/build/Makefile.CRAY` | DELETED |
+| `Lulesh/openacc/build/Makefile` | DELETED |
+| `Lulesh/stdpar/build/Makefile` | DELETED |
+| `Lulesh_test/` | Same changes as pristine Lulesh |
 
 ## Files to Read First Next Session
 
 1. `STATE.md` — Full state overview
 2. `.planning/HANDOFF.md` — This file
-3. `.claude/plans/nifty-cuddling-piglet.md` — Detailed implementation plan
-4. `tools/quicksilver_harness/bin/qs_build:260-370` — Flag handling code to fix
-5. `tools/kripke_harness/bin/kripke_build:55-105` — Reference pattern for flag detection
-6. `batch_results/benchmark_*_49410718/run_1/laghos/laghos__base_agent_realtime.log` — SWE-agent crash log
+3. `batch/run_benchmark.sh` — For resubmission commands
 
-## Results Summary (All Sessions)
+## Resubmission Plan
 
-### Session 31 Results (4 new jobs)
-
-| Job ID | Framework | Model | Kripke | Laghos | Lulesh | Quicksilver |
-|--------|-----------|-------|--------|--------|--------|-------------|
-| 49405195 | OpenCode | gpt-4o-mini | CRASH | BUILD FAIL | 3.41x (FAIL correct) | CRASH |
-| 49405196 | Claude Code | opus-4-6 | N/C 1.02x | N/C 0.98x | N/C 0.94x | TIMEOUT |
-| 49407271 | Codex | gpt-5.3-codex | N/C 1.01x | N/C 0.99x | N/C 0.94x | TIMEOUT |
-| 49410718 | SWE-agent | gpt-4o-mini | N/C 1.02x | N/C 1.10x | N/C 0.94x | TIMEOUT |
-
-### Timing Observations
-- Claude Code is fastest: 25-62s per app
-- Codex second: 30-69s per app
-- SWE-agent: 148-385s (but crashes, so this is crash + validation time)
-- OpenHands: 165-3619s (slowest)
-- OpenCode: 400-620s (but all crash/fail)
-
-## Gotchas
-
-- `batch_results/` is gitignored — results_summary.json and error_narrative.json won't be in git
-- Jobs used different code versions (see timeline above)
-- SWE-agent signature fix was necessary but NOT sufficient — more config issues remain
-- Laghos 25% timing variance makes small speedup detection impossible
-- Lulesh 5% systematic bias needs investigation (ordering effect? cache state?)
-- Quicksilver times out for ALL frameworks — may need smaller problem size or longer timeout
-
-## Validation (Interactive Session)
+All infrastructure fixes are done. To resubmit:
 
 ```bash
 salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m2404
 module load python cmake openmpi/5.0.7
-source ~/envs/sweagent/bin/activate
+source ~/envs/sweagent/bin/activate && source ~/.openai_env
 
-# After fixing QS harness, test with a modified Makefile:
-cd /pscratch/sd/k/krydzy/SWE-agent/Quicksilver_test/src
-# Edit Makefile to add -Ofast
-export QUICKSILVER_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Quicksilver_test
-srun --exclusive --gpus 1 -n 1 bash -lc '
-  module load python cmake openmpi/5.0.7 && source ~/envs/sweagent/bin/activate &&
-  export PATH="/pscratch/sd/k/krydzy/SWE-agent/tools/quicksilver_harness/bin:$PATH" &&
-  export QUICKSILVER_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Quicksilver_test &&
-  qs_build --clean && qs_run --baseline-only --timing-runs 3
+# Reset test repos first
+./scripts/reset_test_repos.sh
+
+# Quick validation: test one framework first
+# SWE-agent (was crashing on signature):
+srun --exclusive --gpus 4 -n 1 bash -lc '
+  module load python cmake openmpi/5.0.7 && source ~/envs/sweagent/bin/activate && source ~/.openai_env &&
+  cd /pscratch/sd/k/krydzy/SWE-agent &&
+  python batch/hpc_benchmark_runner.py --framework sweagent --app lulesh --base
 '
 
-# Debug SWE-agent config:
-cd /pscratch/sd/k/krydzy/SWE-agent
-source ~/.openai_env
-sweagent run --config config/hpc/llnl_base.yaml --help  # or dry-run to check Pydantic validation
+# If that works, submit full batch runs
+sbatch batch/run_benchmark.sh --base --framework sweagent
+sbatch batch/run_benchmark.sh --base --framework codex --external-model
+sbatch batch/run_benchmark.sh --base --framework claude --skip-vllm
+sbatch batch/run_benchmark.sh --base --framework opencode --external-model
 ```
+
+## Gotchas
+
+- `Lulesh/` and `Lulesh_test/` have separate git repos with separate commits for the Makefile fix
+- `batch_results/` is gitignored — `results_summary.json` won't be in git
+- OpenCode's 120s bash timeout is internal to the binary, NOT our launcher. No known env var override.
+- Claude Code v2.1.63 may have relaxed the --verbose requirement, but we add it anyway for compatibility
+- The `Lulesh_test` commit won't matter long-term since `reset_test_repos.sh` does `git checkout .` which now restores the committed `cuda/Makefile`
+
+## Branch State
+
+- **Main SWE-agent repo (dev branch)**: Working tree has uncommitted changes to codex.py, claude.py, SKILL.md, STATE.md, HANDOFF.md
+- **Lulesh/ (pristine)**: Committed on `2.0.2-dev` branch
+- **Lulesh_test/**: Committed on `2.0.2-dev` branch

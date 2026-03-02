@@ -132,6 +132,7 @@ unset CLAUDECODE 2>/dev/null || true
 timeout {SESSION_TIMEOUT} claude -p "$(cat '{prompt_file}')" \\
     --dangerously-skip-permissions \\
     --output-format stream-json \\
+    --verbose \\
     --model {model} \\
     --max-turns 200 \\
     2>&1 | tee "{traj_file}"

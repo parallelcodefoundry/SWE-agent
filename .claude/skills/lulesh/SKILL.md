@@ -31,7 +31,7 @@ python3 tools/lulesh_harness/bin/lulesh_build --clean   # clean rebuild
 python3 tools/lulesh_harness/bin/lulesh_build --use-mpi # with MPI
 ```
 
-The Makefile is embedded in the build harness and generated on the fly if missing.
+The Makefile (`cuda/Makefile`) is committed to the repo with correct Perlmutter settings (sm_80, g++-12). The harness also has an embedded template that regenerates it if missing or corrupted.
 
 ## Run
 
@@ -50,7 +50,8 @@ The harness extracts `Final Origin Energy` from both pristine and modified runs.
 
 - **g++ 13 errors** -- Ensure `HOST_CXX` points to `g++-12`; embedded Makefile does this automatically.
 - **"nvcc not found"** -- On a login node; CUDA builds require a compute node with GPUs.
-- **Makefile missing** -- Run `lulesh_build`; it generates from embedded template.
+- **Makefile missing** -- Run `lulesh_build`; it generates from embedded template. The proper `cuda/Makefile` is also committed to the repo.
+- **Legacy Makefiles removed** -- `cuda/build/Makefile.CRAY`, `openacc/build/Makefile`, `stdpar/build/Makefile` were removed (wrong arch/compiler targets). Do not recreate them.
 - **CUDA sources missing after checkout** -- Older commits predate the CUDA port; skip them.
 - **"Num processors must be a cube"** -- MPI builds need cube-number ranks (1, 8, 27, 64).
 - **Volume/Q errors** -- Optimization broke the physics; revert. Error codes: VolumeError=-1, QStopError=-2.
