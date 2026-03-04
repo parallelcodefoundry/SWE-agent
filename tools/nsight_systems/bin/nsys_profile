@@ -1,0 +1,267 @@
+#!/bin/bash
+
+# Nsight Systems Profiling Tool for SWE-agent
+# System-wide GPU timeline profiling — identifies hotspot kernels and memory transfers
+
+main() {
+    if [ $# -lt 2 ]; then
+        echo "Usage: nsys_profile <executable> <output_dir> [<app_args>...]"
+        echo ""
+        echo "Arguments:"
+        echo "  executable - Path to the CUDA executable to profile"
+        echo "  output_dir - Directory to store profiling results"
+        echo "  app_args   - Optional: arguments to pass to the application"
+        echo ""
+        echo "Examples:"
+        echo "  nsys_profile ./lulesh ./nsys_out"
+        echo "  nsys_profile ./lulesh ./nsys_out \"-s 30\""
+        return 1
+    fi
+
+    local executable="$1"
+    local output_dir="$2"
+    shift 2
+
+    # Collect remaining args, word-splitting quoted strings like "-s 30" into -s 30
+    local app_args=()
+    for arg in "$@"; do
+        # shellcheck disable=SC2206
+        app_args+=($arg)
+    done
+
+    # Validate executable
+    if [ ! -f "$executable" ] && ! command -v "$executable" &> /dev/null; then
+        echo "Error: Executable '$executable' not found"
+        return 1
+    fi
+
+    # Find nsys binary
+    local NSYS=""
+    if command -v nsys &> /dev/null; then
+        NSYS="nsys"
+    else
+        # Try known Perlmutter paths
+        local nsys_paths=(
+            "/opt/nvidia/hpc_sdk/Linux_x86_64/25.5/compilers/bin/nsys"
+            "/opt/nvidia/hpc_sdk/Linux_x86_64/24.5/compilers/bin/nsys"
+            "/opt/nvidia/hpc_sdk/Linux_x86_64/25.3/compilers/bin/nsys"
+            "/opt/nvidia/hpc_sdk/Linux_x86_64/24.7/compilers/bin/nsys"
+        )
+        for nsys_path in "${nsys_paths[@]}"; do
+            if [ -f "$nsys_path" ]; then
+                NSYS="$nsys_path"
+                break
+            fi
+        done
+    fi
+
+    if [ -z "$NSYS" ]; then
+        echo "Error: Nsight Systems (nsys) not found"
+        echo "Try loading the CUDA toolkit or setting PATH to include the nsys binary"
+        return 1
+    fi
+
+    # Create output directory
+    mkdir -p "$output_dir"
+    output_dir=$(realpath "$output_dir")
+
+    local report_file="$output_dir/report"
+    local kern_summary="$output_dir/cuda_kern_summary.txt"
+    local api_summary="$output_dir/cuda_api_summary.txt"
+    local summary_file="$output_dir/summary.txt"
+
+    echo "=== Nsight Systems Timeline Profiling ==="
+    echo "Executable: $executable"
+    echo "Output directory: $output_dir"
+    echo "NSYS binary: $NSYS"
+    if [ ${#app_args[@]} -gt 0 ]; then
+        echo "Application arguments: ${app_args[*]}"
+    fi
+    echo ""
+
+    # Pause DCGM if available (required for profiling on managed clusters)
+    if command -v dcgmi &> /dev/null; then
+        echo "Pausing DCGM..."
+        dcgmi profile --pause 2>/dev/null || true
+    fi
+
+    # Build nsys command
+    local nsys_cmd=("$NSYS" "profile"
+        "--trace=cuda,nvtx,osrt"
+        "--cuda-memory-usage=true"
+        "-o" "$report_file"
+        "-f" "true"
+        "$executable"
+    )
+    if [ ${#app_args[@]} -gt 0 ]; then
+        nsys_cmd+=("${app_args[@]}")
+    fi
+
+    echo "Command: ${nsys_cmd[*]}"
+    echo ""
+
+    # Run profiling
+    local start_time
+    start_time=$(date +%s)
+    if ! "${nsys_cmd[@]}"; then
+        echo "Error: nsys profiling failed"
+        if command -v dcgmi &> /dev/null; then
+            dcgmi profile --resume 2>/dev/null || true
+        fi
+        return 1
+    fi
+    local end_time
+    end_time=$(date +%s)
+    local elapsed=$((end_time - start_time))
+    echo ""
+    echo "Profiling wall time: ${elapsed}s"
+
+    # Resume DCGM
+    if command -v dcgmi &> /dev/null; then
+        echo "Resuming DCGM..."
+        dcgmi profile --resume 2>/dev/null || true
+    fi
+
+    # The report file may be report.nsys-rep
+    local report_path="${report_file}.nsys-rep"
+    if [ ! -f "$report_path" ]; then
+        # Try without extension
+        report_path="$report_file"
+    fi
+
+    if [ ! -f "$report_path" ]; then
+        echo "Error: Report file not found at $report_path"
+        return 1
+    fi
+
+    echo ""
+    echo "=== Extracting Kernel Statistics ==="
+
+    # Extract top GPU kernels by time
+    if "$NSYS" stats --report cuda_gpu_kern_sum "$report_path" > "$kern_summary" 2>/dev/null; then
+        echo "Kernel summary saved to: $kern_summary"
+    else
+        echo "Warning: Could not extract kernel summary"
+    fi
+
+    # Extract CUDA API summary
+    if "$NSYS" stats --report cuda_api_sum "$report_path" > "$api_summary" 2>/dev/null; then
+        echo "API summary saved to: $api_summary"
+    else
+        echo "Warning: Could not extract API summary"
+    fi
+
+    echo ""
+    echo "=== Top GPU Kernels ==="
+
+    # Parse and display agent-friendly summary
+    python3 - "$kern_summary" "$api_summary" "$summary_file" << 'PYEOF'
+import sys, re
+
+kern_file = sys.argv[1]
+api_file = sys.argv[2]
+summary_file = sys.argv[3]
+
+lines = []
+
+# Parse kernel summary
+try:
+    with open(kern_file, 'r') as f:
+        content = f.read()
+
+    # nsys stats outputs a table; find lines with timing data
+    # Format varies but typically: Time(%), Total Time, Instances, Avg, Med, Min, Max, StdDev, Name
+    kern_lines = content.strip().split('\n')
+
+    # Find the header line to understand column positions
+    header_idx = None
+    for i, line in enumerate(kern_lines):
+        if 'Time(%)' in line or 'Time (%)' in line:
+            header_idx = i
+            break
+
+    if header_idx is not None:
+        lines.append('TOP GPU KERNELS (sorted by total time):')
+        lines.append(f'{"Kernel":<60} {"Time%":>7} {"Total":>12} {"Instances":>10} {"Avg":>12}')
+        lines.append('-' * 105)
+
+        data_lines = []
+        for line in kern_lines[header_idx+1:]:
+            line = line.strip()
+            if not line or line.startswith('-') or line.startswith('='):
+                continue
+            # Try to parse: time%, total_time, instances, avg, med, min, max, stddev, name
+            parts = line.split()
+            if len(parts) >= 4:
+                try:
+                    time_pct = float(parts[0].strip('%,'))
+                    data_lines.append((time_pct, line))
+                except ValueError:
+                    continue
+
+        # Sort by time% descending (should already be sorted, but be safe)
+        data_lines.sort(key=lambda x: x[0], reverse=True)
+
+        for time_pct, line in data_lines[:15]:
+            # Extract kernel name (usually last field, may contain spaces)
+            parts = line.split()
+            if len(parts) >= 9:
+                name = ' '.join(parts[8:])
+                total = parts[1]
+                instances = parts[2]
+                avg = parts[3]
+                short_name = name[:58] + '..' if len(name) > 60 else name
+                lines.append(f'{short_name:<60} {time_pct:>6.1f}% {total:>12} {instances:>10} {avg:>12}')
+            elif len(parts) >= 4:
+                name = ' '.join(parts[3:])
+                short_name = name[:58] + '..' if len(name) > 60 else name
+                lines.append(f'{short_name:<60} {time_pct:>6.1f}%')
+    else:
+        # Fallback: just print the raw output
+        lines.append('KERNEL SUMMARY:')
+        lines.append(content[:2000])
+
+except Exception as e:
+    lines.append(f'Warning: Could not parse kernel summary: {e}')
+
+# Parse API summary
+lines.append('')
+try:
+    with open(api_file, 'r') as f:
+        api_content = f.read()
+    # Just include a brief excerpt
+    api_lines = api_content.strip().split('\n')
+    lines.append('CUDA API SUMMARY:')
+    for line in api_lines[:20]:
+        if line.strip():
+            lines.append(f'  {line}')
+except Exception:
+    lines.append('(API summary not available)')
+
+# Bottleneck guidance
+lines.append('')
+lines.append('OPTIMIZATION GUIDANCE:')
+lines.append('  - The kernel with the highest Time% is your primary optimization target')
+lines.append('  - Use ncu_profile on the top kernel(s) for detailed SM/DRAM/occupancy metrics')
+lines.append('  - Large cudaMemcpy time → reduce host-device transfers or use pinned memory')
+lines.append('  - Many short kernel instances → consider kernel fusion')
+
+output = '\n'.join(lines)
+print(output)
+with open(summary_file, 'w') as f:
+    f.write(output + '\n')
+
+PYEOF
+
+    echo ""
+    echo "=== Nsight Systems Profiling Complete ==="
+    echo "Report: $report_path"
+    echo "Kernel summary: $kern_summary"
+    echo "API summary: $api_summary"
+    echo "Summary: $summary_file"
+    echo ""
+    echo "For detailed timeline in GUI: nsys-ui $report_path"
+    echo ""
+}
+
+main "$@"

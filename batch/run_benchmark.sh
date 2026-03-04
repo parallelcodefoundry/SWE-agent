@@ -394,8 +394,10 @@ fi
 #===============================================================================
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 JOB_ID="${SLURM_JOB_ID:-interactive}"
-OUTPUT_DIR="${SWEAGENT_ROOT}/batch_results/benchmark_${TIMESTAMP}_${JOB_ID}"
-TRAJ_DIR="${SWEAGENT_ROOT}/trajectories/benchmark_${TIMESTAMP}_${JOB_ID}"
+# Include framework and model in directory name for easier identification
+SAFE_MODEL=$(echo "${VLLM_MODEL:-gptoss120b}" | tr '/' '-')
+OUTPUT_DIR="${SWEAGENT_ROOT}/batch_results/${FRAMEWORK}_${SAFE_MODEL}_${TIMESTAMP}_${JOB_ID}"
+TRAJ_DIR="${SWEAGENT_ROOT}/trajectories/${FRAMEWORK}_${SAFE_MODEL}_${TIMESTAMP}_${JOB_ID}"
 
 mkdir -p "${OUTPUT_DIR}"
 mkdir -p "${TRAJ_DIR}"
@@ -521,6 +523,14 @@ cleanup() {
         find "${OUTPUT_DIR}" -type d -name "database" -exec rm -rf {} + 2>/dev/null || true
     fi
 
+    # Clean up Nsight Compute/Systems reports (can be 100s of MB)
+    echo "  Cleaning up profiling reports..."
+    find "${OUTPUT_DIR}" -type f -name "*.ncu-rep" -exec rm -f {} + 2>/dev/null || true
+    find "${OUTPUT_DIR}" -type d -name "ncu_*" -exec rm -rf {} + 2>/dev/null || true
+    find "${OUTPUT_DIR}" -type f -name "*.nsys-rep" -exec rm -f {} + 2>/dev/null || true
+    find "${OUTPUT_DIR}" -type f -name "*.sqlite" -exec rm -f {} + 2>/dev/null || true
+
+    echo "  Result directory size: $(du -sh "${OUTPUT_DIR}" 2>/dev/null | cut -f1)"
     echo "[Cleanup] Done"
     return $exit_code
 }

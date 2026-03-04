@@ -1,3 +1,5 @@
+# LEGACY — not used by benchmark pipeline. See llnl_base.yaml + prompt.py for dynamic prompt generation.
+# Kept for reference and standalone SWE-agent testing.
 # Quicksilver optimization WITHOUT profiling tools
 # Run with: sweagent run --config config/hpc/quicksilver_no_profiling.yaml
 #

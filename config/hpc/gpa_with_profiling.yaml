@@ -17,16 +17,21 @@ agent:
 
       PROFILING TOOLS AVAILABLE:
       - gpa_test: Build, run, validate, and time your optimization (uses Nsight Systems internally)
+      - ncu_profile: Per-kernel GPU profiling with Nsight Compute (SM%, DRAM%, occupancy, registers)
+        Usage: ncu_profile <executable> <output_dir> [<kernel_filter>]
+      - nsys_profile: System-wide GPU timeline profiling with Nsight Systems
+        Usage: nsys_profile <executable> <output_dir> [<app_args>...]
       - compiler_analysis: Analyze register usage, shared memory, and occupancy of your .cu file
       - microbench_code: Compile and time a standalone .cu file in isolation
 
       WORKFLOW:
       1. Read the kernel code and understand it
       2. Use compiler_analysis on the kernel .cu file to check register count and occupancy
-      3. Identify performance bottlenecks
-      4. Edit the kernel to optimize it
-      5. Use gpa_test to verify correctness and measure speedup
-      6. Iterate if needed
+      3. Optionally use ncu_profile on the built executable to see SM/DRAM utilization
+      4. Identify performance bottlenecks
+      5. Edit the kernel to optimize it
+      6. Use gpa_test to verify correctness and measure speedup
+      7. Iterate if needed
 
       SUBMISSION:
       When you have made improvements, call the submit command.
@@ -87,6 +92,7 @@ agent:
       - path: tools/hatchet
       - path: tools/profiling
       - path: tools/nsight_compute
+      - path: tools/nsight_systems
     registry_variables:
       USE_FILEMAP: 'true'
       SUBMIT_REVIEW_MESSAGES:

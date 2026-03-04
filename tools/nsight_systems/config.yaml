@@ -1,0 +1,40 @@
+tools:
+  nsys_profile:
+    signature: "nsys_profile <executable> <output_dir> [<app_args>...]"
+    docstring: |
+      System-wide GPU timeline profiling with NVIDIA Nsight Systems (nsys).
+
+      Shows WHERE time is spent across CUDA kernels, memory transfers, and MPI calls.
+      Use this tool FIRST to identify which kernels are hotspots, then use ncu_profile
+      to deep-dive into specific kernels.
+
+      OUTPUT STRUCTURE:
+        <output_dir>/
+          report.nsys-rep        <- Binary report (can be opened in Nsight Systems GUI)
+          cuda_kern_summary.txt  <- Top GPU kernels ranked by total execution time
+          cuda_api_summary.txt   <- CUDA API call summary (malloc, memcpy, launch)
+          summary.txt            <- Agent-friendly summary with hotspot analysis
+
+      INTERPRETING RESULTS:
+        - Kernel with highest total time = primary optimization target
+        - Large memcpy time = opportunity to reduce host-device transfers or overlap
+        - Many short kernels = consider kernel fusion
+        - MPI overhead = consider better overlap or reduced communication
+
+      Example:
+        nsys_profile ./lulesh ./nsys_out
+        nsys_profile ./lulesh ./nsys_out "-s 30"
+    arguments:
+      - name: executable
+        type: string
+        description: "Path to the CUDA executable to profile"
+        required: true
+      - name: output_dir
+        type: string
+        description: "Directory to store profiling results"
+        required: true
+      - name: app_args
+        type: string
+        description: "Optional arguments to pass to the application (e.g., '-s 30')"
+        required: false
+    execution_timeout: 600

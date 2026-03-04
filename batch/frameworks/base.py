@@ -132,6 +132,7 @@ PROFILING_TOOL_DIRS = [
     "tools/profiling/bin",
     "tools/system_info/bin",
     "tools/nsight_compute/bin",
+    "tools/nsight_systems/bin",
 ]
 
 # Per-app environment variable name for the app root directory

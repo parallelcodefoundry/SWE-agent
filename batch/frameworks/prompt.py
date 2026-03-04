@@ -132,6 +132,12 @@ WHAT YOU MUST NOT CHANGE:
 
 PROFILING_DESCRIPTION = """\
 PROFILING TOOLS AVAILABLE (run as bash commands):
+- nsys_profile: System-wide GPU timeline profiling with Nsight Systems (identifies hotspot kernels, memory transfers, MPI overhead)
+  Usage: nsys_profile <executable> <output_dir> [<app_args>...]
+  Use this FIRST to find which kernels take the most time.
+- ncu_profile: Per-kernel GPU profiling with Nsight Compute (SM%, DRAM%, occupancy, registers)
+  Usage: ncu_profile <executable> <output_dir> [<kernel_filter>] [<app_args>...]
+  Use this AFTER nsys_profile to deep-dive into the top hotspot kernel(s).
 - hpc_profile: Run HPCToolkit profiling to collect GPU/CPU performance data
 - hatchet_analyze: Analyze HPCToolkit profiles using Hatchet (call tree, hot paths)
 - compiler_analysis: Static analysis of compiler optimization opportunities
@@ -267,7 +273,7 @@ The application source code is in {workspace}."""
 
     # Profiling step (if available)
     if profiling == "with_profiling":
-        workflow_lines.append(f"{step}. Profile with hpc_profile / hatchet_analyze to identify hotspots")
+        workflow_lines.append(f"{step}. Profile with nsys_profile / ncu_profile / hpc_profile to identify hotspots")
         step += 1
 
     workflow_lines.append(f"{step}. Explore the code and identify optimization opportunities")
@@ -469,7 +475,7 @@ Reasoning: high"""
     workflow_lines.append(f"{step}. {run_cmd} --baseline-only - Get baseline timing BEFORE making any changes")
     step += 1
     if profiling == "with_profiling":
-        workflow_lines.append(f"{step}. hpc_profile / hatchet_analyze - Profile to identify hotspots")
+        workflow_lines.append(f"{step}. nsys_profile / ncu_profile / hpc_profile - Profile to identify hotspots")
         step += 1
     if repo_name == "kripke":
         workflow_lines.append(f"{step}. Explore the repository to understand the codebase and identify optimization opportunities")
@@ -490,7 +496,7 @@ Reasoning: high"""
         f"NOTE: {run_cmd.split()[0]} automatically checks BOTH timing AND correctness - no separate correctness check needed!",
     ]
     if profiling == "with_profiling":
-        profiling_tools = "hpc_profile, hatchet_analyze, compiler_analysis, gpu_info, cpu_info"
+        profiling_tools = "nsys_profile, ncu_profile, hpc_profile, hatchet_analyze, compiler_analysis, gpu_info, cpu_info"
         notes.append(f"\nPROFILING TOOLS AVAILABLE: {profiling_tools}")
     else:
         notes.append(f"\n{NO_PROFILING_NOTE}")
@@ -593,6 +599,10 @@ def build_gpa_prompt(
 TOOLS AVAILABLE (run as bash commands):
 - gpa_test: Build, run, validate, and time your optimization. Reports speedup vs baseline.
   Usage: gpa_test (auto-detects app from metadata)
+- ncu_profile: Per-kernel GPU profiling with Nsight Compute (SM%, DRAM%, occupancy, registers)
+  Usage: ncu_profile <executable> <output_dir> [<kernel_filter>]
+- nsys_profile: System-wide GPU timeline profiling with Nsight Systems
+  Usage: nsys_profile <executable> <output_dir> [<app_args>...]
 - compiler_analysis: Analyze register usage, shared memory, occupancy of your .cu file.
   Usage: compiler_analysis {kernel_basename}
 - microbench_code: Compile and time a standalone .cu file in isolation.
@@ -600,10 +610,11 @@ TOOLS AVAILABLE (run as bash commands):
 WORKFLOW:
 1. Read the kernel code and understand it
 2. Run compiler_analysis on the kernel to check register count and occupancy
-3. Identify performance bottlenecks
-4. Edit the kernel file to optimize it
-5. Run gpa_test to verify correctness and measure speedup
-6. Iterate if needed"""
+3. Optionally use ncu_profile on the built executable to see SM/DRAM utilization and bottleneck type
+4. Identify performance bottlenecks
+5. Edit the kernel file to optimize it
+6. Run gpa_test to verify correctness and measure speedup
+7. Iterate if needed"""
     else:
         tools_section = f"""\
 TOOLS AVAILABLE (run as bash commands):

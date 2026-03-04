@@ -32,6 +32,8 @@ PROFILING_BUNDLES = [
     "tools/hatchet",
     "tools/system_info",
     "tools/profiling",
+    "tools/nsight_compute",
+    "tools/nsight_systems",
 ]
 
 # Common tool bundles (always included)

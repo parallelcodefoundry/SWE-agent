@@ -50,6 +50,34 @@ FROM CUPTI_ACTIVITY_KIND_KERNEL_NAMED
 GROUP BY name ORDER BY total_ns DESC LIMIT 10
 ```
 
+## Project Integration
+
+- `tools/nsight_systems/config.yaml` -- SWE-agent tool definition
+- `tools/nsight_systems/bin/nsys_profile` -- Profiling script
+- `tools/system_info/bin/check_profiling_ready` -- checks nsys on PATH
+- `tools/system_info/bin/profiler_info` -- lists nsys/ncu presence
+- All `config/hpc/*_with_profiling.yaml` configs include `tools/nsight_systems` in bundles
+- `batch/frameworks/base.py` PROFILING_TOOL_DIRS includes `tools/nsight_systems/bin`
+
+### SWE-Agent Tool Usage
+
+```
+nsys_profile <executable> <output_dir> [<app_args>...]
+```
+
+- Runs `nsys profile --trace=cuda,nvtx,osrt --cuda-memory-usage=true`
+- Extracts top kernels via `nsys stats --report=cuda_gpu_kern_sum`
+- Extracts CUDA API via `nsys stats --report=cuda_api_sum`
+- Outputs: `report.nsys-rep` (binary), `cuda_kern_summary.txt`, `cuda_api_summary.txt`, `summary.txt`
+- Auto-pauses/resumes DCGM on managed clusters
+
+### When to Use nsys vs ncu
+
+| Tool | Purpose | When to Use |
+|------|---------|-------------|
+| `nsys_profile` | System-wide timeline | **First** — find which kernels are hotspots |
+| `ncu_profile` | Per-kernel deep-dive | **Second** — analyze why top kernel(s) are slow |
+
 ## Common Issues
 
 - **Must run on compute nodes**: `salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 1 --account m2404`
