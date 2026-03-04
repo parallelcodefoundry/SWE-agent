@@ -8,6 +8,8 @@ user-invocable: false
 
 Suite of GPU kernels with **known performance anti-patterns and expert-written fixes**, plus a Python driver (`gpa_bench_driver`) that automates build, run, validate, profile, and swap. 16 active benchmarks from Rodinia, ExaTENSOR, XSBench. Speedups 1.02x-3.86x on V100.
 
+**Last upstream merge**: 2026-03-03 (29 commits from `origin/develop` including CUDA 13 migration, subprocess overhaul).
+
 ## Source & Layout
 
 - **Local clone**: `/pscratch/sd/k/krydzy/GPA-Benchmark/` (symlinked at `~/GPA-Benchmark`)
@@ -62,6 +64,8 @@ results, operations, long_results = run_driver(
     nsys=True,
     num_samples=5,
     output_file="results.json",
+    timeout=300,                   # subprocess timeout (seconds, default 300)
+    subprocess_output_char_limit=25000,  # truncate long output
     swaps_override={"xsbench": {"target.cu": "optimized code string"}},
 )
 # results: Dict[str, AppResults] — per-app summary (baseline timing, swap timing, speedup)
@@ -125,6 +129,33 @@ The runner handles `sys.path` setup, `os.chdir()` to GPA root, workspace creatio
 
 16/16 active apps PASS in base mode. (lulesh excluded — empty `LULESH/` dir upstream.)
 
+## Timing & Measurement
+
+- **Timing**: nsys kernel-level profiling (CUPTI `exec_time`), 3 samples by default, mean reported
+- **No warmup run** — each nsys sample is a full app restart from cold
+- **No MPI** — purely single-GPU CUDA kernels, `make` + `nvcc` builds
+- **Correctness**: 5 strategies (fail_text, pass_text, exact reference match, windowed output, float tolerance)
+- **Subprocess**: `SubprocessRunner` class with 300s timeout, file-based IPC, 25K char output truncation
+
+## Agent Workspace (vs LLNL)
+
+GPA workspaces are **much smaller** than LLNL:
+- Only the kernel `.cu` file(s) + `gpa_metadata.json` — **no Makefiles, no headers**
+- Agent can only edit kernel source, not build config
+- Prompt includes full kernel source inline + one tool (`gpa_test`)
+- Results stored in `all_results.json`: `agent_patch` (full file, not diff), `agent_insertions`/`agent_deletions` (counted via `difflib`), `agent_speedup` (mean baseline/swap nsys time)
+
+## Benchmark Results (Session ~30, A100)
+
+| Framework | Speedup Apps | Best | Common Failure |
+|-----------|-------------|------|----------------|
+| SWE-agent | streamcluster 1.28x | 1.28x | Correctness (8/16) |
+| OpenHands | streamcluster 1.30x, nw 0.93x | 1.30x | Correctness (7/16) |
+| OpenCode | hotspot 1.0x, huffman 1.0x, streamcluster 0.76x | — | Build fail + no change |
+| Codex | — | — | Single-turn exit (10/16 no change) |
+
+Successful optimization pattern: **shared memory caching** of point-x coordinates in `streamcluster` distance kernel.
+
 ## Common Issues
 
 - **`CUDA_HOME` not set**: `export CUDA_HOME=$CUDATOOLKIT_HOME`
@@ -132,7 +163,9 @@ The runner handles `sys.path` setup, `os.chdir()` to GPA root, workspace creatio
 - **Missing rodinia data**: Run `bash get_data.sh`
 - **V100 speedups != A100**: README results are V100. Re-baseline on A100
 - **Force rebuild**: Driver uses `make -B` to always rebuild (prevents stale binaries)
-- **lavaMD case sensitivity**: Fixed — driver lowercases app names but `driver_apps.yaml` has `name: lavaMD`. All comparisons now use `.lower()` (commit `ab21f6b` in GPA-Benchmark)
+- **lavaMD case sensitivity**: Fixed upstream — `get_canonical_app_name()` handles aliases
 - **lulesh excluded**: Empty `LULESH/` directory in GPA-Benchmark repo — excluded from active apps
+- **CUDA 13 deprecation**: Fixed upstream (`eccb4a1`) — `cudaThreadSynchronize()` → `cudaDeviceSynchronize()`, missing `-arch sm_XX` added to all Rodinia Makefiles
+- **SubprocessRunner API change**: Internal driver functions now take `runner: SubprocessRunner` instead of `env: dict`. Our `run_driver()` call is unaffected.
 
 For detailed reference, see references/ in this skill directory.

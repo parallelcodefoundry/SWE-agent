@@ -1592,8 +1592,31 @@ def main():
         default=10,
         help="Number of timing runs per validation (default: 10). Uses median for speedup."
     )
+    parser.add_argument(
+        "--openai-region",
+        type=str,
+        default=None,
+        metavar="CODE",
+        help=(
+            "OpenAI regional API endpoint code (e.g. us, eu, gb, jp). "
+            "Auto-sets OPENAI_API_BASE to the matching regional URL. "
+            "Required for API keys bound to data-residency-enabled projects. "
+            "Valid codes: us, eu, gb, ae, au, ca, jp, in, sg, kr."
+        ),
+    )
 
     args = parser.parse_args()
+
+    # --openai-region: resolve to OPENAI_API_BASE before anything reads env vars.
+    if args.openai_region:
+        from batch.frameworks.base import openai_region_to_base_url
+        try:
+            regional_url = openai_region_to_base_url(args.openai_region)
+        except ValueError as exc:
+            print(f"ERROR: {exc}")
+            sys.exit(1)
+        os.environ["OPENAI_API_BASE"] = regional_url
+        print(f"Set OPENAI_API_BASE={regional_url} (region: {args.openai_region})")
 
     # Load dataset (unless in base mode)
     instances = []

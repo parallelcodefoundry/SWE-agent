@@ -108,6 +108,11 @@ Cleanup Options:
   --keep-profiles       Don't delete HPCToolkit profiles after benchmark
   --no-cleanup          Skip all cleanup (repos and profiles)
 
+OpenAI Regional Endpoints:
+  --openai-region CODE  Auto-set OPENAI_API_BASE to regional endpoint.
+                        Required for API keys bound to data-residency projects.
+                        Valid codes: us, eu, gb, ae, au, ca, jp, in, sg, kr.
+
 Other:
   --help, -h            Show this help message
 
@@ -150,6 +155,10 @@ Examples:
 
   # Run with Claude Code (uses Max subscription auth, no vLLM needed)
   bash run_benchmark.sh --base --lulesh --framework claude
+
+  # Use regional endpoint (US data-residency project)
+  OPENAI_API_KEY="sk-..." bash run_benchmark.sh --base --kripke --framework codex \\
+    --external-model --openai-region us
 EOF
 }
 
@@ -166,6 +175,7 @@ PROFILING="no_profiling"
 MODEL_NAME=""
 FRAMEWORK="sweagent"
 BUILD_MODE="harness"
+OPENAI_REGION=""
 APPS=()
 INSTANCE_IDS=()
 
@@ -237,6 +247,15 @@ while [[ $# -gt 0 ]]; do
             fi
             shift 2
             ;;
+        --openai-region)
+            OPENAI_REGION="$2"
+            if [[ ! "$OPENAI_REGION" =~ ^(us|eu|gb|ae|au|ca|jp|in|sg|kr)$ ]]; then
+                echo "ERROR: Unknown OpenAI region: $OPENAI_REGION"
+                echo "  Valid codes: us, eu, gb, ae, au, ca, jp, in, sg, kr"
+                exit 1
+            fi
+            shift 2
+            ;;
         --instance-id)
             INSTANCE_IDS+=("$2")
             shift 2
@@ -296,6 +315,19 @@ if [[ "$EXTERNAL_MODEL" == "true" ]] || [[ "$SKIP_VLLM" == "true" ]]; then
     REQUIRED_NODES=$NUM_APPS
 else
     REQUIRED_NODES=$((NUM_APPS + 1))
+fi
+
+# Resolve --openai-region to OPENAI_API_BASE before validation.
+# Associative array maps region codes to hostnames.
+declare -A _REGION_MAP=(
+    [us]=us.api.openai.com  [eu]=eu.api.openai.com  [gb]=gb.api.openai.com
+    [ae]=ae.api.openai.com  [au]=au.api.openai.com  [ca]=ca.api.openai.com
+    [jp]=jp.api.openai.com  [in]=in.api.openai.com  [sg]=sg.api.openai.com
+    [kr]=kr.api.openai.com
+)
+if [[ -n "$OPENAI_REGION" ]]; then
+    export OPENAI_API_BASE="https://${_REGION_MAP[$OPENAI_REGION]}/v1"
+    echo "Set OPENAI_API_BASE=${OPENAI_API_BASE} (region: ${OPENAI_REGION})"
 fi
 
 # Validate --external-model environment variables
@@ -658,6 +690,10 @@ build_runner_args() {
 
     if [[ -n "$MODEL_NAME" ]]; then
         args+=("--model-name" "${MODEL_NAME}")
+    fi
+
+    if [[ -n "$OPENAI_REGION" ]]; then
+        args+=("--openai-region" "${OPENAI_REGION}")
     fi
 
     if [[ "$BASE_MODE" == "true" ]]; then

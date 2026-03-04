@@ -4,8 +4,116 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
 import json
+import logging
 import os
 import subprocess
+from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
+
+# OpenAI regional API endpoints — keyed by ISO 3166-1 alpha-2 country code.
+# Keys with data-residency-enabled projects MUST use the matching regional
+# endpoint; the global api.openai.com returns 401 for such keys.
+OPENAI_REGIONAL_ENDPOINTS = {
+    "us": "us.api.openai.com",
+    "eu": "eu.api.openai.com",
+    "gb": "gb.api.openai.com",
+    "ae": "ae.api.openai.com",
+    "au": "au.api.openai.com",
+    "ca": "ca.api.openai.com",
+    "jp": "jp.api.openai.com",
+    "in": "in.api.openai.com",
+    "sg": "sg.api.openai.com",
+    "kr": "kr.api.openai.com",
+}
+
+# The set of all recognized regional hostnames for quick membership checks.
+_REGIONAL_HOSTNAMES = set(OPENAI_REGIONAL_ENDPOINTS.values())
+
+
+def openai_region_to_base_url(region: str) -> str:
+    """Convert a region code (e.g. 'us') to a full OPENAI_API_BASE URL.
+
+    Args:
+        region: Two-letter region code (case-insensitive).  Must be one of
+            the keys in OPENAI_REGIONAL_ENDPOINTS.
+
+    Returns:
+        Full URL suitable for OPENAI_API_BASE, e.g. ``https://us.api.openai.com/v1``.
+
+    Raises:
+        ValueError: If the region code is not recognized.
+    """
+    region = region.lower().strip()
+    if region not in OPENAI_REGIONAL_ENDPOINTS:
+        valid = ", ".join(sorted(OPENAI_REGIONAL_ENDPOINTS))
+        raise ValueError(
+            f"Unknown OpenAI region '{region}'. Valid regions: {valid}"
+        )
+    return f"https://{OPENAI_REGIONAL_ENDPOINTS[region]}/v1"
+
+
+def validate_openai_base_url(api_base: str) -> str:
+    """Validate and warn about OpenAI API base URL configuration.
+
+    Checks the provided ``OPENAI_API_BASE`` value and emits log warnings
+    when the URL is the non-regional global endpoint, which will fail for
+    API keys bound to a data-residency-enabled project.
+
+    The function never mutates the URL — it only logs diagnostics.
+
+    Args:
+        api_base: Current value of the ``OPENAI_API_BASE`` environment variable.
+            May be empty/unset (local vLLM setups), a local URL, or an
+            OpenAI endpoint.
+
+    Returns:
+        The *unchanged* ``api_base`` string.
+    """
+    if not api_base:
+        # Empty/unset — likely a local vLLM or skip-vllm setup. Nothing to check.
+        return api_base
+
+    try:
+        parsed = urlparse(api_base)
+        hostname = (parsed.hostname or "").lower()
+    except Exception:
+        logger.warning("OPENAI_API_BASE URL could not be parsed: %s", api_base)
+        return api_base
+
+    # Local / non-OpenAI URL — no validation needed.
+    if not hostname.endswith("api.openai.com"):
+        return api_base
+
+    # Already a recognized regional endpoint — great, just confirm.
+    if hostname in _REGIONAL_HOSTNAMES:
+        region_code = hostname.split(".")[0]
+        logger.info(
+            "OPENAI_API_BASE is using regional endpoint '%s' (%s). Good.",
+            region_code,
+            api_base,
+        )
+        return api_base
+
+    # Global (non-regional) endpoint: api.openai.com
+    if hostname == "api.openai.com":
+        logger.warning(
+            "OPENAI_API_BASE is set to the global endpoint (%s). "
+            "If your API key is bound to a data-residency-enabled project "
+            "(e.g. US), this will return 401. Use --openai-region <code> or "
+            "set OPENAI_API_BASE to a regional endpoint "
+            "(e.g. https://us.api.openai.com/v1).",
+            api_base,
+        )
+        return api_base
+
+    # Some other *.api.openai.com subdomain we don't recognize.
+    logger.warning(
+        "OPENAI_API_BASE hostname '%s' looks like an OpenAI endpoint but is "
+        "not a recognized regional endpoint. Proceeding as-is.",
+        hostname,
+    )
+    return api_base
 
 
 # Harness directory names per app
@@ -191,11 +299,17 @@ class FrameworkLauncher(ABC):
         return "\n".join(lines)
 
     def get_api_env_exports(self) -> str:
-        """Generate shell export statements for API credentials."""
+        """Generate shell export statements for API credentials.
+
+        When using an external model, also runs :func:`validate_openai_base_url`
+        to emit diagnostic warnings about the configured endpoint.
+        """
         if self.model_name:
             # External model: use env vars passed through from parent
             api_base = os.environ.get("OPENAI_API_BASE", "")
             api_key = os.environ.get("OPENAI_API_KEY", "")
+            # Validate / warn about the OpenAI endpoint configuration.
+            validate_openai_base_url(api_base)
             return (
                 f'export OPENAI_API_BASE="{api_base}"\n'
                 f'export OPENAI_API_KEY="{api_key}"'
