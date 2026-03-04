@@ -78,12 +78,12 @@ grep -n "gpa\|GPA\|base.*mode\|run_agent\|launch.*agent" batch/hpc_benchmark_run
 
 ## Gotchas
 
-- **SLURM account is now m5083** — m2404 exhausted. Updated everywhere.
-- **CLAUDE.md still says m2404 in rule #8** — Wait, actually updated both occurrences. Verify with grep.
+- **SLURM account is now m5083** — m2404 exhausted. Updated in all files (verified with grep).
 - **GPA agent launch bug** — The benchmark runner runs baseline verification for GPA apps but never calls the agent optimization loop. Need to trace the code path.
-- **Profiling tool diversity** — Added tip to prompt.py but need to verify it appears in generated prompts.
+- **Profiling tool diversity** — Added tip to prompt.py; verify it appears in generated prompts on next run.
 
 ## Branch State
 
-- **SWE-agent (dev)**: 25 commits ahead of `origin/dev`, uncommitted m5083 + prompt changes
+- **SWE-agent (dev)**: 26 commits ahead of `origin/dev`
+- **Latest commit**: `7b5836de` — Save session 41 state
 - **Untracked**: `scripts/char_laghos*.{sh,sbatch}`, `xyz.asc`, `output.{out,txt}`

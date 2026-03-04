@@ -35,6 +35,8 @@ Key findings:
 - **SLURM account switch**: `m2404` → `m5083` across 10 files (batch scripts, configs, docs, rules, agents, skills)
 - **Prompt improvement**: Added tip in `PROFILING_DESCRIPTION` encouraging tool diversity when one profiling approach isn't yielding insights
 - **Qwen re-submission**: 4 jobs submitted (49653981-84) with fixed code on m5083
+- **Results summary updated**: Added gptoss120b entries (jobs 49641358-60, 49641364) to `batch_results/results_summary.json`
+- **Heatmaps regenerated**: `analysis/plot_results.py` — new `speedup_heatmap_s41.png` + updated `speedup_heatmap_all.png`
 
 ## Active Experiments
 
@@ -75,9 +77,8 @@ Key findings:
 
 ## Branch State
 
-- **Current branch**: `dev` (25 commits ahead of `origin/dev`)
-- **Latest commit**: `775f5d24` — Save session 40 state
-- **Uncommitted**: m5083 account switch (10 files) + prompt.py profiling tip
+- **Current branch**: `dev` (26 commits ahead of `origin/dev`)
+- **Latest commit**: `7b5836de` — Save session 41 state
 
 ## All Infrastructure Fixes — Complete
 
