@@ -15,7 +15,7 @@ tools:
 
       TWO PROFILING MODES:
         1. Without kernel_filter: Basic profiling of all kernels
-           - Collects --set basic metrics, skips 1 warmup launch, collects 5 samples
+           - Collects --set basic metrics for up to 500 kernel launches
            - Good for identifying which kernels are hotspots
 
         2. With kernel_filter: Detailed profiling of specific kernel(s)

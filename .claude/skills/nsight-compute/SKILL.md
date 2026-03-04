@@ -32,7 +32,7 @@ For detailed reference, see references/ in this skill directory.
 ncu_profile <executable> <output_dir> [<kernel_filter>] [<app_args>...]
 ```
 
-- **Basic mode** (no filter): `--set basic -s 1 -c 5` — profiles first 5 kernel launches after 1 warmup skip
+- **Basic mode** (no filter): `--set basic -s 0 -c 500` — profiles up to 500 kernel launches (covers init + simulation phases)
 - **Detailed mode** (with filter): `--set detailed --kernel-name regex:<filter> -c 3` — full metrics for matching kernels
 - Outputs: `report.ncu-rep` (binary), `metrics_summary.csv`, `summary.txt` (bottleneck analysis)
 - Auto-pauses/resumes DCGM on managed clusters

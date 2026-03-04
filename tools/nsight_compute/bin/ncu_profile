@@ -105,8 +105,9 @@ main() {
         # Use regex: prefix so kernel_filter is a substring match
         ncu_cmd+=("--set" "detailed" "--kernel-name" "regex:$kernel_filter" "-c" "3")
     else
-        # Basic mode: skip 1 warmup launch, collect 50 samples to cover multiple kernel types
-        ncu_cmd+=("--set" "basic" "-s" "1" "-c" "50")
+        # Basic mode: no skip, collect 500 launches to cover init + simulation kernels
+        # The summary groups by kernel name, so init kernels show as negligible time
+        ncu_cmd+=("--set" "basic" "-s" "0" "-c" "500")
     fi
 
     ncu_cmd+=("$executable")
