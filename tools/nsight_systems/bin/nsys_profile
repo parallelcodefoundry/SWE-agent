@@ -15,6 +15,7 @@ main() {
         echo "Examples:"
         echo "  nsys_profile ./lulesh ./nsys_out"
         echo "  nsys_profile ./lulesh ./nsys_out \"-s 30\""
+        echo "  nsys_profile mpirun ./nsys_out \"-np 1 --bind-to none ./qs\"  # MPI apps"
         return 1
     fi
 
