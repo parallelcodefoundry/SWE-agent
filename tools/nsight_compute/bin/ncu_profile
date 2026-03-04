@@ -290,16 +290,27 @@ try:
         short = name[:50] + '..' if len(name) > 50 else name
         if v['sm'] > 60 and v['dram'] < 40:
             lines.append(f'  {short}: COMPUTE-BOUND (SM {v["sm"]:.0f}%, DRAM {v["dram"]:.0f}%)')
-            lines.append(f'    -> Reduce arithmetic, use fast math, consider algorithm changes')
+            lines.append(f'    -> Reduce arithmetic: use __fdividef(), rsqrtf(), __fmaf_rn() for fast math')
+            lines.append(f'    -> Consider algorithmic changes to reduce FLOPs per element')
+            if v['regs'] > 64:
+                lines.append(f'    -> High register usage ({v["regs"]} regs) — try __launch_bounds__ to cap registers')
         elif v['dram'] > 40 and v['sm'] < 40:
             lines.append(f'  {short}: MEMORY-BOUND (SM {v["sm"]:.0f}%, DRAM {v["dram"]:.0f}%)')
-            lines.append(f'    -> Improve coalescing, use shared memory, reduce global accesses')
+            lines.append(f'    -> Check memory access patterns: ensure coalesced reads (stride-1 access)')
+            lines.append(f'    -> Cache repeated accesses in shared memory (__shared__) or registers')
+            lines.append(f'    -> Reduce global memory traffic: compute values instead of loading when possible')
         elif v['sm'] < 30 and v['dram'] < 30:
             lines.append(f'  {short}: LATENCY-BOUND (SM {v["sm"]:.0f}%, DRAM {v["dram"]:.0f}%, Occ {v["occ"]:.0f}%)')
-            lines.append(f'    -> Increase occupancy (regs={v["regs"]}), reduce divergence, overlap compute+memory')
+            if v['regs'] > 64:
+                lines.append(f'    -> Register pressure ({v["regs"]} regs) limits occupancy — reduce locals or use __launch_bounds__({v["block"]}, N)')
+            if v['occ'] < 25:
+                lines.append(f'    -> Very low occupancy ({v["occ"]:.0f}%) — increase block count or reduce resource usage per thread')
+            lines.append(f'    -> Consider increasing grid size or merging with adjacent kernels to improve GPU utilization')
+            if v['grid'] < 16:
+                lines.append(f'    -> Only {v["grid"]} blocks launched — GPU has 108 SMs, need more blocks for full utilization')
         else:
             lines.append(f'  {short}: MIXED (SM {v["sm"]:.0f}%, DRAM {v["dram"]:.0f}%)')
-            lines.append(f'    -> Profile with detailed mode for specific optimization guidance')
+            lines.append(f'    -> Use ncu_profile with kernel filter for detailed per-kernel metrics: ncu_profile <exe> <out> {short.split("(")[0].strip()}')
 
     output = '\n'.join(lines)
     print(output)

@@ -13,13 +13,22 @@ tools:
           report.nsys-rep        <- Binary report (can be opened in Nsight Systems GUI)
           cuda_kern_summary.txt  <- Top GPU kernels ranked by total execution time
           cuda_api_summary.txt   <- CUDA API call summary (malloc, memcpy, launch)
-          summary.txt            <- Agent-friendly summary with hotspot analysis
+          expert_analysis.txt    <- Expert rules: sync issues, pageable memory, GPU idle gaps
+          summary.txt            <- Agent-friendly summary with all analysis combined
+
+      The tool runs NVIDIA expert analysis rules that automatically detect:
+        - Blocking synchronization APIs (cudaDeviceSynchronize, cudaStreamSynchronize)
+        - Async memcpys that silently become synchronous due to pageable memory
+        - Synchronous memcpy/memset calls that should be async
+        - GPU idle gaps (>50ms of no GPU activity)
+        - Time chunks with low GPU utilization (<80%)
 
       INTERPRETING RESULTS:
         - Kernel with highest total time = primary optimization target
-        - Large memcpy time = opportunity to reduce host-device transfers or overlap
+        - Sync API findings = switch to CUDA streams and async operations
+        - Pageable memory warnings = use cudaMallocHost for pinned memory
+        - GPU gaps / low utilization = overlap compute with transfers
         - Many short kernels = consider kernel fusion
-        - MPI overhead = consider better overlap or reduced communication
 
       Example:
         nsys_profile ./lulesh ./nsys_out

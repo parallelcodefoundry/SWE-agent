@@ -152,16 +152,32 @@ main() {
         echo "Warning: Could not extract API summary"
     fi
 
+    # Run expert analysis rules (sync issues, pageable memory, GPU idle gaps)
+    local analyze_file="$output_dir/expert_analysis.txt"
+    echo ""
+    echo "=== Running Expert Analysis ==="
+    if "$NSYS" analyze \
+        -r cuda_api_sync,cuda_memcpy_async,cuda_memcpy_sync,cuda_memset_sync,gpu_gaps:gap=50,gpu_time_util:threshold=80 \
+        --format column \
+        "$report_path" > "$analyze_file" 2>/dev/null; then
+        echo "Expert analysis saved to: $analyze_file"
+    else
+        echo "Warning: Expert analysis failed (nsys analyze returned non-zero)"
+        # Clear file if command failed
+        > "$analyze_file" 2>/dev/null
+    fi
+
     echo ""
     echo "=== Top GPU Kernels ==="
 
     # Parse and display agent-friendly summary
-    python3 - "$kern_summary" "$api_summary" "$summary_file" << 'PYEOF'
+    python3 - "$kern_summary" "$api_summary" "$analyze_file" "$summary_file" << 'PYEOF'
 import sys, re
 
 kern_file = sys.argv[1]
 api_file = sys.argv[2]
-summary_file = sys.argv[3]
+analyze_file = sys.argv[3]
+summary_file = sys.argv[4]
 
 lines = []
 
@@ -239,12 +255,29 @@ try:
 except Exception:
     lines.append('(API summary not available)')
 
+# Include expert analysis results
+try:
+    with open(analyze_file, 'r') as f:
+        analyze_content = f.read().strip()
+    if analyze_content:
+        lines.append('')
+        lines.append('EXPERT ANALYSIS (nsys analyze):')
+        # Parse and display each rule's findings
+        for aline in analyze_content.split('\n')[:60]:
+            aline = aline.rstrip()
+            if aline:
+                lines.append(f'  {aline}')
+except Exception:
+    pass
+
 # Bottleneck guidance
 lines.append('')
 lines.append('OPTIMIZATION GUIDANCE:')
 lines.append('  - The kernel with the highest Time% is your primary optimization target')
 lines.append('  - Use ncu_profile on the top kernel(s) for detailed SM/DRAM/occupancy metrics')
-lines.append('  - Large cudaMemcpy time → reduce host-device transfers or use pinned memory')
+lines.append('  - Sync APIs (cudaDeviceSynchronize) → use streams + async operations')
+lines.append('  - Synchronous memcpy → switch to cudaMemcpyAsync with pinned memory')
+lines.append('  - GPU gaps / low utilization → overlap compute with transfers, use CUDA streams')
 lines.append('  - Many short kernel instances → consider kernel fusion')
 
 output = '\n'.join(lines)
@@ -259,6 +292,7 @@ PYEOF
     echo "Report: $report_path"
     echo "Kernel summary: $kern_summary"
     echo "API summary: $api_summary"
+    echo "Expert analysis: $analyze_file"
     echo "Summary: $summary_file"
     echo ""
     echo "For detailed timeline in GUI: nsys-ui $report_path"
