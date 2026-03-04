@@ -21,7 +21,7 @@ pip install -e .
 **Must run on a compute node** (requires nvcc and GPU libraries):
 
 ```bash
-salloc -A m2404 -C gpu -q shared -t 1:00:00 -n 1 -c 32 --gpus-per-task=1
+salloc -A m5083 -C gpu -q shared -t 1:00:00 -n 1 -c 32 --gpus-per-task=1
 ./scripts/setup_apps.sh
 ```
 

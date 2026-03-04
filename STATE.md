@@ -1,49 +1,73 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-03-04 (session 40)
+Last updated: 2026-03-04 (session 41)
 
-## Last Session (Session 40)
+## Last Session (Session 41)
 
-### Fix 6 Session-39 Infrastructure Bugs + Cleanup
+### Claude Code Results Analysis
 
-Analyzed session 39 benchmark results and found all Qwen jobs routed to wrong model (gptoss120b) due to vLLM model switching bug (already fixed in run_benchmark.sh). Diagnosed 6 downstream bugs that would prevent successful runs even with correct model routing. Fixed all 6 and cleaned up 6.4GB of failed/duplicate results.
+Deep-dived into Claude Code benchmark results from jobs 49641364 (LLNL) and 49641366 (GPA).
 
-**Bug fixes (4 framework model routing):**
-1. **sweagent.py:264** — Added `openai/` LiteLLM prefix for external models
-2. **codex.py:62** — Use full `self.model_name` (not stripped `model_id`) for vLLM
-3. **opencode.py:37-57** — Always use `openai` provider + `@ai-sdk/openai` for vLLM models
-4. **openhands.py:91** — Added `openai/` LiteLLM prefix for external models
+**LLNL Results (job 49641364):**
 
-**Bug fixes (2 data quality):**
-5. **hpc_benchmark_runner.py** — Commit `.gitignore` in workspace so it doesn't appear in agent patches (with git identity fallback + staged-changes check)
-6. **hpc_benchmark_runner.py** — Changed `--validation-runs` default 10→3 (QS timeout: 1800s > 1680s)
+| App | with_profiling | no_profiling |
+|-----|---------------|-------------|
+| **Kripke** | 11.18x (+15/-4) | 15.08x (+40/-5) |
+| **Laghos** | 1.07x (+23/-47) | 1.05x (+14/-41) |
+| **Lulesh** | 0.95x (+53/-33) | **killed** (context exhaustion) |
+| **Quicksilver** | .gitignore only (+0/-0) | timeout (+29/-26) |
 
-**Code review follow-up fixes:**
-- Class default `validation_runs: int = 10` → `3` in `__init__` to match CLI
-- OpenCode `removeprefix("openai/")` guard against double-prefix
-- Git commit robustness: check for staged changes before committing + explicit git identity
+Key findings:
+- **Kripke no_profiling (15.08x) beat with_profiling (11.18x)** — `--maxrregcount=64` in profiling run likely hurt. Without profiling, Claude made bolder changes (GPU-ifying host-only functions)
+- **Laghos patches nearly identical** between modes — core insight (remove epsilon zeroing, remove device sync) found without profiling
+- **Lulesh with_profiling**: 9 real profiling calls (4 nsys + 4 ncu + 1 other), all succeeded. Claude did thorough per-kernel analysis but kernels were already well-optimized (252 regs, 9.6% occupancy). Optimization rabbit hole with reverts.
+- **Lulesh no_profiling**: Killed after 161 turns, autocompact at 162K tokens, mid-`lulesh_run` call. Exit code 6 from srun step.
+- **Claude never used hpc_profile or hatchet_analyze** — exclusively nsys/ncu across all 8 runs
 
-**Cleanup:** Deleted 8 batch_results dirs (~6.4GB) + 16 SLURM logs for failed/duplicate jobs (49641327-49641346).
+**GPA Results (job 49641366): BROKEN — Agent never launched**
+- Benchmark runner only ran baseline verification (build+run+validate), never invoked Claude Code
+- 10/16 apps built and validated successfully, but all show +0/-0 (no agent optimization)
+- 6 apps failed baseline: exatensor, xsbench, b+tree, backprop, srad (build failures), lavaMD (config case sensitivity)
+- Total GPA run took <2 minutes (just sequential baseline checks)
+- **Root cause**: Bug in GPA benchmark flow — runs "base mode verify baselines" but never launches agent
 
-### Session 39 Result Analysis
-
-- **All 16 "Qwen" jobs** actually ran gptoss120b (vLLM model switching bug)
-- **Only SWE-agent (49641358)** made real code changes (Laghos pow→mul, 0.997x speedup)
-- **OpenCode (49641359)** connected but made no source changes
-- **OpenHands (49641360)** hit Pydantic crash mid-session
-- **All non-SWE-agent "passes"** are false positives — baseline runs with runner-injected .gitignore patches
+### Infrastructure Changes
+- **SLURM account switch**: `m2404` → `m5083` across 10 files (batch scripts, configs, docs, rules, agents, skills)
+- **Prompt improvement**: Added tip in `PROFILING_DESCRIPTION` encouraging tool diversity when one profiling approach isn't yielding insights
+- **Qwen re-submission**: 4 jobs submitted (49653981-84) with fixed code on m5083
 
 ## Active Experiments
 
-### Valid gptoss120b Results (Keep)
+### Claude Code gptoss120b LLNL Results (job 49641364) — ANALYZED
+| App | Mode | Speedup | Patch | Key Changes |
+|-----|------|---------|-------|-------------|
+| Kripke | no_profiling | **15.08x** | +40/-5 | `--use_fast_math`, GPU-ify `kConst`/`kCopy` with `cuda_exec<256>`, `RAJA_HOST_DEVICE` |
+| Kripke | with_profiling | **11.18x** | +15/-4 | `--use_fast_math`, `--maxrregcount=64`, CHAI enabled |
+| Laghos | no_profiling | 1.05x | +14/-41 | CG tol relaxed, remove epsilon zeroing, remove `DEVICE_SYNC` |
+| Laghos | with_profiling | 1.07x | +23/-47 | Same + `cg_max_iter=9`, skip redundant `UpdateQuadratureData` |
+| Lulesh | with_profiling | 0.95x | +53/-33 | Static allocation caching, MPI single-rank guard |
+| Lulesh | no_profiling | N/A | killed | Context exhaustion after 161 turns |
+| QS | no_profiling | timeout | +29/-26 | Full Makefile rewrite, `sincos()`, remove GPU printf |
+| QS | with_profiling | unknown | +0/-0 | .gitignore only |
+
+### Claude Code GPA Results (job 49641366) — BROKEN
+- Agent never launched. Baseline verification only. Need to fix GPA agent launch flow.
+
+### Other gptoss120b Results
 | Job ID | Framework | Apps | Status |
 |--------|-----------|------|--------|
 | 49641358 | sweagent | LLNL | Real changes (Laghos pow→mul, 0.997x) |
 | 49641359 | opencode | LLNL | Connected, no source changes |
 | 49641360 | openhands | LLNL | Pydantic crash mid-session |
-| 49641364 | claude | LLNL | TBD |
-| 49641361-63 | sweagent/opencode/openhands | GPA | TBD |
-| 49641366 | claude | GPA | TBD |
+| 49641361-63 | sweagent/opencode/openhands | GPA | Not yet analyzed |
+
+### Qwen Re-submission (session 41, m5083 account)
+| Job ID | Framework | Model | Status |
+|--------|-----------|-------|--------|
+| 49653981 | sweagent | Qwen/Qwen3-Coder-Next-FP8 | PENDING |
+| 49653982 | codex | Qwen/Qwen3-Coder-Next-FP8 | PENDING |
+| 49653983 | opencode | Qwen/Qwen3-Coder-Next-FP8 | PENDING |
+| 49653984 | openhands | Qwen/Qwen3-Coder-Next-FP8 | PENDING |
 
 ### Deleted (Session 40 Cleanup)
 - 49641327, 49641343 — SWE-agent setup failures
@@ -51,48 +75,46 @@ Analyzed session 39 benchmark results and found all Qwen jobs routed to wrong mo
 
 ## Branch State
 
-- **Current branch**: `dev` (23 commits ahead of `origin/dev`)
-- **Latest commit**: `9ba3fed6` — Fix 6 session-39 infrastructure bugs + cleanup
-- **Working tree**: Clean (only untracked: Laghos char scripts, xyz.asc, output.{out,txt})
+- **Current branch**: `dev` (25 commits ahead of `origin/dev`)
+- **Latest commit**: `775f5d24` — Save session 40 state
+- **Uncommitted**: m5083 account switch (10 files) + prompt.py profiling tip
 
 ## All Infrastructure Fixes — Complete
 
-- [x] All previous fixes (sessions 33-39)
-- [x] SWE-agent missing `openai/` LiteLLM prefix (session 40)
-- [x] Codex strips HuggingFace org prefix (session 40)
-- [x] OpenCode hardcodes `@ai-sdk/{provider}` npm package (session 40)
-- [x] OpenHands model name needs `openai/` prefix (session 40)
-- [x] .gitignore contamination in agent patches (session 40)
-- [x] Quicksilver validation timeout too short (session 40)
+- [x] All previous fixes (sessions 33-40)
+- [x] SLURM account m2404 → m5083 (session 41)
+- [x] Profiling prompt tip for tool diversity (session 41)
 
 ## Open Issues / TODOs
 
-### Actionable
-- [ ] **Re-submit Qwen benchmark runs** — All 16 Qwen jobs ran wrong model. Need to re-run with fixed framework code.
-- [ ] **Check remaining gptoss120b results** — Jobs 49641361-63, 49641364, 49641366 not yet analyzed
-- [ ] **Submit Codex gptoss120b external-model** — Needs OPENAI_API_BASE and OPENAI_API_KEY env vars
-- [ ] **Empty tool_calls [] from Qwen models** — Monitor for crashes on re-submission
+### Actionable (Priority Order)
+1. **GPA agent launch bug** — Claude Code GPA run never invoked the agent. Need to debug `hpc_benchmark_runner.py` GPA flow to find why agent isn't launched after baseline verification.
+2. **Check Qwen job results** — Jobs 49653981-84 (submitted this session)
+3. **Analyze remaining gptoss120b GPA results** — Jobs 49641361-63 (sweagent/opencode/openhands on GPA)
+4. **Submit Codex gptoss120b external-model** — Needs OPENAI_API_BASE/KEY
+5. **GPA baseline build failures** — 6/16 apps fail to build (exatensor, xsbench, b+tree, backprop, srad, lavaMD)
 
 ### Persistent Issues
 - [ ] **Quicksilver consistent timeout** — All frameworks timeout on QS
-- [ ] **Lulesh systematic bias** — N/C runs show ~0.94x consistently
+- [ ] **Lulesh intractable for agents** — Kernels already well-optimized (252 regs, compute-bound), bottleneck is MPI/CUDA runtime overhead
 - [ ] **Laghos timing variance** — N/C range 0.98x-1.23x too high
 - [ ] **Codex gpt-4.1-mini single-turn exit** — Model exits with needs_follow_up=false
-- [ ] **Qwen3.5-122B-A10B-FP8** — BLOCKED: needs 8 GPUs or 4x80GB nodes
+- [ ] **Claude Code context exhaustion** — Lulesh no_profiling killed at 162K tokens after 161 turns
+- [ ] **Claude never uses HPCToolkit/Hatchet** — Only nsys/ncu despite prompt listing hpc_profile+hatchet_analyze
 
 ## Recent Decisions
 
+- 2026-03-04 (s41): Switch SLURM account from m2404 to m5083 for all jobs
+- 2026-03-04 (s41): Add profiling tool diversity tip to prompt — encourage trying hpc_profile+hatchet when nsys/ncu don't yield insights
 - 2026-03-04 (s40): All 4 framework launchers need `openai/` prefix for LiteLLM routing of external models
 - 2026-03-04 (s40): Codex uses full `self.model_name` (e.g. `Qwen/Qwen3-Coder-Next-FP8`) because `model_provider=ext` is set separately
-- 2026-03-04 (s40): OpenCode always uses `@ai-sdk/openai` npm package — all external models are served via OpenAI-compatible API
+- 2026-03-04 (s40): OpenCode always uses `@ai-sdk/openai` npm package
 - 2026-03-04 (s40): .gitignore committed in workspace to prevent patch contamination
-- 2026-03-04 (s40): validation-runs default 10→3 to fix QS timeout (3 runs sufficient for median)
-- 2026-03-04 (s39): vLLM container per-model: v0.11.0 for gptoss, nightly for Qwen
-- 2026-03-04 (s39): --enforce-eager added to all vLLM launches
+- 2026-03-04 (s40): validation-runs default 10→3 to fix QS timeout
 
 ## Next Steps
 
-1. **Re-submit Qwen benchmark runs** — Now that framework routing bugs are fixed
-2. **Analyze remaining gptoss120b results** — Jobs 49641361-66
-3. **Submit Codex gptoss120b** — Source API keys first
-4. **Address Laghos timing variance and Lulesh measurement bias**
+1. **Debug GPA agent launch bug** — Why does `hpc_benchmark_runner.py` skip agent invocation for GPA base mode?
+2. **Check Qwen job results** when 49653981-84 complete
+3. **Analyze gptoss120b GPA results** for sweagent/opencode/openhands (49641361-63)
+4. **Fix GPA baseline build failures** — 6 apps fail, may be CUDA version or path issue

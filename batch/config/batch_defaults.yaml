@@ -61,7 +61,7 @@ harness_patterns:
 
 # SLURM configuration (for reference, actual values in hpc_batch_runner.sh)
 slurm:
-  account: "m2404"
+  account: "m5083"
   constraint: "gpu"
   queue: "regular"
   time: "3:00:00"

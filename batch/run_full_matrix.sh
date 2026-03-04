@@ -4,7 +4,7 @@
 #
 # Usage:
 #   # LLNL only (default)
-#   salloc --nodes 4 --qos interactive --time 06:00:00 --constraint gpu --gpus-per-node 4 --account m2404
+#   salloc --nodes 4 --qos interactive --time 06:00:00 --constraint gpu --gpus-per-node 4 --account m5083
 #   bash batch/run_full_matrix.sh
 #
 #   # LLNL + GPA

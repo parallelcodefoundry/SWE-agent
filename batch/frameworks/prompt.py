@@ -140,9 +140,12 @@ PROFILING TOOLS AVAILABLE (run as bash commands):
   Use this AFTER nsys_profile to deep-dive into the top hotspot kernel(s).
 - hpc_profile: Run HPCToolkit profiling to collect GPU/CPU performance data
 - hatchet_analyze: Analyze HPCToolkit profiles using Hatchet (call tree, hot paths)
+  Use hpc_profile + hatchet_analyze for hierarchical call-tree analysis — especially useful when nsys/ncu flat summaries don't reveal the bottleneck.
 - compiler_analysis: Static analysis of compiler optimization opportunities
 - gpu_info: Show GPU hardware information (A100 specs, memory, compute capability)
-- cpu_info: Show CPU hardware information"""
+- cpu_info: Show CPU hardware information
+
+TIP: If one profiling approach isn't yielding actionable insights, try a different tool. Each tool provides a different view of performance."""
 
 NO_PROFILING_NOTE = """\
 NOTE: You do NOT have profiling tools available. Optimize based on code analysis and HPC best practices."""

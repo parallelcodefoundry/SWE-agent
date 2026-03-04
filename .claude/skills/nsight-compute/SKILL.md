@@ -82,7 +82,7 @@ ncu_profile <executable> <output_dir> [<kernel_filter>] [<app_args>...]
 ## Common Issues
 
 - **DCGM conflicts**: Always `dcgmi profile --pause` before ncu, `--resume` after
-- **Must run on compute nodes**: `salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 1 --account m2404`
+- **Must run on compute nodes**: `salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 1 --account m5083`
 - **ncu_report not found**: `pip install ncu-report` or add bundled path to `sys.path`
 - **NVTX errors on 12.9**: `pip install nvtx` for Python; use `nvtx3/nvtx3.hpp` for C++
 - **Clock control**: ncu defaults to `--clock-control base` (locked). Use `base` for reproducible benchmarks

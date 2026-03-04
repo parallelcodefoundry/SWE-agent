@@ -16,7 +16,7 @@ When running benchmarks, validation tests, E2E tests, or any compute-node work:
 
 ```bash
 # GOOD — interactive, immediate start
-salloc --nodes 1 --qos interactive --time 04:00:00 --constraint gpu --gpus 4 --account m2404
+salloc --nodes 1 --qos interactive --time 04:00:00 --constraint gpu --gpus 4 --account m5083
 srun --exclusive --gpus 4 ... bash -lc "..."
 
 # AVOID for validation — sits in queue

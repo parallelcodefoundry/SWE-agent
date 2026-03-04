@@ -82,7 +82,7 @@ nsys_profile <executable> <output_dir> [<app_args>...]
 
 ## Common Issues
 
-- **Must run on compute nodes**: `salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 1 --account m2404`
+- **Must run on compute nodes**: `salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 1 --account m5083`
 - **DCGM conflicts**: `dcgmi profile --pause` before profiling
 - **"No CUDA events collected"**: Verify app uses CUDA, `--trace=cuda` is set, and on compute node
 - **Large reports**: Use `--duration=30`, `--delay=10`, or `--capture-range=nvtx` to limit

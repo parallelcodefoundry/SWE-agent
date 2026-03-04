@@ -76,7 +76,7 @@ results, operations, long_results = run_driver(
 ## Build on Perlmutter
 
 ```bash
-salloc -A m2404 -C gpu -q interactive -t 01:00:00 -n 1 -c 32 --gpus-per-task=1
+salloc -A m5083 -C gpu -q interactive -t 01:00:00 -n 1 -c 32 --gpus-per-task=1
 module load cuda/12.4
 cd /pscratch/sd/k/krydzy/GPA-Benchmark
 bash get_data.sh                    # one-time: download rodinia input data

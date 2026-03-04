@@ -10,7 +10,7 @@ For detailed reference, see references/ in this skill directory.
 
 ## SLURM Job Submission
 
-Account: always `-A m2404`.
+Account: always `-A m5083`.
 
 ### QOS Limits (GPU)
 
@@ -24,14 +24,14 @@ Account: always `-A m2404`.
 ### Interactive GPU Allocation
 
 ```bash
-salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m2404
+salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m5083
 ```
 
 ### Standard Batch Header (Full Node)
 
 ```bash
 #!/bin/bash
-#SBATCH -A m2404
+#SBATCH -A m5083
 #SBATCH -C gpu
 #SBATCH -q regular
 #SBATCH -t 4:00:00

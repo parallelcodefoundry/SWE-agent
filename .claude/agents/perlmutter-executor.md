@@ -13,7 +13,7 @@ ALWAYS read .claude/skills/perlmutter/SKILL.md before your first action in any s
 Your primary workflow:
 1. Check if an salloc session is already active: squeue -u krydzy
 2. If not, get an interactive GPU allocation:
-   salloc --nodes 1 --qos interactive --time 04:00:00 --constraint gpu --gpus 4 --account m2404
+   salloc --nodes 1 --qos interactive --time 04:00:00 --constraint gpu --gpus 4 --account m5083
 3. Load required modules (check the relevant app's Skill file for exact modules)
 4. Build/compile as needed
 5. Run with srun on the allocated node
@@ -33,7 +33,7 @@ Only use sbatch for:
 For the benchmark runner, run it interactively via srun on an allocated node:
 ```bash
 # Get allocation first
-salloc --nodes 1 --qos interactive --time 04:00:00 --constraint gpu --gpus 4 --account m2404
+salloc --nodes 1 --qos interactive --time 04:00:00 --constraint gpu --gpus 4 --account m5083
 
 # Then run benchmark interactively on the compute node
 source ~/.openai_env

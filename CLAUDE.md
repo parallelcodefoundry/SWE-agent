@@ -29,7 +29,7 @@ IMPORTANT: Follow this workflow for EVERY session.
 
 ```bash
 # Interactive GPU node
-salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m2404
+salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m5083
 
 # Modules (always load before build/run)
 module load python cmake openmpi/5.0.7 cuda/12.4
@@ -64,4 +64,4 @@ source ~/envs/sweagent/bin/activate
 5. **Laghos dependencies** — mfem/hypre/metis live as sibling dirs, shared by both pristine and `_test`. METIS download can fail; pre-download if needed.
 6. **Always reset `_test` repos** between experiment runs to ensure clean state.
 7. **If a command fails with stale Python/tools** — likely an outdated module; load a newer version.
-8. **NERSC account**: `m2404` for all SLURM jobs.
+8. **NERSC account**: `m5083` for all SLURM jobs.
