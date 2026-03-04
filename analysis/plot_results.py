@@ -68,7 +68,7 @@ def load_error_narrative():
 
 # ─── Plot 1: Speedup Heatmap ────────────────────────────────────────────────
 
-def plot_speedup_heatmap(results, session=None):
+def plot_speedup_heatmap(results, session=None, profiling_mode=None):
     """Create a framework × app heatmap of speedup values.
 
     Rules:
@@ -77,12 +77,22 @@ def plot_speedup_heatmap(results, session=None):
     - Agent crashed / no real changes → show "N/C" (no change), light gray
     - No data → show "—", white
     """
+    runs = results
+    title_parts = []
+
     if session is not None:
-        runs = [r for r in results if r.get("session") == session]
-        title_suffix = f" (Session {session})"
-    else:
-        runs = results
+        runs = [r for r in runs if r.get("session") == session]
+        title_parts.append(f"Session {session}")
+
+    if profiling_mode is not None:
+        runs = [r for r in runs if r.get("profiling_mode") == profiling_mode]
+        mode_label = "w/ Profiling" if profiling_mode == "with_profiling" else "w/o Profiling"
+        title_parts.append(mode_label)
+
+    if not title_parts:
         title_suffix = " (All Sessions — Best Per Framework)"
+    else:
+        title_suffix = f" ({' — '.join(title_parts)})"
 
     # Build matrix: for each framework×app, pick the best meaningful run
     matrix = {}
@@ -184,7 +194,12 @@ def plot_speedup_heatmap(results, session=None):
     ax.set_yticklabels(ax.get_yticklabels(), rotation=0, ha="right")
 
     plt.tight_layout()
-    suffix = f"_s{session}" if session else "_all"
+    parts = []
+    if session is not None:
+        parts.append(f"s{session}")
+    if profiling_mode is not None:
+        parts.append(profiling_mode)
+    suffix = "_" + "_".join(parts) if parts else "_all"
     out_path = OUTPUT_DIR / f"speedup_heatmap{suffix}.png"
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -376,6 +391,19 @@ def main():
 
     # Combined heatmap (best per framework×app)
     plot_speedup_heatmap(results, session=None)
+
+    # Per-profiling-mode heatmaps (sessions that have profiling_mode data)
+    modes_present = set(r.get("profiling_mode") for r in results if r.get("profiling_mode"))
+    if modes_present:
+        for mode in sorted(modes_present):
+            plot_speedup_heatmap(results, profiling_mode=mode)
+        # Per-session × per-mode for sessions that have both
+        for s in sessions:
+            session_runs = [r for r in results if r.get("session") == s]
+            session_modes = set(r.get("profiling_mode") for r in session_runs if r.get("profiling_mode"))
+            if len(session_modes) > 1:
+                for mode in sorted(session_modes):
+                    plot_speedup_heatmap(results, session=s, profiling_mode=mode)
 
     # Build success rate
     plot_build_success(results)
