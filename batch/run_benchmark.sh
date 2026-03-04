@@ -64,12 +64,12 @@ GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.60}"
 # gpu_mem_util overrides GPU_MEM_UTIL when non-empty (sized for 4xA100-40GB = 160GB)
 declare -A MODEL_REGISTRY=(
     ["openai/gpt-oss-120b"]="openai|openai_gptoss||"
-    ["Qwen/Qwen3.5-27B"]="qwen3_coder|qwen3|bf16|0.60"
-    ["Qwen/Qwen3.5-27B-FP8"]="qwen3_coder|qwen3|bf16|0.60"
-    ["Qwen/Qwen3.5-122B-A10B"]="qwen3_coder|qwen3|bf16|0.92"
-    ["Qwen/Qwen3.5-122B-A10B-FP8"]="qwen3_coder|qwen3|bf16|0.92"
-    ["Qwen/Qwen3-Coder-Next"]="qwen3_coder|qwen3|bf16|0.85"
-    ["Qwen/Qwen3-Coder-Next-FP8"]="qwen3_coder|qwen3|bf16|0.85"
+    ["Qwen/Qwen3.5-27B"]="qwen3_coder|qwen3|bfloat16|0.60"
+    ["Qwen/Qwen3.5-27B-FP8"]="qwen3_coder|qwen3|bfloat16|0.60"
+    ["Qwen/Qwen3.5-122B-A10B"]="qwen3_coder|qwen3|bfloat16|0.92"
+    ["Qwen/Qwen3.5-122B-A10B-FP8"]="qwen3_coder|qwen3|bfloat16|0.92"
+    ["Qwen/Qwen3-Coder-Next"]="qwen3_coder|qwen3|bfloat16|0.85"
+    ["Qwen/Qwen3-Coder-Next-FP8"]="qwen3_coder|qwen3|bfloat16|0.85"
 )
 
 _lookup_model_settings() {
