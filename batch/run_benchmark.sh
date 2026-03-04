@@ -62,14 +62,16 @@ GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.60}"
 
 # Model registry: model → tool_call_parser|reasoning_parser|kv_cache_dtype|gpu_mem_util
 # gpu_mem_util overrides GPU_MEM_UTIL when non-empty (sized for 4xA100-40GB = 160GB)
+# NOTE: Do NOT use kv_cache_dtype=bfloat16 on A100 — FLASH_ATTN throws RuntimeError.
+# Qwen3.5 models require vLLM >= 0.17 (qwen3_5 architecture not in v0.11.0).
 declare -A MODEL_REGISTRY=(
     ["openai/gpt-oss-120b"]="openai|openai_gptoss||"
-    ["Qwen/Qwen3.5-27B"]="qwen3_coder|qwen3|bfloat16|0.60"
-    ["Qwen/Qwen3.5-27B-FP8"]="qwen3_coder|qwen3|bfloat16|0.60"
-    ["Qwen/Qwen3.5-122B-A10B"]="qwen3_coder|qwen3|bfloat16|0.92"
-    ["Qwen/Qwen3.5-122B-A10B-FP8"]="qwen3_coder|qwen3|bfloat16|0.92"
-    ["Qwen/Qwen3-Coder-Next"]="qwen3_coder|qwen3|bfloat16|0.85"
-    ["Qwen/Qwen3-Coder-Next-FP8"]="qwen3_coder|qwen3|bfloat16|0.85"
+    ["Qwen/Qwen3.5-27B"]="qwen3_coder|qwen3||0.60"
+    ["Qwen/Qwen3.5-27B-FP8"]="qwen3_coder|qwen3||0.60"
+    ["Qwen/Qwen3.5-122B-A10B"]="qwen3_coder|qwen3||0.92"
+    ["Qwen/Qwen3.5-122B-A10B-FP8"]="qwen3_coder|qwen3||0.92"
+    ["Qwen/Qwen3-Coder-Next"]="qwen3_coder|qwen3||0.70"
+    ["Qwen/Qwen3-Coder-Next-FP8"]="qwen3_coder|qwen3||0.70"
 )
 
 _lookup_model_settings() {
@@ -649,6 +651,7 @@ else
         --tool-call-parser "${TOOL_CALL_PARSER}" \
         --enable-auto-tool-choice \
         --reasoning-parser "${REASONING_PARSER}" \
+        --enforce-eager \
         ${KV_CACHE_DTYPE:+--kv-cache-dtype "${KV_CACHE_DTYPE}"} \
         > "${OUTPUT_DIR}/vllm.log" 2>&1 &
 

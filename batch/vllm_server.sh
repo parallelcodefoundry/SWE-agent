@@ -39,4 +39,5 @@ podman-hpc run --rm --gpu --net host --ipc=host \
     --tool-call-parser "${TOOL_CALL_PARSER:-openai}" \
     --enable-auto-tool-choice \
     --reasoning-parser "${REASONING_PARSER:-openai_gptoss}" \
+    --enforce-eager \
     ${KV_CACHE_DTYPE:+--kv-cache-dtype "${KV_CACHE_DTYPE}"}
