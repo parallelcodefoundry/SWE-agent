@@ -59,7 +59,7 @@ class CodexLauncher(FrameworkLauncher):
                     f"model_providers.{provider_id}.base_url={api_base}",
                     f"model_providers.{provider_id}.env_key=OPENAI_API_KEY",
                     f"model_providers.{provider_id}.wire_api=responses",
-                    f"model={model_id}",
+                    f"model={self.model_name}",
                     "web_search=disabled",
                 ]
         else:

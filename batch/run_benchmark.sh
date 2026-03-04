@@ -335,6 +335,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Propagate MODEL_NAME to VLLM_MODEL for registry lookup
+if [[ -n "${MODEL_NAME:-}" ]] && [[ -n "${MODEL_REGISTRY[${MODEL_NAME}]:-}" ]]; then
+    VLLM_MODEL="$MODEL_NAME"
+fi
+
 #===============================================================================
 # Auto-calculate Node Count and Self-Submit
 #===============================================================================

@@ -88,7 +88,7 @@ class OpenHandsLauncher(FrameworkLauncher):
 
         # Determine model for SDK runner
         if self.model_name:
-            model = self.model_name
+            model = f"openai/{self.model_name}"
         else:
             model = "openai/openai/gpt-oss-120b"
 

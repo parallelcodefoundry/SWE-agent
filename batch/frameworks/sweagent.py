@@ -261,7 +261,7 @@ timeout {SESSION_TIMEOUT} sweagent run --config {config_path} \\
         if self.model_name:
             config_content = config_content.replace(
                 'name: openai/openai/gpt-oss-120b',
-                f'name: {self.model_name}'
+                f'name: openai/{self.model_name}'
             )
             config_content = config_content.replace(
                 'per_instance_cost_limit: 0',

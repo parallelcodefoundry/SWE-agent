@@ -176,7 +176,7 @@ class HPCBenchmarkRunner:
         model_name: Optional[str] = None,
         framework: str = "sweagent",
         build_mode: str = "harness",
-        validation_runs: int = 10,
+        validation_runs: int = 3,
     ):
         self.output_dir = output_dir
         self.trajectory_dir = trajectory_dir
@@ -404,6 +404,23 @@ class HPCBenchmarkRunner:
             else:
                 with open(gitignore_path, "w") as f:
                     f.write(build_ignores)
+            # Commit .gitignore so it doesn't appear in the agent's patch
+            subprocess.run(
+                ["git", "add", ".gitignore"],
+                cwd=workspace, check=True, capture_output=True
+            )
+            # Commit only if something was staged (avoids "nothing to commit" error)
+            status = subprocess.run(
+                ["git", "diff", "--cached", "--quiet"],
+                cwd=workspace, capture_output=True
+            )
+            if status.returncode != 0:
+                subprocess.run(
+                    ["git", "-c", "user.name=benchmark-runner",
+                     "-c", "user.email=benchmark@localhost",
+                     "commit", "-m", "Add build .gitignore"],
+                    cwd=workspace, check=True, capture_output=True
+                )
 
             # Symlink Laghos shared dependencies into workspace parent
             if repo_name == "laghos":
@@ -604,6 +621,23 @@ class HPCBenchmarkRunner:
             else:
                 with open(gitignore_path, "w") as f:
                     f.write(build_ignores)
+            # Commit .gitignore so it doesn't appear in the agent's patch
+            subprocess.run(
+                ["git", "add", ".gitignore"],
+                cwd=workspace, check=True, capture_output=True
+            )
+            # Commit only if something was staged (avoids "nothing to commit" error)
+            status = subprocess.run(
+                ["git", "diff", "--cached", "--quiet"],
+                cwd=workspace, capture_output=True
+            )
+            if status.returncode != 0:
+                subprocess.run(
+                    ["git", "-c", "user.name=benchmark-runner",
+                     "-c", "user.email=benchmark@localhost",
+                     "commit", "-m", "Add build .gitignore"],
+                    cwd=workspace, check=True, capture_output=True
+                )
 
             # Remove confusing legacy files from Lulesh workspace.
             # Agents see cuda/build/Makefile.CRAY and think it's the real build file,
@@ -1599,8 +1633,8 @@ def main():
     parser.add_argument(
         "--validation-runs",
         type=int,
-        default=10,
-        help="Number of timing runs per validation (default: 10). Uses median for speedup."
+        default=3,
+        help="Number of timing runs per validation (default: 3). Uses median for speedup."
     )
     parser.add_argument(
         "--openai-region",

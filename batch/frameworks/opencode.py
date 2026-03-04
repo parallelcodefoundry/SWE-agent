@@ -35,13 +35,11 @@ class OpenCodeLauncher(FrameworkLauncher):
         for either local vLLM or external model API.
         """
         if self.model_name:
-            # External model (e.g., "anthropic/claude-sonnet-4-5-20250929" or "openai/gpt-4o")
-            # Parse provider/model from model_name
-            if "/" in self.model_name:
-                provider_id, model_id = self.model_name.split("/", 1)
-            else:
-                provider_id = "openai"
-                model_id = self.model_name
+            # External model via vLLM or OpenAI-compatible API.
+            # Always use "openai" provider since all models are served via
+            # OpenAI-compatible endpoints (vLLM, OpenAI, etc.).
+            provider_id = "openai"
+            model_id = self.model_name.removeprefix("openai/")  # strip if already prefixed
 
             api_base = os.environ.get("OPENAI_API_BASE", "")
             api_key = os.environ.get("OPENAI_API_KEY", "")
