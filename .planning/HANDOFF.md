@@ -1,121 +1,78 @@
-# HANDOFF — Session 39 → Session 40
+# HANDOFF — Session 40 → Session 41
 
-Last updated: 2026-03-04 (session 39)
+Last updated: 2026-03-04 (session 40)
 
 ## What We Were Working On
 
-Session 39: Fixed vLLM A100 compatibility (removed invalid bfloat16 KV cache, added --enforce-eager), implemented model-dependent container selection (v0.11.0 for gptoss, nightly for Qwen), validated both Qwen models on vLLM nightly, diagnosed session 36 node count failures, submitted 24 benchmark jobs.
+Session 40: Fixed 6 infrastructure bugs from session 39 that caused 0 valid Qwen results and corrupted non-SWE-agent results. Cleaned up 6.4GB of failed/duplicate batch_results. Verified Codex model string handling by reading Codex source code.
 
 ## Goal Progress
-- [x] Goal 0: Fix vLLM A100 compatibility — removed bfloat16, added --enforce-eager
-- [x] Goal 1: Implement model-dependent container selection — v0.11.0 for gptoss, nightly for Qwen
-- [x] Goal 2: Validate Qwen3.5-27B-FP8 on nightly — PASS (Qwen3_5ForConditionalGeneration resolved)
-- [x] Goal 3: Validate Qwen3-Coder-Next-FP8 on nightly — PASS (tool calls working)
-- [x] Goal 4: Diagnose session 36 failures — sbatch bypasses self-submit (missing -N)
-- [x] Goal 5: Submit Qwen benchmark runs — 16 jobs (8 per model)
-- [x] Goal 6: Re-submit gptoss120b benchmarks — 8 jobs (with correct node counts)
-- [ ] Goal 7: Check session 39 benchmark results — 24 jobs all PENDING (Priority)
-- [ ] Goal 8: Submit Codex gptoss120b external-model — needs OPENAI_API_BASE env var
+- [x] Goal 0: Fix 4 framework model routing bugs (sweagent, codex, opencode, openhands)
+- [x] Goal 1: Fix .gitignore contamination in agent patches
+- [x] Goal 2: Fix Quicksilver validation timeout (default 10→3 runs)
+- [x] Goal 3: Code review on modified files (found 3 additional issues, all fixed)
+- [x] Goal 4: Delete failed/duplicate batch_results dirs + SLURM logs (~6.4GB)
+- [x] Goal 5: Verify Codex model string handling via source code audit
+- [x] Goal 6: Commit all changes
+- [ ] Goal 7: Re-submit Qwen benchmark runs with fixed code
+- [ ] Goal 8: Analyze remaining gptoss120b results (49641361-66)
+- [ ] Goal 9: Submit Codex gptoss120b external-model
 
-## Key Commits (Session 39)
+## Key Commits (Session 40)
 
 | Commit | Description |
 |--------|-------------|
-| `1a399bad` | Model-dependent vLLM container selection in registry |
-| `b3736562` | Switch vLLM container from v0.11.0 to nightly for Qwen3.5 support |
-| `0799c39a` | Fix vLLM A100 compatibility: remove bfloat16 KV cache, add enforce-eager |
-| `e7f3b28b` | WIP: Save session 38 state — GPA analysis, upstream merge, URL validation |
+| `9ba3fed6` | Fix 6 session-39 infrastructure bugs + cleanup 6.4GB failed results |
 
-## Active Benchmark Jobs (24 total, all PENDING)
+## Codex Model String Verification
 
-**Qwen3-Coder-Next-FP8 (8 jobs):**
-| Job ID | Framework | Apps | Nodes |
-|--------|-----------|------|-------|
-| 49641327 | sweagent | LLNL (K,La,Lu,QS) | 5 |
-| 49641328 | opencode | LLNL (K,La,Lu,QS) | 5 |
-| 49641329 | openhands | LLNL (K,La,Lu,QS) | 5 |
-| 49641330 | codex | LLNL (K,La,Lu,QS) | 5 |
-| 49641339 | sweagent | GPA | 2 |
-| 49641340 | opencode | GPA | 2 |
-| 49641341 | openhands | GPA | 2 |
-| 49641342 | codex | GPA | 2 |
-
-**Qwen3.5-27B-FP8 (8 jobs):**
-| Job ID | Framework | Apps | Nodes |
-|--------|-----------|------|-------|
-| 49641343 | sweagent | LLNL (K,La,Lu,QS) | 5 |
-| 49641344 | opencode | LLNL (K,La,Lu,QS) | 5 |
-| 49641345 | openhands | LLNL (K,La,Lu,QS) | 5 |
-| 49641346 | codex | LLNL (K,La,Lu,QS) | 5 |
-| 49641353 | sweagent | GPA | 2 |
-| 49641355 | opencode | GPA | 2 |
-| 49641356 | openhands | GPA | 2 |
-| 49641357 | codex | GPA | 2 |
-
-**gptoss120b re-submission (8 jobs):**
-| Job ID | Framework | Apps | Nodes |
-|--------|-----------|------|-------|
-| 49641358 | sweagent | LLNL (K,La,Lu,QS) | 5 |
-| 49641359 | opencode | LLNL (K,La,Lu,QS) | 5 |
-| 49641360 | openhands | LLNL (K,La,Lu,QS) | 5 |
-| 49641361 | sweagent | GPA | 2 |
-| 49641362 | opencode | GPA | 2 |
-| 49641363 | openhands | GPA | 2 |
-| 49641364 | claude | LLNL (K,La,Lu,QS) | 4 |
-| 49641366 | claude | GPA | 1 |
+Verified by reading Codex source at `/pscratch/sd/k/krydzy/codex/codex-rs/core/src/`:
+- `config/mod.rs:1861-1864` — `model_provider_id` comes from `model_provider` CLI flag, NOT from parsing the model string
+- `models_manager/manager.rs:190-202` — `find_model_by_namespaced_suffix` handles `Qwen/Qwen3-Coder-Next-FP8` by splitting on `/`, but this only affects metadata lookup (fallback to generic model info), NOT provider routing
+- `models_manager/manager.rs:214-215` — The full model string is preserved as `slug` and sent as-is in API requests
+- **Conclusion**: `model=Qwen/Qwen3-Coder-Next-FP8` with `model_provider=ext` is correct. The `/` does NOT cause provider mismatch.
 
 ## Files Modified This Session
 
-| File | Change |
-|------|--------|
-| `batch/run_benchmark.sh` | Model-dependent container selection (5th field in MODEL_REGISTRY), removed bfloat16, added --enforce-eager, lowered Coder-Next gpu_mem_util to 0.70 |
-| `batch/vllm_server.sh` | Added --enforce-eager, default image v0.11.0 (env var override) |
-| `.claude/skills/nsight-compute/SKILL.md` | Updated with GPA test results from session 38 |
-| `STATE.md` | Rewritten with session 39 progress |
+| File | Bug(s) | Change |
+|------|--------|--------|
+| `batch/frameworks/sweagent.py:264` | #1 | `f'name: openai/{self.model_name}'` |
+| `batch/frameworks/codex.py:62` | #2 | `f"model={self.model_name}"` (full HF name, not stripped) |
+| `batch/frameworks/opencode.py:37-57` | #3 | Always use `provider_id="openai"`, `model_id = self.model_name.removeprefix("openai/")` |
+| `batch/frameworks/openhands.py:91` | #4 | `f"openai/{self.model_name}"` |
+| `batch/hpc_benchmark_runner.py:411-427,629-644` | #5 | Commit .gitignore with staged-changes check + git identity fallback |
+| `batch/hpc_benchmark_runner.py:183,1640` | #6 | `validation_runs` default 10→3 (both __init__ and argparse) |
 
 ## Files to Read First Next Session
 
 1. `STATE.md` — Full state overview
 2. `.planning/HANDOFF.md` — This file
 3. Check benchmark queue: `squeue -u krydzy`
-4. `batch/run_benchmark.sh` lines 58-110 — MODEL_REGISTRY and _lookup_model_settings
-
-## Key Decisions (Session 39)
-
-- **vLLM container per-model**: v0.11.0 for gptoss (stable), nightly for Qwen (needs qwen3_5 arch)
-- **kv_cache_dtype=bfloat16 removed**: Only valid for FP8-default models (e.g. DeepSeek), not Qwen
-- **--enforce-eager**: Added to all vLLM launches — prevents CUDA graph compilation timeout
-- **Session 36 jobs failed**: sbatch bypasses self-submit (missing -N). Use `bash batch/run_benchmark.sh` from login node
-- **vLLM nightly = 0.16.1rc1.dev206**: Supports qwen3_5 + qwen3_next. v0.16.0 (latest) does NOT support qwen3_5
-
-## Monitoring Concerns
-
-- **Empty tool_calls [] from Qwen**: Both models return `tool_calls: []` in responses. SWE-agent outbound filter (line 870 models.py: `and tool_calls` is falsy for []) should handle this, but monitor for crashes.
-- **content: null with reasoning field**: Qwen models put text in `reasoning` field, not `content`. `--reasoning-parser qwen3` handles this.
+4. `batch/frameworks/sweagent.py:259-277` — Model override logic
+5. `batch/hpc_benchmark_runner.py:411-427` — .gitignore commit logic
 
 ## Verification Commands (Interactive)
 
 ```bash
-# Check benchmark results
-squeue -u krydzy  # Are jobs still queued?
+# Check if any session 39 jobs are still running
+squeue -u krydzy
+
+# Check completed job results
 sacct -u krydzy --starttime=2026-03-04 --format=JobID,JobName,State,ExitCode,Elapsed,NNodes -n | head -30
 
-# Find completed job output
-ls -lt batch_results/ | head -20
-
-# Quick results check for a specific job
-grep -r "CORRECTNESS" batch_results/benchmark_*_49641327/ 2>/dev/null
+# Re-submit Qwen benchmarks with fixed code
+salloc --nodes 1 --qos interactive --time 04:00:00 --constraint gpu --gpus 4 --account m2404
+# Then: bash batch/run_benchmark.sh --base --kripke --framework sweagent --model-name Qwen/Qwen3-Coder-Next-FP8
 ```
 
 ## Gotchas
 
-- **sbatch vs bash for run_benchmark.sh**: MUST use `bash batch/run_benchmark.sh` from login node (triggers self-submit with -N). `sbatch batch/run_benchmark.sh` runs inside SLURM and gets 1 node.
-- **VLLM_IMAGE env var overrides registry**: If set in environment, all models use that image regardless of registry setting.
-- **Codex external-model needs env vars**: `source ~/.openai_env` sets OPENAI_API_BASE and OPENAI_API_KEY. Skipped in session 39.
-- **Perlmutter QOS max 2 interactive jobs**: Cannot launch 3+ salloc subagents simultaneously.
-- **srun "nodes are busy"**: If a previous srun step on an allocation is stale, new steps fail. Cancel+restart allocation.
+- **Codex model string**: Full `Qwen/Qwen3-Coder-Next-FP8` works because `model_provider=ext` is set separately. Codex does NOT parse `/` in model string for provider routing.
+- **OpenCode double-prefix guard**: `removeprefix("openai/")` strips if model_name already starts with `openai/`.
+- **Git commit in workspace**: Uses `git -c user.name=benchmark-runner -c user.email=benchmark@localhost` for identity. Checks staged changes first to avoid "nothing to commit" error.
+- **QS validation timeout**: With default 3 runs: `600 + 2*120 = 840s`. QS single run ~180s, 3 runs = 540s. Safe margin.
 
 ## Branch State
 
-- **SWE-agent (dev)**: Clean after `1a399bad`, 21 commits ahead of `origin/dev`
+- **SWE-agent (dev)**: Clean after `9ba3fed6`, 23 commits ahead of `origin/dev`
 - **Untracked**: `scripts/char_laghos*.{sh,sbatch}`, `xyz.asc`, `output.{out,txt}`
