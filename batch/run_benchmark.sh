@@ -60,15 +60,16 @@ VLLM_STARTUP_TIMEOUT="${VLLM_STARTUP_TIMEOUT:-600}"
 TP_SIZE="${TP_SIZE:-4}"
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.60}"
 
-# Model registry: model_pattern → tool_call_parser|reasoning_parser|kv_cache_dtype
+# Model registry: model → tool_call_parser|reasoning_parser|kv_cache_dtype|gpu_mem_util
+# gpu_mem_util overrides GPU_MEM_UTIL when non-empty (sized for 4xA100-40GB = 160GB)
 declare -A MODEL_REGISTRY=(
-    ["openai/gpt-oss-120b"]="openai|openai_gptoss|"
-    ["Qwen/Qwen3.5-27B"]="qwen3_coder|qwen3|bf16"
-    ["Qwen/Qwen3.5-27B-FP8"]="qwen3_coder|qwen3|bf16"
-    ["Qwen/Qwen3.5-122B-A10B"]="qwen3_coder|qwen3|bf16"
-    ["Qwen/Qwen3.5-122B-A10B-FP8"]="qwen3_coder|qwen3|bf16"
-    ["Qwen/Qwen3-Coder-Next"]="qwen3_coder|qwen3|bf16"
-    ["Qwen/Qwen3-Coder-Next-FP8"]="qwen3_coder|qwen3|bf16"
+    ["openai/gpt-oss-120b"]="openai|openai_gptoss||"
+    ["Qwen/Qwen3.5-27B"]="qwen3_coder|qwen3|bf16|0.60"
+    ["Qwen/Qwen3.5-27B-FP8"]="qwen3_coder|qwen3|bf16|0.60"
+    ["Qwen/Qwen3.5-122B-A10B"]="qwen3_coder|qwen3|bf16|0.92"
+    ["Qwen/Qwen3.5-122B-A10B-FP8"]="qwen3_coder|qwen3|bf16|0.92"
+    ["Qwen/Qwen3-Coder-Next"]="qwen3_coder|qwen3|bf16|0.85"
+    ["Qwen/Qwen3-Coder-Next-FP8"]="qwen3_coder|qwen3|bf16|0.85"
 )
 
 _lookup_model_settings() {
@@ -80,7 +81,12 @@ _lookup_model_settings() {
         REASONING_PARSER="openai_gptoss"
         KV_CACHE_DTYPE=""
     else
-        IFS='|' read -r TOOL_CALL_PARSER REASONING_PARSER KV_CACHE_DTYPE <<< "$entry"
+        local _gpu_mem_util=""
+        IFS='|' read -r TOOL_CALL_PARSER REASONING_PARSER KV_CACHE_DTYPE _gpu_mem_util <<< "$entry"
+        # Override GPU_MEM_UTIL if the model needs a specific value
+        if [[ -n "$_gpu_mem_util" ]]; then
+            GPU_MEM_UTIL="$_gpu_mem_util"
+        fi
     fi
 }
 
@@ -605,6 +611,7 @@ else
     echo "  Tensor Parallel: ${TP_SIZE}"
 
     _lookup_model_settings "${VLLM_MODEL}"
+    echo "  GPU memory util: ${GPU_MEM_UTIL}"
     echo "  Tool call parser: ${TOOL_CALL_PARSER}"
     echo "  Reasoning parser: ${REASONING_PARSER}"
     [[ -n "$KV_CACHE_DTYPE" ]] && echo "  KV cache dtype: ${KV_CACHE_DTYPE}"
