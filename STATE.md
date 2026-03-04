@@ -1,28 +1,42 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-03-04 (session 35)
+Last updated: 2026-03-04 (session 36)
 
-## Last Session (Session 35)
+## Last Session (Session 36)
 
-### GPA-Benchmark Deep Analysis & Upstream Merge
+### GPA Improvements, NCU Tool, vLLM Model Registry, Benchmark Resubmission
 
-1. **GPA upstream merge** — Merged 29 commits from `origin/develop` in `/pscratch/sd/k/krydzy/GPA-Benchmark/`. Key fix: CUDA 13 migration adds `-arch=sm_$(SM_VERSION)` and `cudaDeviceSynchronize()` to all Rodinia Makefiles. Resolved merge conflict in `gpa_bench_driver.py` (took upstream's case-sensitive app name matching). Commit: `ab8b225`.
-2. **OpenAI regional endpoint validation** — Added `validate_openai_base_url()` and `openai_region_to_base_url()` in `batch/frameworks/base.py`. Supports all 10 OpenAI regions (us, eu, gb, ae, au, ca, jp, in, sg, kr). Logs WARNING for `api.openai.com` (global default that fails with data-residency keys).
-3. **`--openai-region` flag** — Added to `hpc_benchmark_runner.py` and `run_benchmark.sh`. Usage: `--openai-region us`.
-4. **GPA SKILL.md update** — Added timing/measurement details, agent workspace vs LLNL comparison, benchmark results table, upstream merge date, common issues from CUDA 13 fix.
-5. **Full GPA diff analysis** — Extracted and analyzed all agent diffs from 4 GPA benchmark runs (jobs 49366711-14). Only streamcluster produced real speedups (shared memory caching of point-x coords in `kernel_compute_cost()`). Codex never invoked tools (gpt-4.1-mini single-turn exit).
+1. **GPA timing robustness** — Increased nsys samples from 3→5 (`num_samples=5` in `_run_gpa_driver()`) and added warmup run before nsys profiling loop in `driver_profiling.py`. Warmup run discards result, warms CUDA context.
+2. **GPA diff storage** — Replaced full-content `agent_patch` with unified diff format using `difflib.unified_diff()` with `fromfile`/`tofile` headers. Falls back to full content if no original to compare.
+3. **vLLM model registry** — Added `MODEL_REGISTRY` associative array in `run_benchmark.sh` mapping model names to `tool_call_parser|reasoning_parser|kv_cache_dtype|gpu_mem_util`. Added `_lookup_model_settings()` function. Updated `vllm_server.sh` to use env var defaults.
+4. **NCU profiling tool** — Created `tools/nsight_compute/{config.yaml,bin/ncu_profile}`. Tested on all 4 proxy apps (Lulesh, Kripke, Laghos, Quicksilver) in both basic and detailed modes. Fixed 7 bugs discovered during testing.
+5. **Downloaded 3 Qwen FP8 models** — `Qwen3.5-27B-FP8` (~31GB), `Qwen3-Coder-Next-FP8` (~80GB), `Qwen3.5-122B-A10B-FP8` (~127GB). All at `/pscratch/sd/k/krydzy/hf-cache/hub/`.
+6. **Fixed bf16→bfloat16** — vLLM v0.11.0 rejects `bf16`, requires `bfloat16`. Updated all Qwen entries in MODEL_REGISTRY.
+7. **Submitted 9 benchmark jobs** — 4 LLNL + 4 GPA + 1 Codex-Lulesh. See Active Experiments table.
 
-### Previous Session (Session 34)
+### Previous Session (Session 35)
 
-6. **Codex API hostname fix** — `codex.py:36-48`: First-party models pass `OPENAI_API_BASE` as `model_providers.openai.base_url`.
-7. **Claude Code --verbose fix** — `claude.py:135`: Required by CLI v2.1.59 for `--output-format stream-json`.
-8. **Lulesh Makefile deletion fix** — Committed proper `cuda/Makefile` to both `Lulesh/` and `Lulesh_test/`, removed legacy traps.
+8. **GPA upstream merge** — 29 commits from `origin/develop` fixing CUDA 13 baseline builds.
+9. **OpenAI regional endpoint validation** — `validate_openai_base_url()`, `--openai-region` flag.
+10. **GPA SKILL.md update** — Timing, workspace, results, common issues.
 
 ## Active Experiments
 
-No active SLURM jobs. All session 32 LLNL jobs and session 30 GPA jobs are complete.
+### Session 36 Benchmark Submissions (PENDING)
 
-### GPA Benchmark Results (Session ~30, A100)
+| Job ID | Framework | Apps | Model | Config |
+|--------|-----------|------|-------|--------|
+| 49639229 | sweagent | LLNL (K,La,Lu,QS) | gptoss120b | --base --both |
+| 49639230 | opencode | LLNL (K,La,Lu,QS) | gptoss120b | --base --both |
+| 49639231 | openhands | LLNL (K,La,Lu,QS) | gptoss120b | --base --both |
+| 49639232 | claude | LLNL (K,La,Lu,QS) | Anthropic API | --base --both |
+| 49639233 | sweagent | GPA (16 apps) | gptoss120b | --base --both |
+| 49639234 | opencode | GPA (16 apps) | gptoss120b | --base --both |
+| 49639235 | openhands | GPA (16 apps) | gptoss120b | --base --both |
+| 49639241 | claude | GPA (16 apps) | Anthropic API | --base --both |
+| 49639242 | codex | Lulesh only | gpt-5.3-codex | --base --both --external-model |
+
+### GPA Benchmark Results (Session ~30, A100) — SUPERSEDED by new runs
 
 | Job | Framework | Model | Build Fail | No Change | Correct Fail | Speedup | Best |
 |-----|-----------|-------|------------|-----------|-------------|---------|------|
@@ -31,9 +45,7 @@ No active SLURM jobs. All session 32 LLNL jobs and session 30 GPA jobs are compl
 | 49366713 | OpenCode | gpt-4o-mini | 5 | 5 | 3 | 3 | streamcluster 0.76x (regression) |
 | 49366714 | OpenHands | gpt-4o-mini | 5 | 1 | 7 | 2 | streamcluster 1.30x |
 
-4 apps always fail baseline build: backprop, lavaMD, srad, exatensor — **NOW FIXED** by upstream GPA merge.
-
-### LLNL Benchmark Results (Sessions 29-32)
+### LLNL Benchmark Results (Sessions 29-32) — SUPERSEDED by new runs
 
 | Job ID | Session | Framework | Kripke | Laghos | Lulesh | Quicksilver |
 |--------|---------|-----------|--------|--------|--------|-------------|
@@ -59,11 +71,11 @@ No active SLURM jobs. All session 32 LLNL jobs and session 30 GPA jobs are compl
 
 ## Branch State
 
-- **Current branch**: `dev` (3 commits ahead of `origin/dev` before session 35 commit)
-- **Latest commit**: `ac83da23` — WIP: Session 35 (GPA upstream merge, URL validation, GPA analysis)
-- **GPA-Benchmark**: `ab8b225` — Merged `origin/develop` with CUDA 13 migration
-- **Working tree**: Clean (after commit)
-- **Untracked**: Laghos characterization scripts in `scripts/` (not committed, not needed)
+- **Current branch**: `dev` (8 commits ahead of `origin/dev`)
+- **Latest commit**: `f42541b8` — Fix vLLM kv-cache-dtype (bf16→bfloat16) and NCU profiling bugs
+- **GPA-Benchmark**: warmup run added to `driver_profiling.py` (uncommitted in GPA repo)
+- **Working tree**: HANDOFF.md modified (uncommitted)
+- **Untracked**: Laghos characterization scripts, `xyz.asc`
 
 ## All Infrastructure Fixes — Complete
 
@@ -74,39 +86,44 @@ No active SLURM jobs. All session 32 LLNL jobs and session 30 GPA jobs are compl
 - [x] Fix Lulesh Makefile deletion (session 34)
 - [x] Fix GPA baseline build failures (session 35 — upstream merge)
 - [x] Add OpenAI regional endpoint validation (session 35)
+- [x] GPA timing robustness — 5 samples + warmup (session 36)
+- [x] GPA diff storage — unified diff format (session 36)
+- [x] vLLM model registry — model-aware parsers/dtype/gpu_mem (session 36)
+- [x] NCU profiling tool — tested on all 4 apps (session 36)
+- [x] Fix vLLM kv-cache-dtype bf16→bfloat16 (session 36)
 
 ## Open Issues / TODOs
 
 ### Actionable
-- [ ] **Resubmit LLNL benchmark runs** — All infrastructure fixes complete, need fresh run with all 5 frameworks
-- [ ] **Resubmit GPA benchmark runs** — Upstream merge should fix 4 baseline build failures (backprop, lavaMD, srad, exatensor)
-- [ ] **GPA timing robustness** — Only 3 nsys samples, no warmup. Consider increasing to 5+ and/or adding warmup.
-- [ ] **Store GPA diffs in results** — Currently stores full file (`agent_patch`) + counts (`agent_insertions/deletions`), not the actual diff string.
+- [ ] **Check session 36 benchmark results** — 9 jobs submitted, check `squeue -u krydzy` and `batch_results/`
+- [ ] **Qwen3.5-27B-FP8 benchmark runs** — Model downloaded, `--kv-cache-dtype bfloat16` ready
+- [ ] **Qwen3-Coder-Next-FP8 benchmark runs** — Model downloaded, `--kv-cache-dtype bfloat16` ready
+- [ ] **Cherry-pick SWE-agent upstream fixes** — 3 bugs: blocklist inversion (`c69d6f56`), shlex.quote (`3ff833d9`), completion_kwargs deepcopy (`ed7dd55c`)
 
 ### Persistent Issues
 - [ ] **Quicksilver consistent timeout** — All frameworks timeout on QS. May need smaller problem size.
 - [ ] **Lulesh systematic bias** — N/C runs show ~0.94x consistently (ordering effect?)
 - [ ] **Laghos timing variance** — N/C range 0.98x-1.23x too high for reliable speedup detection
-- [ ] **Codex gpt-4.1-mini single-turn exit** — Model produces plan text then exits with `needs_follow_up=false`, never invokes tools
-- [ ] **SWE-agent upstream cherry-picks** — 3 fixes identified (blocklist logic inversion, shlex.quote, completion_kwargs deepcopy) but not yet applied
+- [ ] **Codex gpt-4.1-mini single-turn exit** — Model produces plan text then exits with `needs_follow_up=false`
+- [ ] **Qwen3.5-122B-A10B-FP8** — BLOCKED: needs 8 GPUs or 4x80GB nodes (127GB model)
 
 ## Recent Decisions
 
-- 2026-03-04 (s35): GPA upstream merged — CUDA 13 migration fixes 4 always-failing apps. Merge conflict resolved by taking upstream's case-sensitive app name matching.
-- 2026-03-04 (s35): GPA workspace intentionally minimal (kernel .cu only, no Makefiles) — tests pure kernel optimization skill. Keep as-is.
-- 2026-03-04 (s35): GPA timing uses nsys kernel-level profiling (3 samples, no warmup) — different from LLNL wall-clock timing. May want to increase samples.
-- 2026-03-04 (s35): OpenAI regional endpoints — `validate_openai_base_url()` is diagnostic only (logs warnings, never mutates URL). `--openai-region` flag provides explicit region selection.
+- 2026-03-04 (s36): vLLM `--kv-cache-dtype bfloat16` NOT `bf16` — v0.11.0 rejects the abbreviation
+- 2026-03-04 (s36): Per-model gpu_mem_util in MODEL_REGISTRY — 0.60 for 27B, 0.85 for Coder-Next, 0.92 for 122B
+- 2026-03-04 (s36): NCU metric `dram__cycles_active` not `dram__throughput` — confirmed by testing
+- 2026-03-04 (s36): Skip Codex with gptoss120b — confirmed broken (never makes code changes)
+- 2026-03-04 (s35): GPA upstream merged — CUDA 13 migration fixes 4 always-failing apps
+- 2026-03-04 (s35): GPA workspace intentionally minimal (kernel .cu only, no Makefiles)
+- 2026-03-04 (s35): OpenAI regional endpoints — diagnostic only, never mutates URL
 - 2026-03-02 (s34): Codex first-party models must pass OPENAI_API_BASE as model_providers.openai.base_url
 - 2026-03-02 (s34): Claude Code CLI requires --verbose with --output-format stream-json (v2.1.59+)
-- 2026-03-02 (s34): Lulesh cuda/Makefile now committed to repo — survives git clean
 - 2026-03-02 (s33): SWE-agent signature format must use `[<arg>]` not `[--flag]`
-- 2026-03-02 (s33): QS harness follows Kripke pattern — detect agent Makefile changes, only enforce CXX=nvcc
-- 2026-03-02 (s32): All reported "speedups" from sessions 29+31 are within measurement noise
 
 ## Next Steps
 
-1. **Decide GPA improvements** — User was presented 6-item list of what to fix/standardize in GPA vs LLNL. Awaiting response on which items to implement.
-2. **Resubmit benchmark runs** — Both LLNL (all 5 frameworks) and GPA (all 4 frameworks with upstream fixes).
-3. **Cherry-pick SWE-agent upstream fixes** — 3 bug fixes identified (blocklist, shlex.quote, deepcopy).
-4. Address Laghos timing variance and Lulesh measurement bias.
-5. Investigate QS consistent timeout across all frameworks.
+1. **Check benchmark results** — `squeue -u krydzy` then analyze `batch_results/` for jobs 49639229-49639242
+2. **Qwen benchmark runs** — Start with Qwen3.5-27B-FP8 (fits easily), then Qwen3-Coder-Next-FP8
+3. **Cherry-pick SWE-agent upstream fixes** — 3 bugs identified
+4. Address Laghos timing variance and Lulesh measurement bias
+5. Investigate QS consistent timeout across all frameworks

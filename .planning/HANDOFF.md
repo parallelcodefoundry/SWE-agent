@@ -1,10 +1,10 @@
-# HANDOFF — Session 35 → Session 36
+# HANDOFF — Session 36 → Session 37
 
-Last updated: 2026-03-04 (session 35)
+Last updated: 2026-03-04 (session 36)
 
 ## What We Were Working On
 
-Session 35: Deep analysis of GPA-Benchmark results, merged upstream GPA-Benchmark, added OpenAI regional endpoint validation, and compared GPA vs LLNL harness approaches. User asked to reason about what to standardize/fix — presented 6-item list and **awaiting user response** on which items to implement.
+Session 36: Implemented GPA improvements (timing robustness + diff storage), vLLM model registry, NCU profiling tool. Tested NCU on all proxy apps (all passed). Fixed `bf16`→`bfloat16` for vLLM. Downloaded 3 Qwen FP8 models. Submitted 9 benchmark jobs. vLLM Qwen testing agent still running.
 
 ## Goal Progress
 - [x] Goal 0: Commit previous changes (session 33)
@@ -18,122 +18,100 @@ Session 35: Deep analysis of GPA-Benchmark results, merged upstream GPA-Benchmar
 - [x] Goal 8: Fix Lulesh Makefile deletion issue (session 34)
 - [x] Goal 9: GPA deep analysis — diffs, upstream merge, SKILL update (session 35)
 - [x] Goal 10: Add OpenAI regional endpoint validation + --openai-region flag (session 35)
-- [ ] **Goal 11: Decide & implement GPA improvements** ← USER INPUT NEEDED
-- [ ] Goal 12: Resubmit LLNL benchmark runs (all 5 frameworks)
-- [ ] Goal 13: Resubmit GPA benchmark runs (with upstream fixes)
-- [ ] Goal 14: Cherry-pick SWE-agent upstream fixes (3 bugs)
-- [ ] Goal 15: Address Laghos timing variance / Lulesh measurement bias
-- [ ] Goal 16: Qwen3.5-27B benchmark runs (FP8 variant downloaded, needs `--kv-cache-dtype bf16`)
-- [ ] Goal 17: Qwen3-Coder-Next benchmark runs (FP8 variant downloaded, needs `--kv-cache-dtype bf16`)
-- [ ] Goal 18: Qwen3.5-122B-A10B benchmark runs (BLOCKED: needs 8 GPUs or 4x80GB nodes; FP8 downloaded)
+- [x] Goal 11: GPA timing robustness (nsys 3→5 + warmup) + diff storage (session 36)
+- [x] Goal 12: vLLM model registry — model-aware parser/dtype/gpu_mem_util (session 36)
+- [x] Goal 13: NCU profiling tool — tested on all 4 proxy apps (session 36)
+- [x] Goal 14: Download Qwen FP8 models (27B, Coder-Next, 122B-A10B) (session 36)
+- [~] Goal 15: Resubmit LLNL benchmark runs — SUBMITTED (jobs 49639229-49639232)
+- [~] Goal 16: Resubmit GPA benchmark runs — SUBMITTED (jobs 49639233-49639235, 49639241)
+- [~] Goal 17: GPT-5.3-Codex Lulesh — SUBMITTED (job 49639242)
+- [ ] Goal 18: Cherry-pick SWE-agent upstream fixes (3 bugs)
+- [ ] Goal 19: Address Laghos timing variance / Lulesh measurement bias
+- [ ] Goal 20: Qwen3.5-27B-FP8 benchmark runs (downloaded, `--kv-cache-dtype bfloat16`)
+- [ ] Goal 21: Qwen3-Coder-Next-FP8 benchmark runs (downloaded, `--kv-cache-dtype bfloat16`)
+- [ ] Goal 22: Qwen3.5-122B-A10B-FP8 benchmark runs (BLOCKED: needs 8 GPUs or 4x80GB nodes)
 
-## Pending User Decision
+## Submitted Benchmark Jobs (Session 36)
 
-User was presented 6 items to fix/standardize in GPA vs LLNL:
+| Job ID | Framework | Apps | Model | Notes |
+|--------|-----------|------|-------|-------|
+| 49639229 | sweagent | LLNL (4 apps) | gptoss120b | --base --both |
+| 49639230 | opencode | LLNL (4 apps) | gptoss120b | --base --both |
+| 49639231 | openhands | LLNL (4 apps) | gptoss120b | --base --both |
+| 49639232 | claude | LLNL (4 apps) | Anthropic API | --base --both, SKIP_VLLM |
+| 49639233 | sweagent | GPA | gptoss120b | --base --both |
+| 49639234 | opencode | GPA | gptoss120b | --base --both |
+| 49639235 | openhands | GPA | gptoss120b | --base --both |
+| 49639241 | claude | GPA | Anthropic API | --base --both, SKIP_VLLM |
+| 49639242 | codex | Lulesh only | gpt-5.3-codex | --base --both --external-model |
 
-1. **Timing robustness** (increase nsys samples from 3 to 5+, add warmup) — SHOULD FIX
-2. **Store actual diffs in results** (currently only full file + counts) — SHOULD FIX
-3. **Baseline build failures** — FIXED by upstream merge
-4. **Workspace contents** (kernel only, no Makefiles) — INTENTIONAL, keep as-is
-5. **No Makefile access** — INTENTIONAL, keep as-is
-6. **Codex single-turn exit** (gpt-4.1-mini) — MODEL-LEVEL issue, can't fix in harness
+## Key Commits (Session 36)
 
-Next session should ask user which items they want implemented, or proceed with items 1-2 if user already responded.
+| Commit | Description |
+|--------|-------------|
+| `a388d58d` | Add NCU profiling tool, GPA timing/diff improvements, vLLM model registry |
+| `c6e8daa9` | Add per-model gpu_mem_util to vLLM model registry |
+| `f42541b8` | Fix vLLM kv-cache-dtype (bf16→bfloat16) and NCU profiling bugs |
 
 ## Files Modified This Session
 
 | File | Change |
 |------|--------|
-| `batch/frameworks/base.py` | Added `OPENAI_REGIONAL_ENDPOINTS`, `validate_openai_base_url()`, `openai_region_to_base_url()`. Called from `get_api_env_exports()`. +116 lines. |
-| `batch/hpc_benchmark_runner.py` | Added `--openai-region CODE` argument, calls `openai_region_to_base_url()`, sets `os.environ["OPENAI_API_BASE"]`. +23 lines. |
-| `batch/run_benchmark.sh` | Added `--openai-region` with regex validation, `_REGION_MAP` associative array, passthrough to Python runner. +36 lines. |
-| `.claude/skills/gpa-benchmark/SKILL.md` | Added timing/measurement, agent workspace, benchmark results table, upstream merge date, CUDA 13 common issues. +35 lines. |
-| `/pscratch/sd/k/krydzy/GPA-Benchmark/gpa_bench_driver/gpa_bench_driver.py` | Merge conflict resolved — took upstream's case-sensitive matching + `num_passes == 0` ValueError check. |
+| `batch/hpc_benchmark_runner.py` | Added `num_samples=5` to GPA runner, replaced full-content agent_patch with unified diff |
+| `batch/run_benchmark.sh` | Added MODEL_REGISTRY, `_lookup_model_settings()`, dynamic vLLM parser flags |
+| `batch/vllm_server.sh` | Updated hardcoded parsers to use env var defaults |
+| `batch/frameworks/base.py` | Added nsight_compute to PROFILING_TOOL_DIRS |
+| `tools/nsight_compute/config.yaml` | NEW: SWE-agent tool definition for ncu_profile |
+| `tools/nsight_compute/bin/ncu_profile` | NEW: NCU profiling script (tested on all 4 apps) |
+| `config/hpc/*_with_profiling.yaml` (5 files) | Added `tools/nsight_compute` to bundles |
+| `GPA-Benchmark/.../driver_profiling.py` | Added warmup run before nsys profiling loop |
+| `.planning/HANDOFF.md` | This file |
 
 ## Files to Read First Next Session
 
 1. `STATE.md` — Full state overview
 2. `.planning/HANDOFF.md` — This file
-3. `.claude/skills/gpa-benchmark/SKILL.md` — Updated GPA skill with timing/workspace/results details
-4. `batch/frameworks/base.py:1-50` and `base.py:390-510` — URL validation functions and `get_api_env_exports()`
-5. `batch/hpc_benchmark_runner.py:840-1100` — GPA-specific functions (`_load_gpa_app_configs`, `_setup_gpa_workspace`, `_run_gpa_benchmark`, `_run_gpa_driver`, `_collect_gpa_results`)
+3. `squeue -u krydzy` — Check if benchmark jobs completed
 
-## Key GPA Analysis Findings
+## NCU Tool Testing Results
 
-### Successful Optimization Pattern
-**streamcluster** — Both SWE-agent (1.28x) and OpenHands (1.30x) independently discovered **shared memory caching** of reference point coordinates in `kernel_compute_cost()`:
-```cuda
-extern __shared__ float shared_x[];
-if(threadIdx.x < dim) shared_x[threadIdx.x] = coord_d[threadIdx.x * num + x];
-__syncthreads();
-// Use shared_x[i] instead of global memory reads in distance calc
-```
-Plus dynamic shared memory allocation in kernel launch: `<<<grid, block, dim*sizeof(float)>>>`.
+All 5 tests passed on Perlmutter (job 49638907):
 
-### Common Failure Patterns
-- **Correctness breaks**: `__ldg()` on bool arrays, different rounding semantics (`(int)(x+0.5)` vs `dev_round_double()`), index math errors in shared memory padding
-- **Build failures**: 4 apps missing `-arch sm_80` in Makefiles (fixed by upstream merge)
-- **Codex**: `gpt-4.1-mini` exits after turn 0 with `needs_follow_up=false`, never calls tools
-- **OpenCode**: Build failures from over-aggressive kernel rewrites (heartwall: deleted 1337 lines, replaced with 67)
+| App | Mode | Wall Time | Key Finding |
+|-----|------|-----------|-------------|
+| Lulesh | Basic | 8s | LATENCY-BOUND (SM 1.6%, DRAM 0.1%) |
+| Kripke | Basic | 15s | LATENCY-BOUND (SM 10.6%, DRAM 3.6%) |
+| Laghos | Basic | 16s | LATENCY-BOUND (problem too small) |
+| Quicksilver | Basic | 32s | LATENCY-BOUND (SM 26.8%, DRAM 15.2%, 116 regs) |
+| Lulesh | Detailed (CalcVolume) | 9s | MIXED (SM 45.8%, DRAM 15.3%, 252 regs!) |
 
-### GPA vs LLNL Comparison
+Bugs found and fixed in ncu_profile:
+1. Comma-in-numbers CSV parsing (`1,024` → `float()` error)
+2. Wrong DRAM metric name (`dram__throughput` → `dram__cycles_active`)
+3. L1 metric suffix (`_elapsed` → `_active`)
+4. Regex prefix needed for kernel filter
+5. Time unit detection (ns/us/ms)
+6. Python heredoc variable interpolation
+7. Word-splitting for quoted app_args
 
-| Aspect | LLNL | GPA |
-|--------|------|-----|
-| Timing | 10 wall-clock runs + warmup | 3 nsys kernel samples, no warmup |
-| Correctness | App-specific validators in harness scripts | 5 strategies in driver (fail_text, pass_text, reference, windowed, float) |
-| GPU config | Single GPU or MPI | Single GPU only, no MPI |
-| Build system | CMake/Make with full source tree | Make+nvcc, agent sees only kernel .cu |
-| Workspace | Full repo rsync | Kernel file + metadata only |
-| Tools | Separate *_build + *_run | Single gpa_test |
+## vLLM Testing Findings
 
-## GPA Result Directories
-
-| Framework | Job | Dir |
-|-----------|-----|-----|
-| SWE-agent | 49366712 | `batch_results/benchmark_20260225_185547_49366712/` |
-| Codex | 49366711 | `batch_results/benchmark_20260225_184051_49366711/` |
-| OpenCode | 49366713 | `batch_results/benchmark_20260225_193552_49366713/` |
-| OpenHands | 49366714 | `batch_results/benchmark_20260225_193555_49366714/` |
-
-Results in `run_1/gpa/all_results.json` under each directory.
-
-## Validation Commands
-
-```bash
-# Validate GPA upstream merge fixed baseline build failures
-salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 4 --account m2404
-srun --exclusive --gpus 1 bash -lc '
-  module load python && source ~/envs/sweagent/bin/activate
-  export CUDA_HOME=$CUDATOOLKIT_HOME
-  cd /pscratch/sd/k/krydzy/GPA-Benchmark
-  python -m gpa_bench_driver --app backprop --sm-version 80 --build-only
-'
-
-# Validate URL validation works
-python -c "from batch.frameworks.base import validate_openai_base_url; validate_openai_base_url('https://us.api.openai.com/v1')"
-python -c "from batch.frameworks.base import openai_region_to_base_url; print(openai_region_to_base_url('us'))"
-
-# Resubmit LLNL benchmarks (all fixes applied)
-salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m2404
-module load python cmake openmpi/5.0.7 && source ~/envs/sweagent/bin/activate && source ~/.openai_env
-./scripts/reset_test_repos.sh
-srun --exclusive --gpus 4 bash -lc '
-  cd /pscratch/sd/k/krydzy/SWE-agent &&
-  python batch/hpc_benchmark_runner.py --framework sweagent --app lulesh --base
-'
-```
+- `--kv-cache-dtype bf16` is INVALID in vLLM v0.11.0 — must use `bfloat16`
+- Valid choices: `auto, bfloat16, fp8, fp8_e4m3, fp8_e5m2, fp8_inc`
+- Fixed in MODEL_REGISTRY (commit `f42541b8`)
+- Qwen model testing with corrected `bfloat16` flag was in progress at session end
 
 ## Gotchas
 
-- GPA-Benchmark merge resolved: took upstream's case-sensitive app name matching (not `.lower()`). If future app name issues arise, check `gpa_bench_driver.py` around line 310.
-- `validate_openai_base_url()` is **diagnostic only** — logs warnings, never changes the URL. This is intentional.
-- Codex gpt-4.1-mini also has the empty `tool_calls` array bug (crashes SWE-agent via `litellm.BadRequestError`). Different from the single-turn exit issue.
-- GPA apps need CUDA 12.9 (default on GPU nodes), NOT `cudatoolkit/12.4` (which LLNL apps need). `get_module_loads(repo_name)` in `base.py` handles this.
+- **bf16 vs bfloat16**: vLLM v0.11.0 rejects `bf16`. Use `bfloat16` everywhere.
+- **NCU metric names**: `dram__throughput.avg.pct_of_peak_sustained_elapsed` doesn't exist. Use `dram__cycles_active.avg.pct_of_peak_sustained_elapsed`.
+- **NCU CSV commas**: ncu exports integers with thousands separators. Must strip commas before float conversion.
+- **RAJA apps generic kernels**: Lulesh/Kripke wrap GPU work in `_kernel_agent`/`CudaKernelLauncherFixed`. Use detailed mode + regex filter for useful profiling data.
+- **Codex with gptoss120b**: Confirmed broken — never makes code changes. Do NOT resubmit.
 - SWE-agent upstream has 3 cherry-pickable fixes: blocklist logic inversion (`c69d6f56`), shlex.quote (`3ff833d9`), completion_kwargs deepcopy (`ed7dd55c`).
 
 ## Branch State
 
-- **SWE-agent (dev)**: Clean after `ac83da23` — WIP: Session 35
-- **GPA-Benchmark (develop)**: Clean after `ab8b225` — Merged origin/develop
-- **Untracked**: `scripts/char_laghos*.{sh,sbatch}` — Laghos characterization scripts, not needed
+- **SWE-agent (dev)**: Clean after `f42541b8` — Fix vLLM kv-cache-dtype + NCU bugs
+- **GPA-Benchmark (develop)**: Clean after warmup addition in driver_profiling.py
+- **Untracked**: `scripts/char_laghos*.{sh,sbatch}`, `xyz.asc`
