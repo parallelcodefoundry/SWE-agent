@@ -101,6 +101,7 @@ agent:
       - path: tools/hpctoolkit
       - path: tools/hatchet
       - path: tools/profiling
+      - path: tools/nsight_compute
       - path: tools/review_on_submit_m
       - path: tools/forfeit
     registry_variables:

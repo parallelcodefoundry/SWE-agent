@@ -36,6 +36,7 @@ podman-hpc run --rm --gpu --net host --ipc=host \
     --port "${PORT}" \
     --tensor-parallel-size "${TP_SIZE}" \
     --gpu-memory-utilization "${GPU_MEM_UTIL}" \
-    --tool-call-parser openai \
+    --tool-call-parser "${TOOL_CALL_PARSER:-openai}" \
     --enable-auto-tool-choice \
-    --reasoning-parser openai_gptoss
+    --reasoning-parser "${REASONING_PARSER:-openai_gptoss}" \
+    ${KV_CACHE_DTYPE:+--kv-cache-dtype "${KV_CACHE_DTYPE}"}

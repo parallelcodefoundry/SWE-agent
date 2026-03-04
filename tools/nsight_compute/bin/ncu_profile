@@ -1,0 +1,248 @@
+#!/bin/bash
+
+# Nsight Compute Profiling Tool for SWE-agent
+# Profiles CUDA kernels with ncu and extracts key GPU metrics
+
+main() {
+    if [ $# -lt 2 ]; then
+        echo "Usage: ncu_profile <executable> <output_dir> [<kernel_filter>] [<app_args>...]"
+        echo ""
+        echo "Arguments:"
+        echo "  executable    - Path to the CUDA executable to profile"
+        echo "  output_dir    - Directory to store profiling results"
+        echo "  kernel_filter - Optional: kernel name regex for detailed profiling"
+        echo "  app_args      - Optional: arguments to pass to the application"
+        echo ""
+        echo "Examples:"
+        echo "  ncu_profile ./lulesh ./ncu_out"
+        echo "  ncu_profile ./lulesh ./ncu_out CalcFBHourglassForceForElems \"-s 30\""
+        return 1
+    fi
+
+    local executable="$1"
+    local output_dir="$2"
+    shift 2
+
+    # Check if next arg looks like a kernel filter (no leading dash)
+    local kernel_filter=""
+    if [ $# -gt 0 ] && [[ "$1" != -* ]]; then
+        kernel_filter="$1"
+        shift
+    fi
+    local app_args=("$@")
+
+    # Validate executable
+    if [ ! -f "$executable" ] && ! command -v "$executable" &> /dev/null; then
+        echo "Error: Executable '$executable' not found"
+        return 1
+    fi
+
+    # Find ncu binary
+    local NCU=""
+    if command -v ncu &> /dev/null; then
+        NCU="ncu"
+    else
+        # Try known Perlmutter paths
+        local ncu_paths=(
+            "/opt/nvidia/hpc_sdk/Linux_x86_64/25.5/profilers/Nsight_Compute/ncu"
+            "/opt/nvidia/hpc_sdk/Linux_x86_64/24.5/profilers/Nsight_Compute/ncu"
+            "/opt/nvidia/hpc_sdk/Linux_x86_64/25.3/profilers/Nsight_Compute/ncu"
+            "/opt/nvidia/hpc_sdk/Linux_x86_64/24.7/profilers/Nsight_Compute/ncu"
+        )
+        for ncu_path in "${ncu_paths[@]}"; do
+            if [ -f "$ncu_path" ]; then
+                NCU="$ncu_path"
+                break
+            fi
+        done
+    fi
+
+    if [ -z "$NCU" ]; then
+        echo "Error: Nsight Compute (ncu) not found"
+        echo "Try loading the CUDA toolkit or setting PATH to include the ncu binary"
+        return 1
+    fi
+
+    # Create output directory
+    mkdir -p "$output_dir"
+    output_dir=$(realpath "$output_dir")
+
+    local report_file="$output_dir/report.ncu-rep"
+    local csv_file="$output_dir/metrics_summary.csv"
+    local summary_file="$output_dir/summary.txt"
+
+    echo "=== Nsight Compute Kernel Profiling ==="
+    echo "Executable: $executable"
+    echo "Output directory: $output_dir"
+    echo "NCU binary: $NCU"
+    if [ -n "$kernel_filter" ]; then
+        echo "Kernel filter: $kernel_filter (detailed mode)"
+    else
+        echo "Mode: basic (all kernels)"
+    fi
+    if [ ${#app_args[@]} -gt 0 ]; then
+        echo "Application arguments: ${app_args[*]}"
+    fi
+    echo ""
+
+    # Pause DCGM if available (required for profiling)
+    if command -v dcgmi &> /dev/null; then
+        echo "Pausing DCGM..."
+        dcgmi profile --pause 2>/dev/null || true
+    fi
+
+    # Build ncu command
+    local ncu_cmd=("$NCU" "--clock-control" "base" "--target-processes" "all" "-o" "$report_file" "-f")
+
+    if [ -n "$kernel_filter" ]; then
+        # Detailed mode: profile specific kernel(s) with full metrics
+        ncu_cmd+=("--set" "detailed" "--kernel-name" "$kernel_filter" "-c" "3")
+    else
+        # Basic mode: skip 1 warmup launch, collect 5 samples
+        ncu_cmd+=("--set" "basic" "-s" "1" "-c" "5")
+    fi
+
+    ncu_cmd+=("$executable")
+    if [ ${#app_args[@]} -gt 0 ]; then
+        ncu_cmd+=("${app_args[@]}")
+    fi
+
+    echo "Command: ${ncu_cmd[*]}"
+    echo ""
+
+    # Run profiling
+    if ! "${ncu_cmd[@]}"; then
+        echo "Error: ncu profiling failed"
+        if command -v dcgmi &> /dev/null; then
+            dcgmi profile --resume 2>/dev/null || true
+        fi
+        return 1
+    fi
+    echo ""
+
+    # Resume DCGM
+    if command -v dcgmi &> /dev/null; then
+        echo "Resuming DCGM..."
+        dcgmi profile --resume 2>/dev/null || true
+    fi
+
+    # Extract CSV metrics from the report
+    local METRICS="gpu__time_duration.sum"
+    METRICS+=",sm__throughput.avg.pct_of_peak_sustained_elapsed"
+    METRICS+=",dram__throughput.avg.pct_of_peak_sustained_elapsed"
+    METRICS+=",l1tex__throughput.avg.pct_of_peak_sustained_elapsed"
+    METRICS+=",sm__warps_active.avg.pct_of_peak_sustained_active"
+    METRICS+=",launch__registers_per_thread"
+    METRICS+=",launch__shared_mem_per_block_allocated"
+    METRICS+=",launch__grid_size"
+    METRICS+=",launch__block_size"
+
+    echo "=== Extracting Metrics ==="
+    if "$NCU" --import "$report_file" --csv --page raw --metrics "$METRICS" > "$csv_file" 2>/dev/null; then
+        echo "CSV saved to: $csv_file"
+    else
+        echo "Warning: CSV extraction failed (report may still be valid)"
+    fi
+    echo ""
+
+    # Parse and display summary
+    echo "=== Top Kernels by Execution Time ==="
+    python3 -c "
+import csv, sys
+
+csv_file = '$csv_file'
+try:
+    kernels = {}
+    with open(csv_file, 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            name = row.get('Kernel Name', '').strip('\"')
+            if not name:
+                continue
+            time_ns = float(row.get('gpu__time_duration.sum', 0) or 0)
+            sm_pct = float(row.get('sm__throughput.avg.pct_of_peak_sustained_elapsed', 0) or 0)
+            dram_pct = float(row.get('dram__throughput.avg.pct_of_peak_sustained_elapsed', 0) or 0)
+            l1_pct = float(row.get('l1tex__throughput.avg.pct_of_peak_sustained_elapsed', 0) or 0)
+            occ_pct = float(row.get('sm__warps_active.avg.pct_of_peak_sustained_active', 0) or 0)
+            regs = int(float(row.get('launch__registers_per_thread', 0) or 0))
+            smem = int(float(row.get('launch__shared_mem_per_block_allocated', 0) or 0))
+            grid = int(float(row.get('launch__grid_size', 0) or 0))
+            block = int(float(row.get('launch__block_size', 0) or 0))
+
+            if name not in kernels:
+                kernels[name] = {'time_ns': 0, 'count': 0, 'sm': 0, 'dram': 0, 'l1': 0, 'occ': 0, 'regs': regs, 'smem': smem, 'grid': grid, 'block': block}
+            k = kernels[name]
+            k['time_ns'] += time_ns
+            k['count'] += 1
+            k['sm'] += sm_pct
+            k['dram'] += dram_pct
+            k['l1'] += l1_pct
+            k['occ'] += occ_pct
+
+    if not kernels:
+        print('No kernel data found in CSV.')
+        sys.exit(0)
+
+    # Average the percentage metrics
+    for k in kernels.values():
+        n = k['count']
+        if n > 0:
+            k['sm'] /= n
+            k['dram'] /= n
+            k['l1'] /= n
+            k['occ'] /= n
+
+    # Sort by total time descending
+    sorted_kernels = sorted(kernels.items(), key=lambda x: x[1]['time_ns'], reverse=True)
+
+    total_time = sum(v['time_ns'] for v in kernels.values())
+    lines = []
+    lines.append(f'Total kernel time: {total_time/1e6:.2f} ms')
+    lines.append('')
+    lines.append(f'{\"Kernel\":<60} {\"Time(ms)\":>10} {\"  %\":>6} {\"SM%\":>6} {\"DRAM%\":>6} {\"Occ%\":>6} {\"Regs\":>5} {\"Smem\":>7} {\"Grid\":>8} {\"Block\":>6}')
+    lines.append('-' * 130)
+
+    for name, v in sorted_kernels[:20]:
+        short = name[:58] + '..' if len(name) > 60 else name
+        pct = 100.0 * v['time_ns'] / total_time if total_time > 0 else 0
+        lines.append(f'{short:<60} {v[\"time_ns\"]/1e6:>10.3f} {pct:>5.1f}% {v[\"sm\"]:>5.1f}% {v[\"dram\"]:>5.1f}% {v[\"occ\"]:>5.1f}% {v[\"regs\"]:>5} {v[\"smem\"]:>7} {v[\"grid\"]:>8} {v[\"block\"]:>6}')
+
+    lines.append('')
+    # Bottleneck guidance
+    lines.append('BOTTLENECK ANALYSIS:')
+    for name, v in sorted_kernels[:5]:
+        short = name[:50] + '..' if len(name) > 50 else name
+        if v['sm'] > 60 and v['dram'] < 40:
+            lines.append(f'  {short}: COMPUTE-BOUND (SM {v[\"sm\"]:.0f}%, DRAM {v[\"dram\"]:.0f}%)')
+            lines.append(f'    → Reduce arithmetic, use fast math, consider algorithm changes')
+        elif v['dram'] > 40 and v['sm'] < 40:
+            lines.append(f'  {short}: MEMORY-BOUND (SM {v[\"sm\"]:.0f}%, DRAM {v[\"dram\"]:.0f}%)')
+            lines.append(f'    → Improve coalescing, use shared memory, reduce global accesses')
+        elif v['sm'] < 30 and v['dram'] < 30:
+            lines.append(f'  {short}: LATENCY-BOUND (SM {v[\"sm\"]:.0f}%, DRAM {v[\"dram\"]:.0f}%, Occ {v[\"occ\"]:.0f}%)')
+            lines.append(f'    → Increase occupancy (regs={v[\"regs\"]}), reduce divergence, overlap compute+memory')
+        else:
+            lines.append(f'  {short}: MIXED (SM {v[\"sm\"]:.0f}%, DRAM {v[\"dram\"]:.0f}%)')
+            lines.append(f'    → Profile with detailed mode for specific optimization guidance')
+
+    output = '\n'.join(lines)
+    print(output)
+    with open('$summary_file', 'w') as f:
+        f.write(output + '\n')
+
+except Exception as e:
+    print(f'Error parsing CSV: {e}')
+    sys.exit(1)
+" 2>&1 | head -60
+
+    echo ""
+    echo "=== Nsight Compute Profiling Complete ==="
+    echo "Report: $report_file"
+    echo "Metrics CSV: $csv_file"
+    echo "Summary: $summary_file"
+    echo ""
+    echo "For detailed analysis in GUI: ncu-ui $report_file"
+    echo ""
+}
+
+main "$@"

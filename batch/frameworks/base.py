@@ -131,6 +131,7 @@ PROFILING_TOOL_DIRS = [
     "tools/hatchet/bin",
     "tools/profiling/bin",
     "tools/system_info/bin",
+    "tools/nsight_compute/bin",
 ]
 
 # Per-app environment variable name for the app root directory

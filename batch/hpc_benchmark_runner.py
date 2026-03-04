@@ -1011,6 +1011,7 @@ class HPCBenchmarkRunner:
                 sm_version=80,
                 log_level="INFO",
                 no_progress=True,
+                num_samples=5,
             )
             if swaps_override:
                 run_kwargs["swaps_override"] = swaps_override
@@ -1100,18 +1101,27 @@ class HPCBenchmarkRunner:
             return
 
         modified_code = modified_path.read_text()
-        result.agent_patch = modified_code
 
-        # Compare with original to count changes (proper diff, not line count)
+        # Generate unified diff (same format as LLNL apps)
         original_path = GPA_BENCHMARK_ROOT / kernel_file
         if original_path.exists():
             original_lines = original_path.read_text().splitlines()
             modified_lines = modified_code.splitlines()
-            for diff_line in difflib.unified_diff(original_lines, modified_lines, lineterm=""):
+            diff_lines = list(difflib.unified_diff(
+                original_lines, modified_lines,
+                fromfile=f"a/{kernel_file}",
+                tofile=f"b/{kernel_file}",
+                lineterm="",
+            ))
+            result.agent_patch = "\n".join(diff_lines)
+            for diff_line in diff_lines:
                 if diff_line.startswith("+") and not diff_line.startswith("+++"):
                     result.agent_insertions += 1
                 elif diff_line.startswith("-") and not diff_line.startswith("---"):
                     result.agent_deletions += 1
+        else:
+            # No original to compare — store full content as fallback
+            result.agent_patch = modified_code
 
         if result.agent_insertions == 0 and result.agent_deletions == 0:
             self.log(f"  [GPA] No code changes detected, skipping driver swap")

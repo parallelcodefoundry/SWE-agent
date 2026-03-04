@@ -23,6 +23,9 @@ Session 35: Deep analysis of GPA-Benchmark results, merged upstream GPA-Benchmar
 - [ ] Goal 13: Resubmit GPA benchmark runs (with upstream fixes)
 - [ ] Goal 14: Cherry-pick SWE-agent upstream fixes (3 bugs)
 - [ ] Goal 15: Address Laghos timing variance / Lulesh measurement bias
+- [ ] Goal 16: Qwen3.5-27B benchmark runs (FP8 variant downloaded, needs `--kv-cache-dtype bf16`)
+- [ ] Goal 17: Qwen3-Coder-Next benchmark runs (FP8 variant downloaded, needs `--kv-cache-dtype bf16`)
+- [ ] Goal 18: Qwen3.5-122B-A10B benchmark runs (BLOCKED: needs 8 GPUs or 4x80GB nodes; FP8 downloaded)
 
 ## Pending User Decision
 

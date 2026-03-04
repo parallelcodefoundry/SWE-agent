@@ -1,0 +1,60 @@
+tools:
+  ncu_profile:
+    signature: "ncu_profile <executable> <output_dir> [<kernel_filter>] [<app_args>...]"
+    docstring: |
+      Profile CUDA kernels with NVIDIA Nsight Compute (ncu) to get detailed per-kernel GPU metrics.
+
+      This tool runs ncu on your executable and extracts key performance metrics:
+      - Kernel execution time (gpu__time_duration)
+      - SM throughput (compute utilization)
+      - DRAM throughput (memory bandwidth utilization)
+      - L1 cache throughput
+      - Occupancy (active warps as % of peak)
+      - Registers per thread, shared memory per block
+      - Grid and block dimensions
+
+      TWO PROFILING MODES:
+        1. Without kernel_filter: Basic profiling of all kernels
+           - Collects --set basic metrics, skips 1 warmup launch, collects 5 samples
+           - Good for identifying which kernels are hotspots
+
+        2. With kernel_filter: Detailed profiling of specific kernel(s)
+           - Collects --set detailed metrics for matching kernels only
+           - Collects 3 samples per kernel
+           - Good for deep-diving into a specific kernel's bottleneck
+
+      OUTPUT STRUCTURE:
+        <output_dir>/
+          report.ncu-rep       <- Binary report (can be opened in Nsight Compute GUI)
+          metrics_summary.csv  <- CSV of key metrics per kernel
+          summary.txt          <- Human-readable top kernels sorted by time
+
+      INTERPRETING RESULTS:
+        - High SM throughput + low DRAM throughput = COMPUTE-BOUND
+          → Reduce arithmetic, use faster math (__fdividef, rsqrtf), reduce register pressure
+        - Low SM throughput + high DRAM throughput = MEMORY-BOUND
+          → Improve coalescing, use shared memory, reduce global memory accesses
+        - Low SM throughput + low DRAM throughput = LATENCY-BOUND
+          → Increase occupancy, reduce divergence, overlap compute with memory
+
+      Example:
+        ncu_profile ./lulesh ./ncu_out
+        ncu_profile ./lulesh ./ncu_out CalcFBHourglassForceForElems "-s 30"
+    arguments:
+      - name: executable
+        type: string
+        description: "Path to the CUDA executable to profile"
+        required: true
+      - name: output_dir
+        type: string
+        description: "Directory to store profiling results (report, CSV, summary)"
+        required: true
+      - name: kernel_filter
+        type: string
+        description: "Optional kernel name regex filter for detailed profiling (e.g., 'CalcFB' or 'kernel_.*'). Omit for basic profiling of all kernels."
+        required: false
+      - name: app_args
+        type: string
+        description: "Optional arguments to pass to your application (e.g., '-s 30')"
+        required: false
+    execution_timeout: 600

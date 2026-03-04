@@ -60,6 +60,30 @@ VLLM_STARTUP_TIMEOUT="${VLLM_STARTUP_TIMEOUT:-600}"
 TP_SIZE="${TP_SIZE:-4}"
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.60}"
 
+# Model registry: model_pattern → tool_call_parser|reasoning_parser|kv_cache_dtype
+declare -A MODEL_REGISTRY=(
+    ["openai/gpt-oss-120b"]="openai|openai_gptoss|"
+    ["Qwen/Qwen3.5-27B"]="qwen3_coder|qwen3|bf16"
+    ["Qwen/Qwen3.5-27B-FP8"]="qwen3_coder|qwen3|bf16"
+    ["Qwen/Qwen3.5-122B-A10B"]="qwen3_coder|qwen3|bf16"
+    ["Qwen/Qwen3.5-122B-A10B-FP8"]="qwen3_coder|qwen3|bf16"
+    ["Qwen/Qwen3-Coder-Next"]="qwen3_coder|qwen3|bf16"
+    ["Qwen/Qwen3-Coder-Next-FP8"]="qwen3_coder|qwen3|bf16"
+)
+
+_lookup_model_settings() {
+    local model="$1"
+    local entry="${MODEL_REGISTRY[$model]:-}"
+    if [[ -z "$entry" ]]; then
+        # Default: current behavior (OpenAI-compatible)
+        TOOL_CALL_PARSER="openai"
+        REASONING_PARSER="openai_gptoss"
+        KV_CACHE_DTYPE=""
+    else
+        IFS='|' read -r TOOL_CALL_PARSER REASONING_PARSER KV_CACHE_DTYPE <<< "$entry"
+    fi
+}
+
 # Paths
 SWEAGENT_VENV="${SWEAGENT_VENV:-$HOME/envs/sweagent}"
 HATCHET_DIR="${HATCHET_DIR:-$HOME/hatchet}"  # TODO: change to pip install once upstreamed
@@ -580,6 +604,11 @@ else
     echo "  Image: ${VLLM_IMAGE}"
     echo "  Tensor Parallel: ${TP_SIZE}"
 
+    _lookup_model_settings "${VLLM_MODEL}"
+    echo "  Tool call parser: ${TOOL_CALL_PARSER}"
+    echo "  Reasoning parser: ${REASONING_PARSER}"
+    [[ -n "$KV_CACHE_DTYPE" ]] && echo "  KV cache dtype: ${KV_CACHE_DTYPE}"
+
     # Pull container image on vLLM node (if not cached)
     srun --nodes=1 --ntasks=1 --nodelist="${VLLM_NODE}" --exclusive --gpu-bind=none \
         podman-hpc pull "${VLLM_IMAGE}" 2>/dev/null || true
@@ -600,9 +629,10 @@ else
         --tensor-parallel-size "${TP_SIZE}" \
         --gpu-memory-utilization "${GPU_MEM_UTIL}" \
         --download-dir "${HF_HOME}" \
-        --tool-call-parser openai \
+        --tool-call-parser "${TOOL_CALL_PARSER}" \
         --enable-auto-tool-choice \
-        --reasoning-parser openai_gptoss \
+        --reasoning-parser "${REASONING_PARSER}" \
+        ${KV_CACHE_DTYPE:+--kv-cache-dtype "${KV_CACHE_DTYPE}"} \
         > "${OUTPUT_DIR}/vllm.log" 2>&1 &
 
     VLLM_PID=$!
