@@ -68,7 +68,9 @@ nsys_profile <executable> <output_dir> [<app_args>...]
 - Runs `nsys profile --trace=cuda,nvtx,osrt --cuda-memory-usage=true`
 - Extracts top kernels via `nsys stats --report=cuda_gpu_kern_sum`
 - Extracts CUDA API via `nsys stats --report=cuda_api_sum`
-- Outputs: `report.nsys-rep` (binary), `cuda_kern_summary.txt`, `cuda_api_summary.txt`, `summary.txt`
+- Runs `nsys analyze` with 6 expert rules (sync issues, pageable memory, GPU gaps, utilization)
+- Outputs: `report.nsys-rep` (binary), `cuda_kern_summary.txt`, `cuda_api_summary.txt`, `expert_analysis.txt`, `summary.txt`
+- All analysis is printed to stdout (agent sees it inline) + saved to files
 - Auto-pauses/resumes DCGM on managed clusters
 
 ### When to Use nsys vs ncu

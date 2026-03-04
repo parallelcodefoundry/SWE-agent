@@ -1,31 +1,35 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-03-04 (session 37)
+Last updated: 2026-03-04 (session 38)
 
-## Last Session (Session 37)
+## Last Session (Session 38)
 
-### Nsys Tool, Prompt Alignment, Output Naming, NCU Fix, Verification
+### Profiling Tool Verification, Expert Analysis, Upstream Cherry-Picks
 
-1. **Created nsys_profile SWE-agent tool** — `tools/nsight_systems/{config.yaml,bin/nsys_profile}`. System-wide GPU timeline profiling. Tested on all 4 proxy apps via subagent (all passed). Identifies hotspot kernels, memory transfers, CUDA API overhead.
-2. **Aligned profiling prompts** — Added `ncu_profile` + `nsys_profile` to `PROFILING_DESCRIPTION`, SWE-agent profiling tools list, GPA prompts. Fixed critical bug: `PROFILING_BUNDLES` in `sweagent.py` was missing `tools/nsight_compute` — LLNL apps via dynamic config never got the ncu tool.
-3. **Added nsight_compute + nsight_systems to PROFILING_BUNDLES** — Both SWE-agent dynamic configs and static GPA configs now include both profiling tools.
-4. **Output naming improvement** — Changed `benchmark_TIMESTAMP_JOBID` to `FRAMEWORK_MODEL_TIMESTAMP_JOBID` (e.g., `sweagent_gptoss120b_20260304_120000_49639229`).
-5. **Workspace cleanup** — Added ncu/nsys report cleanup (`*.ncu-rep`, `*.nsys-rep`, `*.sqlite`, `ncu_*` dirs) to `run_benchmark.sh` cleanup function. Logs final directory size.
-6. **Marked 8 stale LLNL configs as legacy** — `{kripke,laghos,lulesh,quicksilver}_{with,no}_profiling.yaml` are NOT used by benchmark pipeline (uses `llnl_base.yaml` + `prompt.py` dynamically). Added deprecation comment.
-7. **Fixed ncu_profile basic mode** — Changed from `-s 1 -c 5` → `-s 1 -c 50` → `-s 0 -c 500`. Verification showed `-s 1 -c 50` still only captured init/fill kernels (thrust `uninitialized_fill`), never reaching simulation kernels. Final `-s 0 -c 500` captures full range.
-8. **Verified nsys_profile output quality** — Agent wrote to shared pscratch storage. Lulesh: 934KB report, 13 unique kernels with real names/metrics. Confirmed files are meaningful.
-9. **ncu_profile verification pending** — `-c 500` fix committed but not yet verified on compute node. Agent running.
-10. **vLLM Qwen test failed** — Agent used bare `python -m vllm` (v0.16.0) instead of `podman-hpc` container (v0.11.0). Must retest with correct container-based approach matching `vllm_server.sh`.
+1. **Verified ncu_profile `-c 500` fix** — Extracted metrics from existing report on login node. 370 kernel launches profiled, 13 unique kernel types. Simulation kernels account for 93.1% of total time (ApplyMaterialProperties 18.1%, CalcVolumeForceForElems 12.8%, CalcKinematics 11.6%). Thrust init kernels only 6.9%. FIX CONFIRMED.
+2. **GPA profiling test PASSED (2 subagents)** — Tested ncu_profile + nsys_profile on 4 GPA apps:
+   - streamcluster: nsys 1.6MB report, 1253 kernel instances; ncu SM 0.4% DRAM 2.0% (LATENCY-BOUND)
+   - XSBench: nsys 453KB; ncu SM 12.2% DRAM 45.8% (MEMORY-BOUND)
+   - hotspot: nsys 414KB; ncu SM 52.4% DRAM 18.1% (MIXED)
+   - gaussian: nsys 4.5MB, Fan2=98.5% of time; ncu SM 7.3% DRAM 4.2% (LATENCY-BOUND)
+3. **Added `nsys analyze` expert rules to nsys_profile** — 6 CUDA rules: cuda_api_sync, cuda_memcpy_async, cuda_memcpy_sync, cuda_memset_sync, gpu_gaps (>50ms), gpu_time_util (<80%). Output printed to stdout for agent consumption + saved to expert_analysis.txt.
+4. **Improved ncu_profile bottleneck guidance** — Now gives code-level suggestions: `__fdividef()`, `__launch_bounds__`, shared memory, grid sizing. Adapts based on actual metrics (register count, grid size, occupancy).
+5. **Cherry-picked 3 SWE-agent upstream fixes** — All applied cleanly:
+   - `2180db79` ← `c69d6f56`: blocklist inversion fix (critical — `vim` wasn't being blocked)
+   - `67936ffd` ← `3ff833d9`: shlex.quote for base_commit/url (CWE-78 command injection)
+   - `14c9e5be` ← `ed7dd55c`: completion_kwargs deepcopy + User-Agent header
+6. **Verified nsys/ncu version compatibility** — Both CUDA 12.4 (LLNL) and 12.9 (GPA) have same `nsys analyze` rules and `ncu` metric names. Tools work on both.
+7. **vLLM Qwen container test IN PROGRESS** — Fresh subagent running. Previous attempts: one used bare Python (wrong), one got stuck on "nodes busy" stale allocation. Current agent using single srun to avoid contention.
 
-### Previous Session (Session 36)
+### Previous Session (Session 37)
 
-11. **GPA timing robustness** — nsys 3→5 samples + warmup run.
-12. **GPA diff storage** — Unified diff format.
-13. **vLLM model registry** — MODEL_REGISTRY in `run_benchmark.sh`.
-14. **NCU profiling tool** — Created and tested on all 4 proxy apps.
-15. **Downloaded 3 Qwen FP8 models** — 27B, Coder-Next, 122B-A10B.
-16. **Fixed bf16→bfloat16** — vLLM rejects `bf16`.
-17. **Submitted 9 gptoss120b benchmark jobs** — Still in queue (Priority).
+8. Created nsys_profile SWE-agent tool — tested on all 4 proxy apps
+9. Aligned profiling prompts — ncu_profile + nsys_profile in all descriptions/bundles
+10. Fixed critical bug: PROFILING_BUNDLES missing tools/nsight_compute
+11. Output naming: `benchmark_TIMESTAMP_JOBID` → `FRAMEWORK_MODEL_TIMESTAMP_JOBID`
+12. Workspace cleanup — ncu/nsys report deletion
+13. Marked 8 stale LLNL configs as legacy
+14. Fixed ncu_profile basic mode — `-s 0 -c 500`
 
 ## Active Experiments
 
@@ -43,21 +47,23 @@ Last updated: 2026-03-04 (session 37)
 | 49639241 | claude | GPA (16 apps) | Anthropic API | --base --both |
 | 49639242 | codex | Lulesh only | gpt-5.3-codex | --base --both --external-model |
 
-### Profiling Tool Verification (Session 37)
+### Profiling Tool Verification (Sessions 37-38) — ALL COMPLETE
 
 | Tool | App Type | Status | Finding |
 |------|----------|--------|---------|
-| nsys_profile | Proxy (Lulesh) | PASS | 13 kernels, 934KB report, real metrics |
+| nsys_profile | Proxy (Lulesh) | PASS | 13 kernels, 934KB report |
 | nsys_profile | Proxy (Kripke) | PASS | 6 RAJA kernels, 1.7MB report |
 | nsys_profile | Proxy (Laghos) | PASS | 15+ MFEM kernels (needs `-d cuda`) |
 | nsys_profile | Proxy (QS) | PASS | 1 kernel (CycleTrackingKernel=100%) |
-| ncu_profile | Proxy (Lulesh) | FIXED | -c 500 fix committed, re-verification running |
-| nsys_profile | GPA | PENDING | Agent running |
-| ncu_profile | GPA | PENDING | Agent running |
-
-### GPA/LLNL Benchmark Results (Sessions 29-32) — SUPERSEDED by new runs
-
-(Same as previous STATE.md — omitted for brevity)
+| nsys_profile | GPA (streamcluster) | PASS | 1253 instances, 1.6MB report |
+| nsys_profile | GPA (XSBench) | PASS | 2 instances, 453KB |
+| nsys_profile | GPA (hotspot) | PASS | 1 instance, 414KB |
+| nsys_profile | GPA (gaussian) | PASS | 4094 instances, 4.5MB |
+| ncu_profile | Proxy (Lulesh) `-c 500` | PASS | 13 kernel types, 93.1% simulation kernels |
+| ncu_profile | GPA (streamcluster) detailed | PASS | SM 0.4%, LATENCY-BOUND |
+| ncu_profile | GPA (XSBench) detailed | PASS | DRAM 45.8%, MEMORY-BOUND |
+| ncu_profile | GPA (hotspot) basic | PASS | SM 52.4%, MIXED |
+| ncu_profile | GPA (gaussian) detailed | PASS | SM 7.3%, LATENCY-BOUND |
 
 ## Characterization Results
 
@@ -70,9 +76,9 @@ Last updated: 2026-03-04 (session 37)
 
 ## Branch State
 
-- **Current branch**: `dev` (12 commits ahead of `origin/dev`)
-- **Latest commit**: `45e7cceb` — Fix ncu_profile basic mode: -s 0 -c 500 to capture simulation kernels
-- **Working tree**: Clean (only untracked: Laghos char scripts, xyz.asc)
+- **Current branch**: `dev` (17 commits ahead of `origin/dev`)
+- **Latest commit**: `00751329` — Add nsys analyze expert rules and improve profiling tool guidance
+- **Working tree**: Clean (only untracked: Laghos char scripts, xyz.asc, output.{out,txt})
 - **GPA-Benchmark**: warmup run in `driver_profiling.py` (uncommitted in GPA repo)
 
 ## All Infrastructure Fixes — Complete
@@ -95,16 +101,18 @@ Last updated: 2026-03-04 (session 37)
 - [x] Workspace cleanup — ncu/nsys report deletion (session 37)
 - [x] Mark stale LLNL configs as legacy (session 37)
 - [x] Fix ncu_profile basic mode — -s 0 -c 500 (session 37)
+- [x] Add nsys analyze expert rules (session 38)
+- [x] Improve ncu bottleneck guidance — code-level suggestions (session 38)
+- [x] Cherry-pick SWE-agent upstream fixes — blocklist, shlex, deepcopy (session 38)
 
 ## Open Issues / TODOs
 
 ### Actionable
-- [ ] **Verify ncu_profile -c 500 fix** — Subagent running, check `batch_results/profiling_verify/ncu_lulesh_v2/`
-- [ ] **Test profiling tools on GPA apps** — Subagent running, check `batch_results/profiling_verify/gpa_*`
-- [ ] **vLLM Qwen test with container** — Must use `podman-hpc run vllm/vllm-openai:v0.11.0`, NOT bare Python. Previous agent used wrong approach.
+- [ ] **vLLM Qwen test with container** — Subagent running (a9e9a6fa5a32ca652). Must use `podman-hpc run vllm/vllm-openai:v0.11.0`, NOT bare Python.
 - [ ] **Submit Qwen benchmark runs** — BLOCKED on vLLM container test. 16 jobs: 4 agents × {LLNL, GPA} × {27B-FP8, Coder-Next-FP8}
 - [ ] **Check session 36 benchmark results** — 9 jobs still in queue (Priority)
-- [ ] **Cherry-pick SWE-agent upstream fixes** — 3 bugs: blocklist inversion (`c69d6f56`), shlex.quote (`3ff833d9`), completion_kwargs deepcopy (`ed7dd55c`)
+- [ ] **Consider reducing ncu basic mode from -c 500 to -c 200** — 500 takes >10 minutes for apps with many kernels per iteration (5000 replay passes). Not blocking.
+- [ ] **ncu_profile arg parsing edge case** — Non-dash app args get interpreted as kernel filter. Workaround: pass explicit filter or empty `""`. Not blocking.
 
 ### Persistent Issues
 - [ ] **Quicksilver consistent timeout** — All frameworks timeout on QS. May need smaller problem size.
@@ -116,21 +124,18 @@ Last updated: 2026-03-04 (session 37)
 
 ## Recent Decisions
 
+- 2026-03-04 (s38): nsys analyze expert rules: gpu_gaps threshold=50ms, gpu_time_util threshold=80%. Both 12.4 and 12.9 compatible.
+- 2026-03-04 (s38): ncu_profile bottleneck guidance now code-level specific (fast math, launch_bounds, shared mem, grid sizing)
+- 2026-03-04 (s38): Cherry-picked 3 upstream SWE-agent fixes (all clean, no conflicts)
 - 2026-03-04 (s37): ncu_profile basic mode `-s 0 -c 500` — skip 0 + 500 captures to cover init and simulation phases
 - 2026-03-04 (s37): vLLM must be tested via podman-hpc container (v0.11.0), not bare Python install (v0.16.0 on system)
 - 2026-03-04 (s37): 8 stale LLNL YAML configs marked as legacy (not deleted) — kept for standalone SWE-agent testing reference
 - 2026-03-04 (s37): Perlmutter QOS max 2 interactive jobs — serialize subagent testing, don't launch 3+ concurrent salloc
-- 2026-03-04 (s37): nsys_profile output written to shared pscratch (not /tmp) for cross-node verification
-- 2026-03-04 (s36): vLLM `--kv-cache-dtype bfloat16` NOT `bf16` — v0.11.0 rejects the abbreviation
-- 2026-03-04 (s36): Per-model gpu_mem_util in MODEL_REGISTRY — 0.60 for 27B, 0.85 for Coder-Next, 0.92 for 122B
-- 2026-03-04 (s36): NCU metric `dram__cycles_active` not `dram__throughput` — confirmed by testing
-- 2026-03-04 (s36): Skip Codex with gptoss120b — confirmed broken (never makes code changes)
 
 ## Next Steps
 
-1. **Check ncu_profile + GPA profiling subagent results** — files at `batch_results/profiling_verify/`
-2. **Test vLLM Qwen via podman-hpc container** — `bash batch/vllm_server.sh` with `VLLM_MODEL=Qwen/Qwen3.5-27B-FP8`
-3. **Submit Qwen benchmark runs** — 16 jobs after vLLM verification passes
-4. **Check session 36 benchmark results** — 9 gptoss120b jobs still queued
-5. **Cherry-pick SWE-agent upstream fixes** — 3 bugs identified
-6. Address Laghos timing variance and Lulesh measurement bias
+1. **Check vLLM Qwen container test result** — subagent running (a9e9a6fa5a32ca652)
+2. **Submit Qwen benchmark runs** — 16 jobs after vLLM verification
+3. **Check session 36 benchmark results** — 9 gptoss120b jobs still queued
+4. **Consider reducing ncu -c 500 to -c 200** — Performance optimization, not blocking
+5. Address Laghos timing variance and Lulesh measurement bias

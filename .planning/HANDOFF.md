@@ -1,84 +1,76 @@
-# HANDOFF — Session 37 → Session 38
+# HANDOFF — Session 38 → Session 39
 
-Last updated: 2026-03-04 (session 37)
+Last updated: 2026-03-04 (session 38)
 
 ## What We Were Working On
 
-Session 37: Created nsys_profile tool, aligned all profiling prompts/bundles, improved output naming, fixed ncu_profile basic mode, verified tool outputs. Discovered vLLM Qwen test must use podman-hpc container (not bare Python). Two subagents were still running at session end.
+Session 38: Verified profiling tools on GPA apps (all passed), added `nsys analyze` expert rules, improved ncu bottleneck guidance, cherry-picked 3 upstream SWE-agent fixes. vLLM Qwen container test still in progress at session end.
 
 ## Goal Progress
-- [x] Goal 0: Prompt & bundle alignment (Phase 1) — ncu_profile + nsys_profile in all descriptions
-- [x] Goal 1: Create nsys_profile SWE-agent tool (Phase 2) — tested on all proxy apps
-- [x] Goal 2: Output naming improvement (Phase 3) — framework + model in dir name
-- [x] Goal 3: Workspace cleanup improvements (Phase 4) — ncu/nsys report cleanup
-- [x] Goal 4: Mark stale LLNL configs as legacy (8 files)
-- [x] Goal 5: Fix ncu_profile basic mode (-s 0 -c 500) — committed, verification running
-- [~] Goal 6: Verify ncu_profile -c 500 fix — subagent running at session end
-- [~] Goal 7: Test profiling tools on GPA apps — subagent running at session end
-- [ ] Goal 8: Test vLLM Qwen via podman-hpc container — MUST use container, not bare Python
-- [ ] Goal 9: Submit Qwen benchmark runs (16 jobs) — BLOCKED on Goal 8
-- [ ] Goal 10: Check session 36 benchmark results (9 jobs still queued)
-- [ ] Goal 11: Cherry-pick SWE-agent upstream fixes (3 bugs)
+- [x] Goal 0: Verify ncu_profile `-c 500` fix — CONFIRMED, 13 kernel types, 93.1% simulation
+- [x] Goal 1: Test profiling tools on GPA apps — 4 apps tested (streamcluster, XSBench, hotspot, gaussian), all PASS
+- [x] Goal 2: Add nsys analyze expert rules — 6 CUDA rules, compatible with 12.4 and 12.9
+- [x] Goal 3: Improve ncu bottleneck guidance — code-level suggestions (fast math, launch_bounds, etc.)
+- [x] Goal 4: Cherry-pick SWE-agent upstream fixes — blocklist, shlex, deepcopy (all clean)
+- [~] Goal 5: Test vLLM Qwen via podman-hpc container — subagent running at session end
+- [ ] Goal 6: Submit Qwen benchmark runs (16 jobs) — BLOCKED on Goal 5
+- [ ] Goal 7: Check session 36 benchmark results (9 jobs still queued)
 
 ## Running Subagents at Session End
 
-1. **ncu-verify-and-gpa-test** (ac74377cbd3e3af4d) — verifying ncu_profile `-c 500` on Lulesh + testing both tools on GPA apps. Output at `/pscratch/sd/k/krydzy/SWE-agent/batch_results/profiling_verify/`.
+1. **vLLM Qwen container test** (a9e9a6fa5a32ca652) — Testing vLLM server startup with Qwen3.5-27B-FP8 via `podman-hpc run docker.io/vllm/vllm-openai:v0.11.0`. Allocation: 49640456 on nid001068.
 
-## Key Commits (Session 37)
+## Key Commits (Session 38)
 
 | Commit | Description |
 |--------|-------------|
-| `cd7a83f9` | Add nsys_profile tool, align profiling prompts, improve output naming and cleanup |
-| `bd77fbbd` | Fix ncu_profile basic mode sample count and add MPI docs to nsys_profile |
-| `45e7cceb` | Fix ncu_profile basic mode: -s 0 -c 500 to capture simulation kernels |
+| `00751329` | Add nsys analyze expert rules and improve profiling tool guidance |
+| `14c9e5be` | Cherry-pick: User-Agent header + deepcopy fix (#1346) |
+| `67936ffd` | Cherry-pick: shlex.quote for command injection fix (#1325) |
+| `2180db79` | Cherry-pick: blocklist inversion fix (#1336) |
 
 ## Files Modified This Session
 
 | File | Change |
 |------|--------|
-| `batch/frameworks/prompt.py` | Added ncu_profile + nsys_profile to PROFILING_DESCRIPTION, workflow steps, SWE-agent tools list, GPA profiling prompt |
-| `batch/frameworks/sweagent.py` | Added tools/nsight_compute + tools/nsight_systems to PROFILING_BUNDLES |
-| `batch/frameworks/base.py` | Added tools/nsight_systems/bin to PROFILING_TOOL_DIRS |
-| `batch/run_benchmark.sh` | Output naming (framework+model), ncu/nsys cleanup, dir size logging |
-| `config/hpc/gpa_with_profiling.yaml` | Updated system_template profiling tools + workflow, added nsight_systems bundle |
-| `config/hpc/{kripke,laghos,lulesh,quicksilver}_{with,no}_profiling.yaml` (8 files) | Added legacy deprecation comment |
-| `tools/nsight_systems/config.yaml` | NEW: nsys_profile SWE-agent tool definition |
-| `tools/nsight_systems/bin/nsys_profile` | NEW: nsys profiling script (tested on all 4 proxy apps) |
-| `tools/nsight_compute/bin/ncu_profile` | Fixed basic mode: -s 0 -c 500 (was -s 1 -c 5) |
-| `tools/nsight_compute/config.yaml` | Updated docstring for new basic mode behavior |
-| `.claude/skills/nsight-systems/SKILL.md` | Added tool integration section |
-| `.claude/skills/nsight-compute/SKILL.md` | Updated basic mode description |
+| `tools/nsight_systems/bin/nsys_profile` | Added `nsys analyze` step with 6 expert rules, output to stdout + expert_analysis.txt |
+| `tools/nsight_systems/config.yaml` | Documented expert analysis outputs and rule descriptions |
+| `tools/nsight_compute/bin/ncu_profile` | Improved bottleneck guidance with code-level suggestions |
+| `sweagent/tools/tools.py` | Cherry-pick: blocklist `action.startswith(f)` (was inverted) |
+| `sweagent/environment/repo.py` | Cherry-pick: `shlex.quote()` for base_commit/url |
+| `sweagent/agent/models.py` | Cherry-pick: `copy.deepcopy(completion_kwargs)` + User-Agent header |
+| `tests/test_models.py` | Cherry-pick: 3 test cases for User-Agent header behavior |
 
 ## Files to Read First Next Session
 
 1. `STATE.md` — Full state overview
 2. `.planning/HANDOFF.md` — This file
-3. Check subagent results: `ls -la /pscratch/sd/k/krydzy/SWE-agent/batch_results/profiling_verify/`
+3. Check vLLM subagent result: output at `/tmp/claude-111589/-pscratch-sd-k-krydzy-SWE-agent/tasks/a9e9a6fa5a32ca652.output` (or check `squeue -u krydzy`)
 4. Check benchmark queue: `squeue -u krydzy`
 
 ## Verification Status
 
 | Check | Status |
 |-------|--------|
-| Prompt alignment (ncu_profile in prompts) | PASS — Python assert tests |
-| Bundle alignment (PROFILING_BUNDLES) | PASS — Python assert tests |
-| nsys_profile on Lulesh (shared storage) | PASS — 934KB report, 13 kernels |
-| nsys_profile on Kripke | PASS — 1.7MB report, 6 kernels |
-| nsys_profile on Laghos | PASS — needs `-d cuda` flag |
-| nsys_profile on Quicksilver (MPI) | PASS — workaround: `mpirun` as executable |
-| ncu_profile -c 500 on Lulesh | PENDING — subagent running |
-| Profiling tools on GPA apps | PENDING — subagent running |
-| vLLM Qwen via container | NOT TESTED — previous agent used wrong approach |
+| ncu_profile `-c 500` on Lulesh | PASS — 370 launches, 13 kernel types, 93.1% simulation |
+| nsys_profile on 4 proxy apps | PASS — All sessions 37 |
+| nsys_profile on 4 GPA apps | PASS — streamcluster, XSBench, hotspot, gaussian |
+| ncu_profile on 4 GPA apps | PASS — All bottleneck types detected correctly |
+| nsys analyze compatibility (12.4 vs 12.9) | PASS — Same rules, same syntax |
+| ncu metric compatibility (12.4 vs 12.9) | PASS — Same basic/detailed/full sets |
+| Cherry-pick blocklist fix | PASS — Clean apply |
+| Cherry-pick shlex.quote fix | PASS — Clean apply |
+| Cherry-pick deepcopy/User-Agent fix | PASS — Clean apply |
+| vLLM Qwen via container | PENDING — subagent running |
 | Output naming change | NOT TESTED (no jobs submitted with new naming yet) |
 
 ## Verification Commands (Interactive)
 
 ```bash
-# Check subagent verification output
-ls -lh /pscratch/sd/k/krydzy/SWE-agent/batch_results/profiling_verify/ncu_lulesh_v2/
-cat /pscratch/sd/k/krydzy/SWE-agent/batch_results/profiling_verify/ncu_lulesh_v2/summary.txt
+# Check vLLM subagent result
+squeue -u krydzy  # Is allocation still running?
 
-# Test vLLM Qwen with the ACTUAL container approach
+# Test vLLM Qwen manually if subagent failed
 salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 4 --account m2404
 srun --exclusive --gpus 4 bash -lc '
   export HF_HOME=/pscratch/sd/k/krydzy/hf-cache
@@ -87,24 +79,37 @@ srun --exclusive --gpus 4 bash -lc '
   export KV_CACHE_DTYPE=bfloat16
   export TOOL_CALL_PARSER=qwen3_coder
   export REASONING_PARSER=qwen3
-  bash /pscratch/sd/k/krydzy/SWE-agent/batch/vllm_server.sh
+  bash /pscratch/sd/k/krydzy/SWE-agent/batch/vllm_server.sh &
+  sleep 180
+  curl -s http://localhost:8008/v1/models | python3 -m json.tool
+  curl -s http://localhost:8008/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d "{\"model\": \"Qwen/Qwen3.5-27B-FP8\", \"messages\": [{\"role\": \"user\", \"content\": \"Say hello\"}], \"max_tokens\": 10}" | python3 -m json.tool
 '
-# Then from another terminal on same node:
-curl -s http://localhost:8008/v1/models | python3 -m json.tool
+
+# Submit Qwen benchmark runs (after vLLM test passes)
+for FW in sweagent opencode openhands codex; do
+  sbatch batch/run_benchmark.sh --base --both --kripke --laghos --lulesh --quicksilver --framework $FW --model-name Qwen/Qwen3.5-27B-FP8
+  sbatch batch/run_benchmark.sh --base --both --gpa --framework $FW --model-name Qwen/Qwen3.5-27B-FP8
+done
+# Same for Qwen3-Coder-Next-FP8
 ```
 
 ## Gotchas
 
-- **vLLM uses podman-hpc container (v0.11.0)** — NOT bare `python -m vllm`. The `vllm_server.sh` script uses `podman-hpc run docker.io/vllm/vllm-openai:v0.11.0`. Previous test agent found v0.16.0 via bare Python which is NOT what the benchmark pipeline uses.
-- **Perlmutter QOS max 2 interactive jobs** — Cannot launch 3+ salloc subagents simultaneously. Serialize or combine tests.
-- **ncu_profile -s 1 -c 50 was still broken** — Init kernels dominate early launches. Only `-s 0 -c 500` captures simulation kernels by aggregating the full range.
-- **nsys output on compute-node /tmp is node-local** — Files vanish after allocation ends. Must write to shared pscratch for verification.
-- **Laghos needs `-d cuda` for GPU profiling** — Without it, runs on CPU and nsys shows no CUDA kernels.
-- **MPI apps with nsys_profile** — Pass `mpirun` as executable, rest in app_args. The tool word-splits correctly but the approach is unintuitive.
-- **PROFILING_BUNDLES was missing tools/nsight_compute** — Critical bug fixed this session. LLNL apps via dynamic SWE-agent config never got the ncu tool despite it being in static YAML configs.
+- **vLLM uses podman-hpc container (v0.11.0)** — NOT bare `python -m vllm`. The `vllm_server.sh` script uses `podman-hpc run docker.io/vllm/vllm-openai:v0.11.0`. Previous test agents repeatedly used the wrong approach.
+- **Perlmutter QOS max 2 interactive jobs** — Cannot launch 3+ salloc subagents simultaneously. Previous sessions hit this MULTIPLE times.
+- **srun "nodes are busy"** — If a previous srun step on an allocation is stale, new steps fail. Use a single srun for everything, or cancel+restart the allocation.
+- **ncu_profile `-c 500` takes >10 minutes for some apps** — Lulesh (12+ kernels/iteration) = 5000 replay passes. Consider reducing to -c 200.
+- **ncu_profile arg parsing** — Non-dash app args after output_dir get interpreted as kernel filter. Pass explicit filter or empty `""`.
+- **nsys output on compute-node /tmp is node-local** — Files vanish after allocation ends. Must write to shared pscratch.
+- **Laghos needs `-d cuda` for GPU profiling** — Without it, runs on CPU and nsys/ncu show no CUDA kernels.
+- **MPI apps with nsys_profile** — Pass `mpirun` as executable, rest in app_args.
+- **GPA apps need CUDA 12.9 (default)** — Don't load `cudatoolkit/12.4` for GPA apps. `get_module_loads(repo_name)` in base.py handles this.
+- **nsys analyze works on both 12.4 and 12.9** — Same rules, same syntax. No version gating needed.
 
 ## Branch State
 
-- **SWE-agent (dev)**: Clean after `45e7cceb`, 12 commits ahead of `origin/dev`
+- **SWE-agent (dev)**: Clean after `00751329`, 17 commits ahead of `origin/dev`
 - **GPA-Benchmark (develop)**: Clean after warmup addition in driver_profiling.py
-- **Untracked**: `scripts/char_laghos*.{sh,sbatch}`, `xyz.asc`
+- **Untracked**: `scripts/char_laghos*.{sh,sbatch}`, `xyz.asc`, `output.{out,txt}`

@@ -35,6 +35,12 @@ ncu_profile <executable> <output_dir> [<kernel_filter>] [<app_args>...]
 - **Basic mode** (no filter): `--set basic -s 0 -c 500` — profiles up to 500 kernel launches (covers init + simulation phases)
 - **Detailed mode** (with filter): `--set detailed --kernel-name regex:<filter> -c 3` — full metrics for matching kernels
 - Outputs: `report.ncu-rep` (binary), `metrics_summary.csv`, `summary.txt` (bottleneck analysis)
+- Bottleneck classification with code-level optimization suggestions:
+  - COMPUTE-BOUND (SM>60%, DRAM<40%): fast math intrinsics, `__launch_bounds__`, algorithmic FLOPs reduction
+  - MEMORY-BOUND (DRAM>40%, SM<40%): coalesced access, `__shared__` caching, reduce global traffic
+  - LATENCY-BOUND (both<30%): register pressure, occupancy, grid sizing vs 108 SMs
+  - MIXED: recommends detailed mode with kernel filter
+- All analysis printed to stdout (agent sees it inline) + saved to files
 - Auto-pauses/resumes DCGM on managed clusters
 
 ### Key Metrics Extracted
@@ -46,15 +52,24 @@ ncu_profile <executable> <output_dir> [<kernel_filter>] [<app_args>...]
 - `sm__warps_active.avg.pct_of_peak_sustained_active` — warp occupancy
 - `launch__registers_per_thread`, `launch__shared_mem_per_block_allocated`, `launch__grid_size`, `launch__block_size`
 
-### Test Results (session 36, all proxy apps)
+### Test Results (sessions 36-38)
 
+**Proxy Apps (LLNL):**
 | App | Mode | Wall Time | Finding |
 |-----|------|-----------|---------|
-| Lulesh | Basic | 8s | LATENCY-BOUND (SM 1.6%) |
+| Lulesh | Basic `-c 500` | ~10min | 370 launches, 13 types, 93.1% simulation kernels |
 | Kripke | Basic | 15s | LATENCY-BOUND (SM 10.6%) |
 | Laghos | Basic | 16s | LATENCY-BOUND (tiny kernels) |
 | Quicksilver | Basic | 32s | LATENCY-BOUND (116 regs, SM 26.8%) |
 | Lulesh | Detailed (CalcVolume) | 9s | MIXED (252 regs!) |
+
+**GPA Apps (session 38):**
+| App | Mode | Finding |
+|-----|------|---------|
+| streamcluster | Detailed | SM 0.4%, DRAM 2.0% — LATENCY-BOUND |
+| XSBench | Detailed | SM 12.2%, DRAM 45.8% — MEMORY-BOUND |
+| hotspot | Basic | SM 52.4%, DRAM 18.1% — MIXED |
+| gaussian | Detailed | SM 7.3%, DRAM 4.2% — LATENCY-BOUND |
 
 ## Features New in 12.9 (ncu 2025.2)
 
