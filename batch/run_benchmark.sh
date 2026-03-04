@@ -55,23 +55,26 @@ fi
 VLLM_HOST="${VLLM_HOST:-127.0.0.1}"
 VLLM_PORT="${VLLM_PORT:-8008}"
 VLLM_MODEL="${VLLM_MODEL:-openai/gpt-oss-120b}"
-VLLM_IMAGE="${VLLM_IMAGE:-docker.io/vllm/vllm-openai:nightly}"
+VLLM_IMAGE="${VLLM_IMAGE:-}"  # Set per-model by _lookup_model_settings; env var overrides
+VLLM_IMAGE_DEFAULT="docker.io/vllm/vllm-openai:v0.11.0"
+VLLM_IMAGE_NIGHTLY="docker.io/vllm/vllm-openai:nightly"
 VLLM_STARTUP_TIMEOUT="${VLLM_STARTUP_TIMEOUT:-600}"
 TP_SIZE="${TP_SIZE:-4}"
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.60}"
 
-# Model registry: model → tool_call_parser|reasoning_parser|kv_cache_dtype|gpu_mem_util
+# Model registry: model → tool_call_parser|reasoning_parser|kv_cache_dtype|gpu_mem_util|vllm_image
 # gpu_mem_util overrides GPU_MEM_UTIL when non-empty (sized for 4xA100-40GB = 160GB)
-# NOTE: Do NOT use kv_cache_dtype=bfloat16 on A100 — FLASH_ATTN throws RuntimeError.
-# Qwen3.5 models require vLLM >= 0.17 (qwen3_5 architecture not in v0.11.0).
+# vllm_image: "default" = v0.11.0 (proven stable), "nightly" = latest (for newer architectures)
+# NOTE: kv_cache_dtype=bfloat16 is only valid for models that default to FP8 KV cache (e.g. DeepSeek).
+#       For all other models, use empty string (auto) — auto already selects the model's native dtype.
 declare -A MODEL_REGISTRY=(
-    ["openai/gpt-oss-120b"]="openai|openai_gptoss||"
-    ["Qwen/Qwen3.5-27B"]="qwen3_coder|qwen3||0.60"
-    ["Qwen/Qwen3.5-27B-FP8"]="qwen3_coder|qwen3||0.60"
-    ["Qwen/Qwen3.5-122B-A10B"]="qwen3_coder|qwen3||0.92"
-    ["Qwen/Qwen3.5-122B-A10B-FP8"]="qwen3_coder|qwen3||0.92"
-    ["Qwen/Qwen3-Coder-Next"]="qwen3_coder|qwen3||0.70"
-    ["Qwen/Qwen3-Coder-Next-FP8"]="qwen3_coder|qwen3||0.70"
+    ["openai/gpt-oss-120b"]="openai|openai_gptoss|||default"
+    ["Qwen/Qwen3.5-27B"]="qwen3_coder|qwen3||0.60|nightly"
+    ["Qwen/Qwen3.5-27B-FP8"]="qwen3_coder|qwen3||0.60|nightly"
+    ["Qwen/Qwen3.5-122B-A10B"]="qwen3_coder|qwen3||0.92|nightly"
+    ["Qwen/Qwen3.5-122B-A10B-FP8"]="qwen3_coder|qwen3||0.92|nightly"
+    ["Qwen/Qwen3-Coder-Next"]="qwen3_coder|qwen3||0.70|nightly"
+    ["Qwen/Qwen3-Coder-Next-FP8"]="qwen3_coder|qwen3||0.70|nightly"
 )
 
 _lookup_model_settings() {
@@ -82,12 +85,20 @@ _lookup_model_settings() {
         TOOL_CALL_PARSER="openai"
         REASONING_PARSER="openai_gptoss"
         KV_CACHE_DTYPE=""
+        # Only set VLLM_IMAGE if not already set by env var
+        VLLM_IMAGE="${VLLM_IMAGE:-$VLLM_IMAGE_DEFAULT}"
     else
-        local _gpu_mem_util=""
-        IFS='|' read -r TOOL_CALL_PARSER REASONING_PARSER KV_CACHE_DTYPE _gpu_mem_util <<< "$entry"
-        # Override GPU_MEM_UTIL if the model needs a specific value
+        local _gpu_mem_util="" _vllm_image=""
+        IFS='|' read -r TOOL_CALL_PARSER REASONING_PARSER KV_CACHE_DTYPE _gpu_mem_util _vllm_image <<< "$entry"
         if [[ -n "$_gpu_mem_util" ]]; then
             GPU_MEM_UTIL="$_gpu_mem_util"
+        fi
+        # Select container image (env var VLLM_IMAGE overrides registry)
+        if [[ -z "$VLLM_IMAGE" ]]; then
+            case "$_vllm_image" in
+                nightly) VLLM_IMAGE="$VLLM_IMAGE_NIGHTLY" ;;
+                *)       VLLM_IMAGE="$VLLM_IMAGE_DEFAULT" ;;
+            esac
         fi
     fi
 }
@@ -619,10 +630,10 @@ else
     echo ""
     echo "[Phase 2] Starting vLLM server on node ${VLLM_NODE}..."
     echo "  Model: ${VLLM_MODEL}"
-    echo "  Image: ${VLLM_IMAGE}"
     echo "  Tensor Parallel: ${TP_SIZE}"
 
     _lookup_model_settings "${VLLM_MODEL}"
+    echo "  Image: ${VLLM_IMAGE}"
     echo "  GPU memory util: ${GPU_MEM_UTIL}"
     echo "  Tool call parser: ${TOOL_CALL_PARSER}"
     echo "  Reasoning parser: ${REASONING_PARSER}"
