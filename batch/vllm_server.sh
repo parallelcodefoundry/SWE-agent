@@ -10,7 +10,7 @@ PORT="${VLLM_PORT:-8008}"
 MODEL="${VLLM_MODEL:-openai/gpt-oss-120b}"
 TP_SIZE="${VLLM_TP_SIZE:-4}"
 GPU_MEM_UTIL="${VLLM_GPU_MEM_UTIL:-0.60}"
-VLLM_IMAGE="${VLLM_IMAGE:-docker.io/vllm/vllm-openai:v0.11.0}"
+VLLM_IMAGE="${VLLM_IMAGE:-docker.io/vllm/vllm-openai:nightly}"
 
 # Ensure HF_HOME is set
 if [ -z "$HF_HOME" ]; then

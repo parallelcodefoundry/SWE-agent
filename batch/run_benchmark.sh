@@ -55,7 +55,7 @@ fi
 VLLM_HOST="${VLLM_HOST:-127.0.0.1}"
 VLLM_PORT="${VLLM_PORT:-8008}"
 VLLM_MODEL="${VLLM_MODEL:-openai/gpt-oss-120b}"
-VLLM_IMAGE="${VLLM_IMAGE:-docker.io/vllm/vllm-openai:v0.11.0}"
+VLLM_IMAGE="${VLLM_IMAGE:-docker.io/vllm/vllm-openai:nightly}"
 VLLM_STARTUP_TIMEOUT="${VLLM_STARTUP_TIMEOUT:-600}"
 TP_SIZE="${TP_SIZE:-4}"
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.60}"
