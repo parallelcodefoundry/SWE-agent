@@ -1,115 +1,121 @@
-# HANDOFF — Session 38 → Session 39
+# HANDOFF — Session 39 → Session 40
 
-Last updated: 2026-03-04 (session 38)
+Last updated: 2026-03-04 (session 39)
 
 ## What We Were Working On
 
-Session 38: Verified profiling tools on GPA apps (all passed), added `nsys analyze` expert rules, improved ncu bottleneck guidance, cherry-picked 3 upstream SWE-agent fixes. vLLM Qwen container test still in progress at session end.
+Session 39: Fixed vLLM A100 compatibility (removed invalid bfloat16 KV cache, added --enforce-eager), implemented model-dependent container selection (v0.11.0 for gptoss, nightly for Qwen), validated both Qwen models on vLLM nightly, diagnosed session 36 node count failures, submitted 24 benchmark jobs.
 
 ## Goal Progress
-- [x] Goal 0: Verify ncu_profile `-c 500` fix — CONFIRMED, 13 kernel types, 93.1% simulation
-- [x] Goal 1: Test profiling tools on GPA apps — 4 apps tested (streamcluster, XSBench, hotspot, gaussian), all PASS
-- [x] Goal 2: Add nsys analyze expert rules — 6 CUDA rules, compatible with 12.4 and 12.9
-- [x] Goal 3: Improve ncu bottleneck guidance — code-level suggestions (fast math, launch_bounds, etc.)
-- [x] Goal 4: Cherry-pick SWE-agent upstream fixes — blocklist, shlex, deepcopy (all clean)
-- [~] Goal 5: Test vLLM Qwen via podman-hpc container — subagent running at session end
-- [ ] Goal 6: Submit Qwen benchmark runs (16 jobs) — BLOCKED on Goal 5
-- [ ] Goal 7: Check session 36 benchmark results (9 jobs still queued)
+- [x] Goal 0: Fix vLLM A100 compatibility — removed bfloat16, added --enforce-eager
+- [x] Goal 1: Implement model-dependent container selection — v0.11.0 for gptoss, nightly for Qwen
+- [x] Goal 2: Validate Qwen3.5-27B-FP8 on nightly — PASS (Qwen3_5ForConditionalGeneration resolved)
+- [x] Goal 3: Validate Qwen3-Coder-Next-FP8 on nightly — PASS (tool calls working)
+- [x] Goal 4: Diagnose session 36 failures — sbatch bypasses self-submit (missing -N)
+- [x] Goal 5: Submit Qwen benchmark runs — 16 jobs (8 per model)
+- [x] Goal 6: Re-submit gptoss120b benchmarks — 8 jobs (with correct node counts)
+- [ ] Goal 7: Check session 39 benchmark results — 24 jobs all PENDING (Priority)
+- [ ] Goal 8: Submit Codex gptoss120b external-model — needs OPENAI_API_BASE env var
 
-## Running Subagents at Session End
-
-1. **vLLM Qwen container test** (a9e9a6fa5a32ca652) — Testing vLLM server startup with Qwen3.5-27B-FP8 via `podman-hpc run docker.io/vllm/vllm-openai:v0.11.0`. Allocation: 49640456 on nid001068.
-
-## Key Commits (Session 38)
+## Key Commits (Session 39)
 
 | Commit | Description |
 |--------|-------------|
-| `00751329` | Add nsys analyze expert rules and improve profiling tool guidance |
-| `14c9e5be` | Cherry-pick: User-Agent header + deepcopy fix (#1346) |
-| `67936ffd` | Cherry-pick: shlex.quote for command injection fix (#1325) |
-| `2180db79` | Cherry-pick: blocklist inversion fix (#1336) |
+| `1a399bad` | Model-dependent vLLM container selection in registry |
+| `b3736562` | Switch vLLM container from v0.11.0 to nightly for Qwen3.5 support |
+| `0799c39a` | Fix vLLM A100 compatibility: remove bfloat16 KV cache, add enforce-eager |
+| `e7f3b28b` | WIP: Save session 38 state — GPA analysis, upstream merge, URL validation |
+
+## Active Benchmark Jobs (24 total, all PENDING)
+
+**Qwen3-Coder-Next-FP8 (8 jobs):**
+| Job ID | Framework | Apps | Nodes |
+|--------|-----------|------|-------|
+| 49641327 | sweagent | LLNL (K,La,Lu,QS) | 5 |
+| 49641328 | opencode | LLNL (K,La,Lu,QS) | 5 |
+| 49641329 | openhands | LLNL (K,La,Lu,QS) | 5 |
+| 49641330 | codex | LLNL (K,La,Lu,QS) | 5 |
+| 49641339 | sweagent | GPA | 2 |
+| 49641340 | opencode | GPA | 2 |
+| 49641341 | openhands | GPA | 2 |
+| 49641342 | codex | GPA | 2 |
+
+**Qwen3.5-27B-FP8 (8 jobs):**
+| Job ID | Framework | Apps | Nodes |
+|--------|-----------|------|-------|
+| 49641343 | sweagent | LLNL (K,La,Lu,QS) | 5 |
+| 49641344 | opencode | LLNL (K,La,Lu,QS) | 5 |
+| 49641345 | openhands | LLNL (K,La,Lu,QS) | 5 |
+| 49641346 | codex | LLNL (K,La,Lu,QS) | 5 |
+| 49641353 | sweagent | GPA | 2 |
+| 49641355 | opencode | GPA | 2 |
+| 49641356 | openhands | GPA | 2 |
+| 49641357 | codex | GPA | 2 |
+
+**gptoss120b re-submission (8 jobs):**
+| Job ID | Framework | Apps | Nodes |
+|--------|-----------|------|-------|
+| 49641358 | sweagent | LLNL (K,La,Lu,QS) | 5 |
+| 49641359 | opencode | LLNL (K,La,Lu,QS) | 5 |
+| 49641360 | openhands | LLNL (K,La,Lu,QS) | 5 |
+| 49641361 | sweagent | GPA | 2 |
+| 49641362 | opencode | GPA | 2 |
+| 49641363 | openhands | GPA | 2 |
+| 49641364 | claude | LLNL (K,La,Lu,QS) | 4 |
+| 49641366 | claude | GPA | 1 |
 
 ## Files Modified This Session
 
 | File | Change |
 |------|--------|
-| `tools/nsight_systems/bin/nsys_profile` | Added `nsys analyze` step with 6 expert rules, output to stdout + expert_analysis.txt |
-| `tools/nsight_systems/config.yaml` | Documented expert analysis outputs and rule descriptions |
-| `tools/nsight_compute/bin/ncu_profile` | Improved bottleneck guidance with code-level suggestions |
-| `sweagent/tools/tools.py` | Cherry-pick: blocklist `action.startswith(f)` (was inverted) |
-| `sweagent/environment/repo.py` | Cherry-pick: `shlex.quote()` for base_commit/url |
-| `sweagent/agent/models.py` | Cherry-pick: `copy.deepcopy(completion_kwargs)` + User-Agent header |
-| `tests/test_models.py` | Cherry-pick: 3 test cases for User-Agent header behavior |
+| `batch/run_benchmark.sh` | Model-dependent container selection (5th field in MODEL_REGISTRY), removed bfloat16, added --enforce-eager, lowered Coder-Next gpu_mem_util to 0.70 |
+| `batch/vllm_server.sh` | Added --enforce-eager, default image v0.11.0 (env var override) |
+| `.claude/skills/nsight-compute/SKILL.md` | Updated with GPA test results from session 38 |
+| `STATE.md` | Rewritten with session 39 progress |
 
 ## Files to Read First Next Session
 
 1. `STATE.md` — Full state overview
 2. `.planning/HANDOFF.md` — This file
-3. Check vLLM subagent result: output at `/tmp/claude-111589/-pscratch-sd-k-krydzy-SWE-agent/tasks/a9e9a6fa5a32ca652.output` (or check `squeue -u krydzy`)
-4. Check benchmark queue: `squeue -u krydzy`
+3. Check benchmark queue: `squeue -u krydzy`
+4. `batch/run_benchmark.sh` lines 58-110 — MODEL_REGISTRY and _lookup_model_settings
 
-## Verification Status
+## Key Decisions (Session 39)
 
-| Check | Status |
-|-------|--------|
-| ncu_profile `-c 500` on Lulesh | PASS — 370 launches, 13 kernel types, 93.1% simulation |
-| nsys_profile on 4 proxy apps | PASS — All sessions 37 |
-| nsys_profile on 4 GPA apps | PASS — streamcluster, XSBench, hotspot, gaussian |
-| ncu_profile on 4 GPA apps | PASS — All bottleneck types detected correctly |
-| nsys analyze compatibility (12.4 vs 12.9) | PASS — Same rules, same syntax |
-| ncu metric compatibility (12.4 vs 12.9) | PASS — Same basic/detailed/full sets |
-| Cherry-pick blocklist fix | PASS — Clean apply |
-| Cherry-pick shlex.quote fix | PASS — Clean apply |
-| Cherry-pick deepcopy/User-Agent fix | PASS — Clean apply |
-| vLLM Qwen via container | PENDING — subagent running |
-| Output naming change | NOT TESTED (no jobs submitted with new naming yet) |
+- **vLLM container per-model**: v0.11.0 for gptoss (stable), nightly for Qwen (needs qwen3_5 arch)
+- **kv_cache_dtype=bfloat16 removed**: Only valid for FP8-default models (e.g. DeepSeek), not Qwen
+- **--enforce-eager**: Added to all vLLM launches — prevents CUDA graph compilation timeout
+- **Session 36 jobs failed**: sbatch bypasses self-submit (missing -N). Use `bash batch/run_benchmark.sh` from login node
+- **vLLM nightly = 0.16.1rc1.dev206**: Supports qwen3_5 + qwen3_next. v0.16.0 (latest) does NOT support qwen3_5
+
+## Monitoring Concerns
+
+- **Empty tool_calls [] from Qwen**: Both models return `tool_calls: []` in responses. SWE-agent outbound filter (line 870 models.py: `and tool_calls` is falsy for []) should handle this, but monitor for crashes.
+- **content: null with reasoning field**: Qwen models put text in `reasoning` field, not `content`. `--reasoning-parser qwen3` handles this.
 
 ## Verification Commands (Interactive)
 
 ```bash
-# Check vLLM subagent result
-squeue -u krydzy  # Is allocation still running?
+# Check benchmark results
+squeue -u krydzy  # Are jobs still queued?
+sacct -u krydzy --starttime=2026-03-04 --format=JobID,JobName,State,ExitCode,Elapsed,NNodes -n | head -30
 
-# Test vLLM Qwen manually if subagent failed
-salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 4 --account m2404
-srun --exclusive --gpus 4 bash -lc '
-  export HF_HOME=/pscratch/sd/k/krydzy/hf-cache
-  export VLLM_MODEL=Qwen/Qwen3.5-27B-FP8
-  export VLLM_GPU_MEM_UTIL=0.60
-  export KV_CACHE_DTYPE=bfloat16
-  export TOOL_CALL_PARSER=qwen3_coder
-  export REASONING_PARSER=qwen3
-  bash /pscratch/sd/k/krydzy/SWE-agent/batch/vllm_server.sh &
-  sleep 180
-  curl -s http://localhost:8008/v1/models | python3 -m json.tool
-  curl -s http://localhost:8008/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -d "{\"model\": \"Qwen/Qwen3.5-27B-FP8\", \"messages\": [{\"role\": \"user\", \"content\": \"Say hello\"}], \"max_tokens\": 10}" | python3 -m json.tool
-'
+# Find completed job output
+ls -lt batch_results/ | head -20
 
-# Submit Qwen benchmark runs (after vLLM test passes)
-for FW in sweagent opencode openhands codex; do
-  sbatch batch/run_benchmark.sh --base --both --kripke --laghos --lulesh --quicksilver --framework $FW --model-name Qwen/Qwen3.5-27B-FP8
-  sbatch batch/run_benchmark.sh --base --both --gpa --framework $FW --model-name Qwen/Qwen3.5-27B-FP8
-done
-# Same for Qwen3-Coder-Next-FP8
+# Quick results check for a specific job
+grep -r "CORRECTNESS" batch_results/benchmark_*_49641327/ 2>/dev/null
 ```
 
 ## Gotchas
 
-- **vLLM uses podman-hpc container (v0.11.0)** — NOT bare `python -m vllm`. The `vllm_server.sh` script uses `podman-hpc run docker.io/vllm/vllm-openai:v0.11.0`. Previous test agents repeatedly used the wrong approach.
-- **Perlmutter QOS max 2 interactive jobs** — Cannot launch 3+ salloc subagents simultaneously. Previous sessions hit this MULTIPLE times.
-- **srun "nodes are busy"** — If a previous srun step on an allocation is stale, new steps fail. Use a single srun for everything, or cancel+restart the allocation.
-- **ncu_profile `-c 500` takes >10 minutes for some apps** — Lulesh (12+ kernels/iteration) = 5000 replay passes. Consider reducing to -c 200.
-- **ncu_profile arg parsing** — Non-dash app args after output_dir get interpreted as kernel filter. Pass explicit filter or empty `""`.
-- **nsys output on compute-node /tmp is node-local** — Files vanish after allocation ends. Must write to shared pscratch.
-- **Laghos needs `-d cuda` for GPU profiling** — Without it, runs on CPU and nsys/ncu show no CUDA kernels.
-- **MPI apps with nsys_profile** — Pass `mpirun` as executable, rest in app_args.
-- **GPA apps need CUDA 12.9 (default)** — Don't load `cudatoolkit/12.4` for GPA apps. `get_module_loads(repo_name)` in base.py handles this.
-- **nsys analyze works on both 12.4 and 12.9** — Same rules, same syntax. No version gating needed.
+- **sbatch vs bash for run_benchmark.sh**: MUST use `bash batch/run_benchmark.sh` from login node (triggers self-submit with -N). `sbatch batch/run_benchmark.sh` runs inside SLURM and gets 1 node.
+- **VLLM_IMAGE env var overrides registry**: If set in environment, all models use that image regardless of registry setting.
+- **Codex external-model needs env vars**: `source ~/.openai_env` sets OPENAI_API_BASE and OPENAI_API_KEY. Skipped in session 39.
+- **Perlmutter QOS max 2 interactive jobs**: Cannot launch 3+ salloc subagents simultaneously.
+- **srun "nodes are busy"**: If a previous srun step on an allocation is stale, new steps fail. Cancel+restart allocation.
 
 ## Branch State
 
-- **SWE-agent (dev)**: Clean after `00751329`, 17 commits ahead of `origin/dev`
-- **GPA-Benchmark (develop)**: Clean after warmup addition in driver_profiling.py
+- **SWE-agent (dev)**: Clean after `1a399bad`, 21 commits ahead of `origin/dev`
 - **Untracked**: `scripts/char_laghos*.{sh,sbatch}`, `xyz.asc`, `output.{out,txt}`
