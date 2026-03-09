@@ -2,7 +2,7 @@
 """
 qs_run - Run Quicksilver benchmark and compare against baseline.
 
-Uses the Coral2_P2_1 benchmark for consistent results.
+Uses CORAL2 Problem 2 benchmarks, weak-scaled per rank count.
 Reports total runtime and speedup/slowdown - detailed timing is abstracted away
 to simulate real-world optimization where profiling tools are needed for deeper analysis.
 
@@ -37,8 +37,15 @@ def _find_pristine_qs():
 
 PRISTINE_QS_ROOT = _find_pristine_qs()
 
-# Fixed benchmark configuration - Coral2 Problem 2 single-node
-BENCHMARK_INPUT = "Examples/CORAL2_Benchmark/Problem2/Coral2_P2_1.inp"
+# Benchmark input files — weak-scaled per CORAL2 convention (1331 cells/rank, ~53K particles/rank)
+# Paths relative to PRISTINE_QS_ROOT; 4-rank input also stored in harness inputs/ dir
+BENCHMARK_INPUTS = {
+    1: "Examples/CORAL2_Benchmark/Problem2/Coral2_P2_1.inp",   # 11x11x11, 53K particles
+    4: "Examples/CORAL2_Benchmark/Problem2/Coral2_P2_4.inp",   # 22x22x11, 213K particles, 2x2x1 domains
+}
+DEFAULT_BENCHMARK_INPUT = BENCHMARK_INPUTS[1]  # fallback for non-standard np
+# Harness-local fallback for input files
+HARNESS_INPUTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'inputs')
 
 # Default tolerance for correctness checking
 DEFAULT_TOLERANCE = 1e-6
@@ -109,7 +116,7 @@ def make_input_file_for_ranks(input_file, np_ranks):
     return tmp_path, xDom, yDom, zDom
 
 
-def run_quicksilver(exe_path, input_file, np_ranks, omp_threads, label="", timeout=300):
+def run_quicksilver(exe_path, input_file, np_ranks, omp_threads, label="", timeout=600):
     """Run Quicksilver with the benchmark input file using MPI.
 
     Returns: (total_time_seconds, output_text) or (None, None) on failure
@@ -263,7 +270,7 @@ def check_correctness(baseline_output, modified_output, tolerance=DEFAULT_TOLERA
 
 def main():
     parser = argparse.ArgumentParser(description='Run Quicksilver benchmark (MPI + CUDA, multi-GPU)')
-    parser.add_argument('--np', type=int, default=1, help='Number of MPI ranks (default: 1, single GPU)')
+    parser.add_argument('--np', type=int, default=4, help='Number of MPI ranks (default: 4, one per GPU)')
     parser.add_argument('--omp-threads', type=int, default=8, help='OpenMP threads per rank (default: 8)')
     parser.add_argument('--baseline-only', action='store_true',
                        help='Only run the baseline (pristine) version to establish reference timing. '
@@ -299,17 +306,28 @@ def main():
         print("=" * 60)
         sys.exit(1)
 
-    input_file = os.path.join(PRISTINE_QS_ROOT, BENCHMARK_INPUT)
+    # Select weak-scaled input file for the requested rank count.
+    # First check pristine repo, then harness inputs/ dir as fallback.
+    benchmark_input = BENCHMARK_INPUTS.get(args.np, DEFAULT_BENCHMARK_INPUT)
+    input_file = os.path.join(PRISTINE_QS_ROOT, benchmark_input)
     if not os.path.isfile(input_file):
-        print("=" * 60)
-        print(f"ERROR: Benchmark input file not found: {input_file}")
-        print("=" * 60)
-        sys.exit(1)
+        # Fallback: check harness-local inputs/ directory
+        input_basename = os.path.basename(benchmark_input)
+        fallback = os.path.join(HARNESS_INPUTS_DIR, input_basename)
+        if os.path.isfile(fallback):
+            input_file = fallback
+        else:
+            print("=" * 60)
+            print(f"ERROR: Benchmark input file not found:")
+            print(f"  Tried: {input_file}")
+            print(f"  Tried: {fallback}")
+            print("=" * 60)
+            sys.exit(1)
 
     xDom, yDom, zDom = compute_domain_decomposition(args.np)
 
     print("=" * 60)
-    print("QUICKSILVER BENCHMARK: Coral2_P2_1")
+    print(f"QUICKSILVER BENCHMARK: {os.path.basename(input_file)}")
     cuda_devices = os.environ.get('CUDA_VISIBLE_DEVICES', 'all available')
     print(f"Using GPUs: {cuda_devices}")
     print(f"MPI ranks: {args.np}, OMP threads: {args.omp_threads}")

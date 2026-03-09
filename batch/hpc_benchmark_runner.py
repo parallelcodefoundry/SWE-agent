@@ -798,8 +798,8 @@ class HPCBenchmarkRunner:
         run_cmd = VALIDATION_RUN_CMD[repo_name]
         if self.validation_runs > 1:
             run_cmd += f" --timing-runs {self.validation_runs}"
-        # Timeout: base 600s (includes warmup + 1 run pair) + extra per additional pair (~120s)
-        run_timeout = 600 + max(0, self.validation_runs - 1) * 120
+        # Timeout: base 900s (includes CUDA cold-start warmup + 1 run pair at np=4/8) + extra per pair (~180s)
+        run_timeout = 900 + max(0, self.validation_runs - 1) * 180
         self.log(f"  [Validation] Running {repo_name} ({self.validation_runs} timing runs, timeout {run_timeout}s)...")
         try:
             run_proc = subprocess.run(

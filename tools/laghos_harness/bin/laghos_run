@@ -22,7 +22,7 @@ import statistics
 import time
 
 # Default MPI configuration — 1 rank = single GPU (minimizes MPI overhead)
-DEFAULT_NP = 1
+DEFAULT_NP = 4
 
 # Pristine Laghos source (unmodified baseline)
 def _find_pristine_laghos():

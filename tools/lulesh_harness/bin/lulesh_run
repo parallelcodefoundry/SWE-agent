@@ -5,8 +5,9 @@ lulesh_run - Run LULESH benchmark and compare against baseline.
 LULESH is a shock hydrodynamics proxy application. It outputs final energy
 values that can be used for correctness verification.
 
-Runs on a single GPU by default (np=1). Can scale to multiple GPUs with --np.
-Lulesh requires a perfect cube number of MPI ranks (1, 8, 27, 64, ...).
+Runs on 4 GPUs by default (np=8, 2 ranks per GPU). Lulesh requires a
+perfect cube number of MPI ranks (1, 8, 27, 64, ...). np=8 is the smallest
+perfect cube that utilizes all 4 A100 GPUs.
 """
 import subprocess
 import os
@@ -16,9 +17,10 @@ import re
 import time
 import statistics
 
-# Default MPI configuration — 1 rank = single GPU (minimizes MPI overhead).
+# Default MPI configuration — 8 ranks across 4 GPUs (2 ranks per GPU).
 # Lulesh requires perfect cube number of ranks (1, 8, 27, 64, ...).
-DEFAULT_NP = 1
+# np=8 is the smallest perfect cube that uses all 4 A100 GPUs.
+DEFAULT_NP = 8
 
 # Pristine LULESH source (unmodified baseline)
 def _find_pristine_lulesh():
@@ -196,10 +198,14 @@ def run_lulesh(exe_path, size, iterations, np_ranks=DEFAULT_NP, label="", timeou
     # Wrap with mpirun for multi-GPU execution.
     # --oversubscribe: PRRTE/OpenMPI 5 may see only 1 slot from SLURM srun.
     # --bind-to none: let CUDA_VISIBLE_DEVICES handle GPU assignment.
-    # Per-rank GPU isolation via OMPI_COMM_WORLD_LOCAL_RANK (same as kripke_run).
+    # Per-rank GPU isolation. Lulesh uses np=8 (2 ranks per GPU on 4 GPUs).
+    # Map: ranks 0,1 → GPU 0; ranks 2,3 → GPU 1; ranks 4,5 → GPU 2; ranks 6,7 → GPU 3.
+    # Requires all 4 GPUs — fewer GPUs is a benchmark infrastructure error.
+    num_gpus = 4
     if np_ranks > 1:
         cmd = ['mpirun', '-np', str(np_ranks), '--bind-to', 'none', '--oversubscribe',
-               'bash', '-c', 'export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK; exec "$@"',
+               'bash', '-c',
+               f'export CUDA_VISIBLE_DEVICES=$(($OMPI_COMM_WORLD_LOCAL_RANK * {num_gpus} / {np_ranks})); exec "$@"',
                '--'] + lulesh_cmd
     else:
         cmd = lulesh_cmd
