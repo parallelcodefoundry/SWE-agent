@@ -258,7 +258,7 @@ def check_correctness(baseline_output, modified_output, tolerance=DEFAULT_TOLERA
 
 def main():
     parser = argparse.ArgumentParser(description='Run Quicksilver benchmark (MPI + CUDA, multi-GPU)')
-    parser.add_argument('--np', type=int, default=4, help='Number of MPI ranks (default: 4, one per GPU)')
+    parser.add_argument('--np', type=int, default=1, help='Number of MPI ranks (default: 1, single GPU)')
     parser.add_argument('--omp-threads', type=int, default=8, help='OpenMP threads per rank (default: 8)')
     parser.add_argument('--baseline-only', action='store_true',
                        help='Only run the baseline (pristine) version to establish reference timing. '
