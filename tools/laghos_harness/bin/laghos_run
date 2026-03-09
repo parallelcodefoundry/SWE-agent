@@ -179,8 +179,13 @@ def run_laghos(exe_path, problem, dim, rs, tf, device, use_pa=True, np_ranks=DEF
     # Wrap with mpirun for multi-GPU execution.
     # --oversubscribe: PRRTE/OpenMPI 5 may see only 1 slot from SLURM srun.
     # --bind-to none: let CUDA_VISIBLE_DEVICES handle GPU assignment.
-    # Even for np=1, use mpirun since the binary is MPI-linked.
-    cmd = ['mpirun', '-np', str(np_ranks), '--bind-to', 'none', '--oversubscribe'] + laghos_cmd
+    # Per-rank GPU isolation via OMPI_COMM_WORLD_LOCAL_RANK (same as kripke_run).
+    if np_ranks > 1:
+        cmd = ['mpirun', '-np', str(np_ranks), '--bind-to', 'none', '--oversubscribe',
+               'bash', '-c', 'export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK; exec "$@"',
+               '--'] + laghos_cmd
+    else:
+        cmd = ['mpirun', '-np', '1', '--bind-to', 'none', '--oversubscribe'] + laghos_cmd
 
     try:
         if label:

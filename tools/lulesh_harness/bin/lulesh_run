@@ -196,8 +196,11 @@ def run_lulesh(exe_path, size, iterations, np_ranks=DEFAULT_NP, label="", timeou
     # Wrap with mpirun for multi-GPU execution.
     # --oversubscribe: PRRTE/OpenMPI 5 may see only 1 slot from SLURM srun.
     # --bind-to none: let CUDA_VISIBLE_DEVICES handle GPU assignment.
+    # Per-rank GPU isolation via OMPI_COMM_WORLD_LOCAL_RANK (same as kripke_run).
     if np_ranks > 1:
-        cmd = ['mpirun', '-np', str(np_ranks), '--bind-to', 'none', '--oversubscribe'] + lulesh_cmd
+        cmd = ['mpirun', '-np', str(np_ranks), '--bind-to', 'none', '--oversubscribe',
+               'bash', '-c', 'export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK; exec "$@"',
+               '--'] + lulesh_cmd
     else:
         cmd = lulesh_cmd
 

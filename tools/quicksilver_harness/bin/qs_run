@@ -129,8 +129,13 @@ def run_quicksilver(exe_path, input_file, np_ranks, omp_threads, label="", timeo
         # --oversubscribe: PRRTE/OpenMPI 5 may see only 1 slot from SLURM srun;
         #   this allows launching more ranks than detected slots.
         # --bind-to none: let CUDA_VISIBLE_DEVICES handle GPU assignment.
-        # Even for np=1, use mpirun to handle MPI-linked binaries that hang on MPI_Init().
-        cmd = ['mpirun', '-np', str(np_ranks), '--bind-to', 'none', '--oversubscribe'] + qs_cmd
+        # Per-rank GPU isolation via OMPI_COMM_WORLD_LOCAL_RANK (same as kripke_run).
+        if np_ranks > 1:
+            cmd = ['mpirun', '-np', str(np_ranks), '--bind-to', 'none', '--oversubscribe',
+                   'bash', '-c', 'export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK; exec "$@"',
+                   '--'] + qs_cmd
+        else:
+            cmd = ['mpirun', '-np', '1', '--bind-to', 'none', '--oversubscribe'] + qs_cmd
 
         if label:
             print(f"Running {label}...")
