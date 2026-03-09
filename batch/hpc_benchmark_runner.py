@@ -756,11 +756,8 @@ class HPCBenchmarkRunner:
             return
 
         # Shell preamble: modules + env vars (PATH, APP_ROOT, SWE_AGENT_ROOT, etc.)
+        # Note: base.py get_env_exports() already handles Lulesh cuda/ subdir
         preamble = self.launcher.get_module_loads(repo_name) + "\n" + self.launcher.get_env_exports(repo_name, workspace)
-
-        # Lulesh: LULESH_ROOT must point to cuda/ subdir where Makefile lives
-        if repo_name == "lulesh":
-            preamble += f'\nexport LULESH_ROOT="{workspace / "cuda"}"'
 
         # --- Build ---
         self.log(f"  [Validation] Building {repo_name}...")

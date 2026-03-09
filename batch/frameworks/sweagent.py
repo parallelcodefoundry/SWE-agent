@@ -101,7 +101,9 @@ class SweAgentLauncher(FrameworkLauncher):
 
         config_content = config_content.replace("__EXECUTION_TIMEOUT__", str(timeout))
         config_content = config_content.replace("__APP_ROOT_VAR__", root_var)
-        config_content = config_content.replace("__APP_ROOT_PATH__", str(workspace))
+        # Lulesh: APP_ROOT must point to cuda/ subdir where Makefile and source live
+        app_root = str(workspace / "cuda") if repo_name == "lulesh" else str(workspace)
+        config_content = config_content.replace("__APP_ROOT_PATH__", app_root)
         config_content = config_content.replace("__REPO_PATH__", str(workspace))
         config_content = config_content.replace("__RUN_CMD__", run_cmd)
 

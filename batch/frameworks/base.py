@@ -288,9 +288,12 @@ class FrameworkLauncher(ABC):
         path_dirs = self.get_path_dirs(repo_name)
         path_prefix = ":".join(path_dirs)
 
+        # Lulesh: LULESH_ROOT must point to cuda/ subdir where Makefile and source live
+        app_root = workspace / "cuda" if repo_name == "lulesh" else workspace
+
         lines = [
             f'export PATH="{path_prefix}:$PATH"',
-            f'export {root_var}="{workspace}"',
+            f'export {root_var}="{app_root}"',
             f'export SWE_AGENT_ROOT="{self.sweagent_root}"',
             'export CUDA_VISIBLE_DEVICES="0,1,2,3"',
             'export OMP_NUM_THREADS=32',
