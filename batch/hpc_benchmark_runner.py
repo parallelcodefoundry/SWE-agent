@@ -972,45 +972,63 @@ class HPCBenchmarkRunner:
 
         start_time = time.time()
 
-        if self.base_mode:
-            # Base mode: verify GPA driver baseline works (no agent)
-            self.log(f"  Mode: Base (verify driver baseline for {gpa_app})")
-            self._run_gpa_driver(gpa_app, result)
+        # Step 1: Verify baseline works (both base and agent mode)
+        self.log(f"  Verifying GPA driver baseline for {gpa_app}...")
+        baseline_result = BenchmarkResult(
+            instance_id=instance_id,
+            repo_name="gpa",
+            optimization_type="gpu_kernel_optimization",
+            framework=self.framework,
+            run_number=self.run_number,
+        )
+        self._run_gpa_driver(gpa_app, baseline_result)
+
+        if baseline_result.error_message or not baseline_result.success:
+            reason = baseline_result.error_message or "baseline build/validate failed"
+            self.log(f"  Baseline failed: {reason}")
+            result.error_message = f"Baseline failed: {reason}"
+            result.agent_builds = baseline_result.agent_builds
+            result.agent_correctness = baseline_result.agent_correctness
+            result.duration_seconds = time.time() - start_time
+            return result
+
+        self.log(f"  GPA driver baseline: build={baseline_result.agent_builds}, "
+                 f"correctness={baseline_result.agent_correctness}")
+
+        # Step 2: Setup workspace and run agent
+        workspace = self._setup_gpa_workspace(instance)
+        if not workspace:
+            result.error_message = "Failed to setup GPA workspace"
+            result.duration_seconds = time.time() - start_time
+            return result
+
+        try:
+            config_path = self.create_instance_config(instance, workspace)
+        except Exception as e:
+            result.error_message = f"Config generation failed: {e}"
+            result.duration_seconds = time.time() - start_time
+            return result
+
+        self.log(f"  Created config: {config_path}")
+        self.log(f"  Workspace: {workspace}")
+
+        # Run agent
+        self.log(f"  Running {self.framework} agent...")
+        success, agent_patch, traj_file = self.run_agent(
+            instance, workspace, config_path
+        )
+
+        result.success = success
+        result.trajectory_file = traj_file
+
+        if success:
+            self.log(f"  Agent completed successfully")
         else:
-            # Agent mode: workspace → agent → collect results
-            workspace = self._setup_gpa_workspace(instance)
-            if not workspace:
-                result.error_message = "Failed to setup GPA workspace"
-                result.duration_seconds = time.time() - start_time
-                return result
+            self.log(f"  Agent failed or timed out")
+            result.error_message = "Agent run failed"
 
-            try:
-                config_path = self.create_instance_config(instance, workspace)
-            except Exception as e:
-                result.error_message = f"Config generation failed: {e}"
-                result.duration_seconds = time.time() - start_time
-                return result
-
-            self.log(f"  Created config: {config_path}")
-            self.log(f"  Workspace: {workspace}")
-
-            # Run agent
-            self.log(f"  Running {self.framework} agent...")
-            success, agent_patch, traj_file = self.run_agent(
-                instance, workspace, config_path
-            )
-
-            result.success = success
-            result.trajectory_file = traj_file
-
-            if success:
-                self.log(f"  Agent completed successfully")
-            else:
-                self.log(f"  Agent failed or timed out")
-                result.error_message = "Agent run failed"
-
-            # Collect results via GPA driver (swap in agent's code, compare timing)
-            self._collect_gpa_results(gpa_app, instance, workspace, result)
+        # Step 3: Collect results via GPA driver (swap in agent's code, compare timing)
+        self._collect_gpa_results(gpa_app, instance, workspace, result)
 
         result.duration_seconds = time.time() - start_time
 

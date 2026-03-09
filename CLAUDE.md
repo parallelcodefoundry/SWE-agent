@@ -41,10 +41,12 @@ module load python cmake openmpi/5.0.7 cuda/12.4
 ./scripts/reset_test_repos.sh                    # all apps
 ./scripts/reset_test_repos.sh --lulesh --kripke  # specific apps
 
-# Run benchmarks (base mode is primary)
-sbatch batch/run_benchmark.sh --base --lulesh --framework claude
-sbatch batch/run_benchmark.sh --base --kripke --framework codex --external-model
-sbatch batch/run_benchmark.sh --base --build-mode direct --lulesh  # agent builds manually
+# Run benchmarks — ALWAYS use `bash`, NEVER `sbatch` directly
+# `bash` triggers self-submit logic that calculates correct node count.
+# `sbatch` bypasses self-submit → gets 1 node → fails with "Need N nodes".
+bash batch/run_benchmark.sh --base --lulesh --framework claude
+bash batch/run_benchmark.sh --base --kripke --framework codex --external-model
+bash batch/run_benchmark.sh --base --build-mode direct --lulesh  # agent builds manually
 
 # Python env
 source ~/envs/sweagent/bin/activate
