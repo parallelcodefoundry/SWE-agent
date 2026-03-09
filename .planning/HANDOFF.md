@@ -1,61 +1,102 @@
-# HANDOFF — Session 42 → Session 43
+# Handoff — Session 42 (continued) → Session 43
 
-Last updated: 2026-03-09 (session 42)
+Last updated: 2026-03-09
 
-## What We Were Working On
+## What We Were Implementing
 
-Session 42: Analyzed gptoss120b LLNL results for SWE-agent/OpenCode/OpenHands (0 speedups, multiple infra bugs found). Fixed GPA agent launch bug, added workspace cleanup, updated GPA-Benchmark, cleaned 21GB of stale results. Resubmitted Qwen jobs correctly. Created framework-specific results analysis guide.
+Migrating all LLNL app harnesses from single-GPU (np=1) to multi-GPU defaults. User requirement: "we are optimizing all of parallel HPC code performance." Target runtime: ~1 minute per app on 4x A100.
 
 ## Goal Progress
-- [x] Goal 1: Check Qwen job results (49653981-84) — all FAILED (sbatch node count bug)
-- [x] Goal 2: Debug GPA agent launch bug — FIXED (already done by parallel Claude instance, committed)
-- [x] Goal 3: Analyze gptoss120b LLNL results for sweagent/opencode/openhands (49641358-60)
-- [x] Goal 4: Update results analysis guide with framework-specific log formats
-- [x] Goal 5: Add workspace cleanup to benchmark runner
-- [x] Goal 6: Clean up batch_results (21GB → 181MB)
-- [x] Goal 7: Pull latest GPA-Benchmark (all 6 build failures fixed upstream)
-- [x] Goal 8: Resubmit Qwen LLNL jobs (49850096-99) with correct `bash` invocation
-- [x] Goal 9: Resubmit Qwen GPA jobs (49850130, 49850133-35)
-- [ ] Goal 10: Check Qwen results when jobs complete
-- [ ] Goal 11: Fix OpenHands+gptoss120b Pydantic crash (vLLM harmony_utils)
-- [ ] Goal 12: Submit Claude Code LLNL+GPA runs
 
-## Key Findings
+- [x] Goal 0: Load state, analyze gptoss120b results
+- [x] Goal 1: Fix GPA agent launch bug, LULESH_ROOT path fix
+- [x] Goal 2: Results analysis guide, workspace cleanup, batch cleanup
+- [x] Goal 3: Per-rank GPU isolation in QS, Laghos, Lulesh harnesses
+- [x] Goal 4: Multi-GPU defaults — Laghos np=4, QS np=4 (weak-scaled), Lulesh np=8
+- [x] Goal 5: QS nSteps 100→10 (349s was too slow)
+- [x] Goal 6: Benchmark runner validation timeout increased (600→900 base)
+- [x] Goal 7: Commit all multi-GPU changes
+- [ ] Goal 8: **DEBUG Kripke np>1 MPI hang** — MUST run multi-GPU, not stay at np=1 (user requirement)
+- [ ] Goal 9: Validate QS np=4 nSteps=10 timing (~35s estimated)
+- [ ] Goal 10: Consider Laghos problem scaling (8.3s too short, target ~60s)
+- [ ] Goal 11: Check Qwen job results when they complete
+- [ ] Goal 12: Fix OpenHands+gptoss120b Pydantic crash
+- [ ] Goal 13: Submit Claude Code runs (LLNL + GPA)
 
-### gptoss120b Analysis (0/24 meaningful speedups)
-- **SWE-agent**: Most active (107-193 iters). Laghos 0.997x only real submission. 3 SLURM kills, 2 framework crashes (QS).
-- **OpenCode**: Explored superficially, exited early (1-12 steps). Model never edited source.
-- **OpenHands**: All 8 runs crashed on 2nd LLM call — Pydantic content format mismatch in vLLM.
-- **Only Claude Code** (analyzed s41) produced real speedups: Kripke 15.08x, Laghos 1.07x.
+## CRITICAL: Kripke MPI Hang Must Be Fixed
 
-### Infrastructure Bugs
-| Bug | Severity | Status |
-|-----|----------|--------|
-| vLLM harmony_utils Pydantic crash | CRITICAL | Open |
-| SWE-agent _state_anthropic 25s timeout | HIGH | Open |
-| Build artifacts in git patch | MEDIUM | Open |
+User explicitly stated all apps should run on full node. Kripke np>1 hangs with OpenMPI 5.0.7 at transport sweep. This MUST be debugged, not worked around with np=1. Possible approaches:
+- Try cray-mpich instead of openmpi/5.0.7
+- Check RAJA CUDA+MPI interaction — Kripke uses RAJA for GPU kernels
+- Try different `--procs` decomposition (e.g., `4,1,1` instead of `2,2,1`)
+- Check if `--bind-to none` or `--oversubscribe` causes the hang
+- Run with NCCL debug logging to identify where it stalls
+- Test np=2 (minimum multi-rank) to narrow down
 
-## Active Jobs
-```bash
-# Check all Qwen jobs
-squeue -u krydzy
-sacct -u krydzy -j 49850096,49850097,49850098,49850099,49850130,49850133,49850134,49850135 --format=JobID,JobName,State,ExitCode,Elapsed -n
-```
+Currently `kripke_run` is at np=1 with a hang warning. Once fixed, change to np=4.
+
+## Target Runtimes (~1 minute per app)
+
+| App | Current | Target | Action Needed |
+|-----|---------|--------|---------------|
+| Kripke | 28.4s (np=1) | ~60s (np=4) | Debug MPI hang first |
+| Laghos | 8.3s (np=4) | ~60s | Increase rs (1→2 or 3) or dim (2→3) |
+| Lulesh | 82.0s (np=8) | ~60-90s | OK as-is |
+| QS | ~35s (np=4, nSteps=10 est) | ~60s | Validate; maybe increase nSteps to 15-20 |
 
 ## Files Modified This Session
-| File | Change |
-|------|--------|
-| `batch/hpc_benchmark_runner.py` | GPA agent launch fix + workspace cleanup after patch saved |
-| `CLAUDE.md` | Document `bash` vs `sbatch` for run_benchmark.sh |
-| `agent_docs/results-analysis.md` | Complete rewrite with framework-specific log format docs |
+
+### Committed in `4ac2767e` (Multi-GPU defaults)
+- `tools/laghos_harness/bin/laghos_run` — DEFAULT_NP 1→4, GPU isolation
+- `tools/lulesh_harness/bin/lulesh_run` — DEFAULT_NP 1→8, GPU mapping formula
+- `tools/quicksilver_harness/bin/qs_run` — Weak-scaled input, fallback, timeout, header
+- `tools/kripke_harness/bin/kripke_run` — np=1 with hang warning (TEMPORARY)
+- `tools/quicksilver_harness/inputs/Coral2_P2_4.inp` — 4-rank input (nSteps=10)
+- `batch/hpc_benchmark_runner.py` — Validation timeout increase
+
+### Earlier commits this session
+- `9da240e6` — Per-rank GPU isolation
+- `319c790d` — LULESH_ROOT path fix
+- `d7b58711` — Results analysis guide, workspace cleanup
+
+## Key Decisions and Gotchas
+
+1. **Lulesh requires perfect cube ranks** — np=8 (2³) with 2 ranks per GPU. Formula: `CUDA_VISIBLE_DEVICES=$(($RANK * 4 / 8))`.
+2. **QS Coral2_P2_4 with nSteps=100 takes 349s** — Reduced to nSteps=10.
+3. **Laghos np=4 is only 8.3s** — Needs problem scaling (rs or dim increase).
+4. **`--overlap` srun gives partial GPUs** — Use `--exclusive` for validation.
+5. **QS input file in two locations** — `Quicksilver/Examples/...` (untracked) + `tools/quicksilver_harness/inputs/` (tracked). Harness checks both.
 
 ## Files to Read First Next Session
-1. `STATE.md` — Full state overview
-2. `.planning/HANDOFF.md` — This file
-3. Check Qwen jobs: `sacct -u krydzy -j 49850096,49850097,49850098,49850099,49850130,49850133,49850134,49850135`
-4. If jobs completed: follow `agent_docs/results-analysis.md` checklist
 
-## Branch State
-- **SWE-agent (dev)**: 30 commits ahead of `origin/dev`
-- **Latest commit**: `d7b58711` — Add framework-specific log analysis guide, workspace cleanup
-- **GPA-Benchmark (develop)**: Merged origin/develop (sanitizer support, linting)
+1. `STATE.md` — Full project state
+2. `.planning/HANDOFF.md` — This file
+3. `tools/kripke_harness/bin/kripke_run:148-160` — Current MPI launch code (where hang occurs)
+4. `tools/quicksilver_harness/bin/qs_run:40-48,306-325` — QS weak-scaled input resolution
+5. Check Qwen jobs: `sacct -u krydzy -j 49850096,49850097,49850098,49850099`
+
+## Validation Commands (interactive)
+
+```bash
+salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 4 --account m5083
+
+# QS np=4 nSteps=10 (needs validation)
+srun --exclusive --gpus=4 --ntasks=1 bash -lc '
+  module load python openmpi/5.0.7
+  cd /pscratch/sd/k/krydzy/SWE-agent
+  export QUICKSILVER_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Quicksilver
+  python3 tools/quicksilver_harness/bin/qs_run --np 4 --baseline-only --timing-runs 1
+'
+
+# Kripke np=4 debug (try different approaches)
+srun --exclusive --gpus=4 --ntasks=1 bash -lc '
+  module load python openmpi/5.0.7
+  cd /pscratch/sd/k/krydzy/SWE-agent
+  export KRIPKE_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Kripke
+  timeout 120 python3 tools/kripke_harness/bin/kripke_run --arch CUDA --np 4 --baseline-only
+'
+```
+
+## Pending SLURM Jobs
+- Qwen LLNL: 49850096-99 (PENDING)
+- Qwen GPA: 49850130-35 (PENDING)

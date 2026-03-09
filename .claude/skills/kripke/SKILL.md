@@ -49,6 +49,7 @@ The harness runs pristine Kripke with identical parameters, compares iteration c
 
 ## Common Issues
 
+- **MPI hang at np>1 (OPEN BUG)**: `mpirun -np 4` with OpenMPI 5.0.7 hangs at the transport sweep phase. Confirmed on 4x A100 (session 42). Kripke temporarily defaults to np=1. Must be debugged — all apps should run multi-GPU. Possible causes: RAJA+CUDA+MPI interaction, OpenMPI 5 incompatibility. Try: cray-mpich, different `--procs` decomposition, np=2 to narrow down.
 - **"nvcc not found"**: On a login node; CUDA builds require a compute node.
 - **"BLT/CAMP submodule not present"**: Run `git submodule update --init --recursive` (harness does this automatically).
 - **"--extended-lambda" errors**: Pass `-DCMAKE_CUDA_FLAGS="--extended-lambda --expt-relaxed-constexpr"`.
