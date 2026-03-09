@@ -737,6 +737,14 @@ class HPCBenchmarkRunner:
         with open(patch_file, "w") as f:
             f.write(agent_patch)
 
+        # Clean up workspace to save storage (patch already saved)
+        if workspace.exists():
+            try:
+                shutil.rmtree(workspace)
+                self.log(f"  Cleaned up workspace: {workspace.name}")
+            except Exception as e:
+                self.log(f"  Warning: workspace cleanup failed: {e}")
+
         return result
 
     def _validate_agent_changes(self, repo_name: str, workspace: Path, result: BenchmarkResult) -> None:
