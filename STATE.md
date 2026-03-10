@@ -1,52 +1,40 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-03-09 (session 44)
+Last updated: 2026-03-10 (session 45)
 
-## Last Session (Session 44)
+## Last Session (Session 45)
 
-Continued session 43's multi-GPU characterization work. Key accomplishments:
+### Qwen Job Analysis — Root Cause Found & Fixed
+All 6 completed Qwen jobs (4 frameworks × LLNL + 2 × GPA) produced 0 code changes. Two bugs:
 
-### Harness MPI Robustness (all 4 harnesses)
-- Added `_find_mpirun()` — resolves mpirun to absolute path with Perlmutter fallback
-- Added `_ensure_ld_library_path()` — ensures libfabric, CUDA, OpenMPI libs available for MPI-launched processes
-- Fixed kripke_run default `--arch` from OpenMP to CUDA
+1. **vLLM reasoning parser conflict** — `--reasoning-parser qwen3` intercepts `<tool_call>` XML as reasoning content, leaving `tool_calls: []` empty. Removed reasoning parser from MODEL_REGISTRY for all Qwen models. Made `--reasoning-parser` flag conditional (only added when non-empty).
 
-### QS Recalibration
-- nSteps=67 in Coral2_P2_4.inp (was 8) → 59.7s at np=4 (validated)
-- Updated both `tools/quicksilver_harness/inputs/` and `Quicksilver/Examples/.../` copies
+2. **SWE-agent cost limit crash** — `sweagent.py:_apply_model_overrides()` overwrote `per_instance_cost_limit: 0` to `1.0`. LiteLLM can't price self-hosted models → `ModelConfigurationError` crash. Removed the override.
 
-### GPA Benchmark Testing (via benchmark runner flow)
-- Fixed `_run_gpa_driver()` — GPA driver API changed to require `DriverConfig` object, not kwargs
-- Initialized GPA LULESH submodule (`git submodule update --init LULESH`)
-- Tested all 16 GPA apps through benchmark runner's `_run_gpa_driver()`:
+### Verified via live vLLM testing
+- Started vLLM with `Qwen/Qwen3-Coder-Next-FP8` on compute node
+- With reasoning parser: `tool_calls: []`, tool call XML in reasoning field (BROKEN)
+- Without reasoning parser: proper `tool_calls` array with correct function/args (WORKING)
+- Multi-tool calls work (read_file + bash in single response)
 
-| App | Status | Notes |
-|-----|--------|-------|
-| exatensor | PASS | |
-| xsbench | PASS | |
-| bfs | PASS | |
-| gaussian | PASS | |
-| heartwall | PASS | |
-| hotspot | PASS | |
-| huffman | PASS | |
-| lud | PASS | |
-| nw | PASS | |
-| particlefilter | PASS | |
-| pathfinder | PASS | |
-| srad | PASS | |
-| streamcluster | PASS | |
-| b+tree | BUILD FAIL | gcc 14 strict: implicit declarations, incompatible pointer types |
-| backprop | BUILD FAIL | gcc 14 strict: K&R style C, implicit int/declarations |
-| lavaMD | CONFIG ERROR | GPA driver bug: `run_all()` compares `app["name"].lower()` with `config.app` (not lowered) |
+### Manual Validation (all on compute node, 4x A100)
+**LLNL Apps** — all 4 pass (build + run + correctness):
+- Kripke np=4: 86.7s (GPU contention), Laghos np=4: 65.4s, Lulesh np=8: 74.5s (contention), QS np=4: 67.6s
 
-**GPA requirements**: Default CUDA 12.9 (NOT cudatoolkit/12.4). Driver auto-detects via `nvcc` in PATH.
+**Profiling Tools** — all 4 tested:
+| Tool | Status | Notes |
+|------|--------|-------|
+| nsys_profile | PASS | Full pipeline: profile, kernel/API summary, expert analysis |
+| hpc_profile | PASS | hpcrun → hpcstruct → hpcprof complete |
+| hatchet_analyze | PASS (partial) | Profile, hot path, top functions, source locations work; call tree has pandas bug |
+| ncu_profile | PASS (verified) | 84 kernel captures confirmed working; 500-capture default too slow for testing |
 
-### CLAUDE.md Updated
-- Added Multi-GPU MPI Requirements section with timing table
-- Fixed module name: `cuda/12.4` → `cudatoolkit/12.4`
+**GPA Apps** — all 13 working apps validated directly via `gpa_bench_driver`:
+exatensor, xsbench, bfs, gaussian, heartwall, hotspot, huffman, lud, nw, particlefilter, pathfinder, srad, streamcluster
 
-### Nsys Profiles Completed (all 4 LLNL apps)
-Profiles saved to `/tmp/nsys_{kripke,laghos,lulesh,qs}/` with summary.txt and cuda_kern_summary.txt.
+### Cancelled Jobs
+- 49850134 (opencode Qwen GPA) — cancelled, would have failed same way
+- 49850135 (openhands Qwen GPA) — cancelled, would have failed same way
 
 ## Validated LLNL App Timings (4x A100)
 
@@ -59,35 +47,44 @@ Profiles saved to `/tmp/nsys_{kripke,laghos,lulesh,qs}/` with summary.txt and cu
 
 ## Active Experiments
 
-### Qwen LLNL (session 42, still pending)
-| Job ID | Framework | Status |
-|--------|-----------|--------|
-| 49850098 | opencode | PENDING |
-| 49850099 | openhands | PENDING |
+### Qwen Session 42 Jobs (ALL FAILED — bugs fixed in session 45)
+| Job ID | Framework | Apps | Status | Root Cause |
+|--------|-----------|------|--------|------------|
+| 49850096 | sweagent | LLNL | COMPLETED — 0/4 | LiteLLM cost crash |
+| 49850097 | codex | LLNL | COMPLETED — 0/4 | Tool calls in reasoning |
+| 49850098 | opencode | LLNL | COMPLETED — 0/4 | Tool calls in reasoning |
+| 49850099 | openhands | LLNL | COMPLETED — 0/4 | Tool calls in reasoning + cost |
+| 49850130 | sweagent | GPA | COMPLETED — 0/16 | LiteLLM cost crash |
+| 49850133 | codex | GPA | COMPLETED — 0/16 | Tool calls in reasoning |
+| 49850134 | opencode | GPA | CANCELLED | Would have failed same way |
+| 49850135 | openhands | GPA | CANCELLED | Would have failed same way |
 
-### Qwen GPA (session 42, still pending)
-| Job ID | Framework | Status |
-|--------|-----------|--------|
-| 49850130 | sweagent | PENDING |
-| 49850133 | codex | PENDING |
-| 49850134 | opencode | PENDING |
-| 49850135 | openhands | PENDING |
+## Available Models
+
+| Model | Cached | TP | GPU Mem | Parser | Status |
+|-------|--------|-----|---------|--------|--------|
+| Qwen/Qwen3-Coder-Next-FP8 | Yes | 4 | 0.70 | qwen3_coder | Tool calls verified working (no reasoning parser) |
+| Qwen/Qwen3.5-27B-FP8 | Yes | 4 | 0.60 | qwen3_coder | Not yet tested |
+| Qwen/Qwen3.5-122B-A10B-FP8 | Yes | 4 | 0.92 | qwen3_coder | Not yet tested |
 
 ## Branch State
 
 - **Current branch**: `dev`
-- **Latest commit**: `0608c8d7` — WIP: Session 43-44 harness MPI robustness, GPA driver fix, QS recalibration
+- **Latest commit**: `219e1405` — Fix Qwen tool calling: remove reasoning parser, fix SWE-agent cost limit
 
 ## Infrastructure Bugs Found
 
 | Bug | Severity | Status |
 |-----|----------|--------|
+| Qwen reasoning parser breaks tool calls | CRITICAL | **FIXED** (session 45) |
+| SWE-agent cost limit crash on self-hosted models | CRITICAL | **FIXED** (session 45) |
 | Kripke CHAI required for CUDA+MPI | CRITICAL | **FIXED** (session 43) |
 | OMP_PROC_BIND=spread in harnesses | HIGH | **FIXED** (session 43) |
 | GPA driver API: run_driver() takes DriverConfig | HIGH | **FIXED** (session 44) |
 | Harness mpirun path resolution | HIGH | **FIXED** (session 44) |
 | Harness LD_LIBRARY_PATH for MPI+CUDA | HIGH | **FIXED** (session 44) |
 | QS nSteps recalibration | HIGH | **FIXED** (session 44) — nSteps=67 |
+| Hatchet call tree pandas compat | LOW | Open — `'slice' object has no attribute '_hatchet_nid'` |
 | GPA b+tree build fail (gcc14) | LOW | Open — upstream C code issue |
 | GPA backprop build fail (gcc14) | LOW | Open — upstream C code issue |
 | GPA lavaMD config error | LOW | Open — case sensitivity bug in GPA driver |
@@ -96,20 +93,43 @@ Profiles saved to `/tmp/nsys_{kripke,laghos,lulesh,qs}/` with summary.txt and cu
 
 ## Recent Decisions
 
+- 2026-03-10 (s45): Remove reasoning parser from all Qwen MODEL_REGISTRY entries — tool calls don't work with it
+- 2026-03-10 (s45): Make `--reasoning-parser` and `--enable-reasoning` conditional on non-empty REASONING_PARSER
+- 2026-03-10 (s45): Keep `per_instance_cost_limit: 0` for self-hosted models (don't override)
 - 2026-03-09 (s44): GPA driver `run_driver()` API changed — must use `DriverConfig` object
-- 2026-03-09 (s44): GPA LULESH submodule initialized — builds/runs/validates OK
-- 2026-03-09 (s44): GPA `no_sanitize=True` added — skip compute-sanitizer for faster runs
-- 2026-03-09 (s44): b+tree/backprop failures are upstream gcc14 issues, not our problem
-- 2026-03-09 (s44): lavaMD failure is GPA driver bug (case-insensitive compare), not our problem
 - 2026-03-09 (s43): Kripke requires ENABLE_CHAI=ON for CUDA+MPI
 - 2026-03-09 (s43): Remove OMP_PROC_BIND/PLACES from harnesses
-- 2026-03-09 (s43): Laghos rs=4, tf=0.8 gives ~67s at np=4
-- 2026-03-09 (s43): Kripke zones=64³, niter=60 gives ~55s at np=4
 
 ## Next Steps
 
-1. **Check Qwen job results** (still PENDING from session 42)
-2. **Submit Claude Code runs** (LLNL + GPA)
-3. **Update setup_apps.sh** to build Kripke with CHAI
-4. **Fix GPA broken apps** if needed — b+tree/backprop need gcc flags fix, lavaMD needs driver fix
-5. **Design: agent access to OMP/env settings** — Direct mode or wrapper script approach
+### Priority 1: Verify fixes with remaining Qwen models
+1. Test `Qwen3.5-27B-FP8` and `Qwen3.5-122B-A10B-FP8` tool calling via vLLM
+2. Run quick validation that each model produces proper tool_calls
+
+### Priority 2: Analyze profiling data for optimization potential
+1. Review nsys/ncu profiles for each LLNL app
+2. Determine if meaningful optimization opportunities exist (vs init-dominated)
+3. Validate that benchmark tasks are reasonable for LLM agents
+
+### Priority 3: Launch comprehensive benchmark runs
+All with `--build-mode direct`:
+
+**Claude Code** (Anthropic API, no vLLM):
+- LLNL apps (kripke, laghos, lulesh, quicksilver)
+- GPA apps
+- `bash batch/run_benchmark.sh --base --build-mode direct --framework claude --kripke --laghos --lulesh --quicksilver --gpa`
+
+**Codex** (gpt-5.3-codex model, LLNL only):
+- `bash batch/run_benchmark.sh --base --build-mode direct --framework codex --kripke --laghos --lulesh --quicksilver`
+
+**Qwen models** (3 models × all apps × with/without profiling):
+- For each of: Qwen3-Coder-Next-FP8, Qwen3.5-27B-FP8, Qwen3.5-122B-A10B-FP8
+- All 4 frameworks: sweagent, codex, opencode, openhands
+- All apps: LLNL + GPA
+- Two configs: no_profiling and with_profiling
+- `bash batch/run_benchmark.sh --base --build-mode direct --framework sweagent --kripke --laghos --lulesh --quicksilver --gpa --model Qwen/Qwen3-Coder-Next-FP8`
+
+### Priority 4: Infrastructure improvements
+1. Update `setup_apps.sh` to build Kripke with CHAI
+2. Verify `--build-mode direct` + `--base` + `--gpa` works end-to-end
+3. Fix hatchet call tree pandas compatibility
