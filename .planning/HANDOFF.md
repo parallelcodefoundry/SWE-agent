@@ -1,102 +1,107 @@
-# Handoff — Session 42 (continued) → Session 43
+# Handoff — Session 44
 
 Last updated: 2026-03-09
 
-## What We Were Implementing
+## What We Were Implementing and Why
 
-Migrating all LLNL app harnesses from single-GPU (np=1) to multi-GPU defaults. User requirement: "we are optimizing all of parallel HPC code performance." Target runtime: ~1 minute per app on 4x A100.
+Multi-GPU characterization and validation of all LLNL proxy apps + GPA benchmark apps. Goal: calibrate ~60s runtimes for LLNL apps running on 4 GPUs with MPI, verify MPI parallelism, profile with nsight, and test all GPA app builds.
+
+## Approach Chosen
+
+- Run apps via harness scripts (same path as benchmark runner)
+- Fix infrastructure bugs in harnesses (mpirun path, LD_LIBRARY_PATH, arch default)
+- Test GPA apps via benchmark runner's `_run_gpa_driver()` (exactly how benchmarks invoke them)
+- Document multi-GPU requirements in CLAUDE.md
 
 ## Goal Progress
 
-- [x] Goal 0: Load state, analyze gptoss120b results
-- [x] Goal 1: Fix GPA agent launch bug, LULESH_ROOT path fix
-- [x] Goal 2: Results analysis guide, workspace cleanup, batch cleanup
-- [x] Goal 3: Per-rank GPU isolation in QS, Laghos, Lulesh harnesses
-- [x] Goal 4: Multi-GPU defaults — Laghos np=4, QS np=4 (weak-scaled), Lulesh np=8
-- [x] Goal 5: QS nSteps 100→10 (349s was too slow)
-- [x] Goal 6: Benchmark runner validation timeout increased (600→900 base)
-- [x] Goal 7: Commit all multi-GPU changes
-- [ ] Goal 8: **DEBUG Kripke np>1 MPI hang** — MUST run multi-GPU, not stay at np=1 (user requirement)
-- [ ] Goal 9: Validate QS np=4 nSteps=10 timing (~35s estimated)
-- [ ] Goal 10: Consider Laghos problem scaling (8.3s too short, target ~60s)
-- [ ] Goal 11: Check Qwen job results when they complete
-- [ ] Goal 12: Fix OpenHands+gptoss120b Pydantic crash
-- [ ] Goal 13: Submit Claude Code runs (LLNL + GPA)
-
-## CRITICAL: Kripke MPI Hang Must Be Fixed
-
-User explicitly stated all apps should run on full node. Kripke np>1 hangs with OpenMPI 5.0.7 at transport sweep. This MUST be debugged, not worked around with np=1. Possible approaches:
-- Try cray-mpich instead of openmpi/5.0.7
-- Check RAJA CUDA+MPI interaction — Kripke uses RAJA for GPU kernels
-- Try different `--procs` decomposition (e.g., `4,1,1` instead of `2,2,1`)
-- Check if `--bind-to none` or `--oversubscribe` causes the hang
-- Run with NCCL debug logging to identify where it stalls
-- Test np=2 (minimum multi-rank) to narrow down
-
-Currently `kripke_run` is at np=1 with a hang warning. Once fixed, change to np=4.
-
-## Target Runtimes (~1 minute per app)
-
-| App | Current | Target | Action Needed |
-|-----|---------|--------|---------------|
-| Kripke | 28.4s (np=1) | ~60s (np=4) | Debug MPI hang first |
-| Laghos | 8.3s (np=4) | ~60s | Increase rs (1→2 or 3) or dim (2→3) |
-| Lulesh | 82.0s (np=8) | ~60-90s | OK as-is |
-| QS | ~35s (np=4, nSteps=10 est) | ~60s | Validate; maybe increase nSteps to 15-20 |
+- [x] Goal 0: Load state, verify compute node
+- [x] Goal 1: Fix Kripke CUDA+MPI (CHAI rebuild) — np=4 works
+- [x] Goal 2: Remove OMP_PROC_BIND/PLACES from harnesses
+- [x] Goal 3: Tune Laghos to ~60s — rs=4, tf=0.8, np=4 → 67s
+- [x] Goal 4: Verify Lulesh timing — np=8, s=150, i=5000 → 52s
+- [x] Goal 5: Recalibrate QS to ~60s — nSteps=67, np=4 → 60s
+- [x] Goal 6: Verify MPI parallelism — all 4 apps confirmed rank→GPU mapping
+- [x] Goal 7: Run nsys profiles for all 4 LLNL apps — saved to /tmp/nsys_*/
+- [x] Goal 8: Update CLAUDE.md with multi-GPU MPI requirement section
+- [x] Goal 9: Fix harness mpirun path resolution (all 4 harnesses)
+- [x] Goal 10: Fix harness LD_LIBRARY_PATH for MPI+CUDA (all 4 harnesses)
+- [x] Goal 11: Fix GPA driver API call in benchmark runner (DriverConfig)
+- [x] Goal 12: Test all 16 GPA apps — 13 pass, 3 fail (upstream issues)
+- [x] Goal 13: Commit all changes
+- [ ] Goal 14: Update setup_apps.sh with CHAI build for Kripke
+- [ ] Goal 15: Check Qwen job results (PENDING from session 42)
+- [ ] Goal 16: Submit Claude Code runs (LLNL + GPA)
 
 ## Files Modified This Session
 
-### Committed in `4ac2767e` (Multi-GPU defaults)
-- `tools/laghos_harness/bin/laghos_run` — DEFAULT_NP 1→4, GPU isolation
-- `tools/lulesh_harness/bin/lulesh_run` — DEFAULT_NP 1→8, GPU mapping formula
-- `tools/quicksilver_harness/bin/qs_run` — Weak-scaled input, fallback, timeout, header
-- `tools/kripke_harness/bin/kripke_run` — np=1 with hang warning (TEMPORARY)
-- `tools/quicksilver_harness/inputs/Coral2_P2_4.inp` — 4-rank input (nSteps=10)
-- `batch/hpc_benchmark_runner.py` — Validation timeout increase
-
-### Earlier commits this session
-- `9da240e6` — Per-rank GPU isolation
-- `319c790d` — LULESH_ROOT path fix
-- `d7b58711` — Results analysis guide, workspace cleanup
-
-## Key Decisions and Gotchas
-
-1. **Lulesh requires perfect cube ranks** — np=8 (2³) with 2 ranks per GPU. Formula: `CUDA_VISIBLE_DEVICES=$(($RANK * 4 / 8))`.
-2. **QS Coral2_P2_4 with nSteps=100 takes 349s** — Reduced to nSteps=10.
-3. **Laghos np=4 is only 8.3s** — Needs problem scaling (rs or dim increase).
-4. **`--overlap` srun gives partial GPUs** — Use `--exclusive` for validation.
-5. **QS input file in two locations** — `Quicksilver/Examples/...` (untracked) + `tools/quicksilver_harness/inputs/` (tracked). Harness checks both.
+- `tools/kripke_harness/bin/kripke_run` — _find_mpirun(), _ensure_ld_library_path(), default arch=CUDA
+- `tools/laghos_harness/bin/laghos_run` — _find_mpirun(), _ensure_ld_library_path()
+- `tools/lulesh_harness/bin/lulesh_run` — _find_mpirun(), _ensure_ld_library_path()
+- `tools/quicksilver_harness/bin/qs_run` — _find_mpirun(), _ensure_ld_library_path()
+- `tools/quicksilver_harness/inputs/Coral2_P2_4.inp` — nSteps=67 (was 8)
+- `batch/hpc_benchmark_runner.py` — Fixed _run_gpa_driver() to use DriverConfig object
+- `CLAUDE.md` — Added Multi-GPU MPI Requirements section, fixed module name
 
 ## Files to Read First Next Session
 
-1. `STATE.md` — Full project state
-2. `.planning/HANDOFF.md` — This file
-3. `tools/kripke_harness/bin/kripke_run:148-160` — Current MPI launch code (where hang occurs)
-4. `tools/quicksilver_harness/bin/qs_run:40-48,306-325` — QS weak-scaled input resolution
-5. Check Qwen jobs: `sacct -u krydzy -j 49850096,49850097,49850098,49850099`
+- `STATE.md` — Full project state
+- `CLAUDE.md` — Updated with multi-GPU section
+- `batch/hpc_benchmark_runner.py` (lines 1064-1080) — GPA driver invocation
 
-## Validation Commands (interactive)
+## Gotchas and Decisions
+
+- **GPA driver API changed**: `run_driver()` now takes `DriverConfig` object, not kwargs. Our `_run_gpa_driver()` was passing kwargs directly → `TypeError`. Fixed.
+- **GPA lavaMD bug**: `run_all()` at line 537 does `app["name"].lower() != config.app` — lowercases YAML name but not config.app. So `"lavamd" != "lavaMD"` → skip → `AppNameNotFoundError`. Upstream bug, not our fix.
+- **GPA b+tree/backprop**: C code uses K&R style (implicit int, implicit declarations) that gcc 14 treats as errors. Upstream code issue.
+- **GPA LULESH submodule**: Was empty. Initialized with `git submodule update --init LULESH` in GPA-Benchmark. Now builds/runs/validates OK, but excluded from our benchmark runner (line 888: `if app["name"].lower() != "lulesh"`).
+- **Module loading doesn't persist**: Each Bash tool call starts fresh. Must set PATH/LD_LIBRARY_PATH explicitly or use harness `_ensure_ld_library_path()`.
+- **CUDA 12.4 path**: `/opt/nvidia/hpc_sdk/Linux_x86_64/24.5/cuda/12.4` (under `24.5`, not `25.5`)
+
+## Validated Timings
+
+| App | np | Time | Correctness | Status |
+|-----|-----|------|-------------|--------|
+| Kripke | 4 | 51-55s | PASSED | OK |
+| Laghos | 4 | 67s | PASSED | OK |
+| Lulesh | 8 | 51-52s | PASSED | OK |
+| QS | 4 | 60s | PASSED | OK |
+
+## GPA App Results (via benchmark runner)
+
+| App | Status | App | Status |
+|-----|--------|-----|--------|
+| exatensor | PASS | lud | PASS |
+| xsbench | PASS | nw | PASS |
+| bfs | PASS | particlefilter | PASS |
+| gaussian | PASS | pathfinder | PASS |
+| heartwall | PASS | srad | PASS |
+| hotspot | PASS | streamcluster | PASS |
+| huffman | PASS | b+tree | BUILD FAIL |
+| backprop | BUILD FAIL | lavaMD | CONFIG ERROR |
+
+## Interactive Validation Commands
 
 ```bash
-salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 4 --account m5083
+salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m5083
 
-# QS np=4 nSteps=10 (needs validation)
-srun --exclusive --gpus=4 --ntasks=1 bash -lc '
-  module load python openmpi/5.0.7
-  cd /pscratch/sd/k/krydzy/SWE-agent
-  export QUICKSILVER_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Quicksilver
-  python3 tools/quicksilver_harness/bin/qs_run --np 4 --baseline-only --timing-runs 1
-'
+source /opt/cray/pe/lmod/lmod/init/bash && module load python cmake && module swap cray-mpich openmpi/5.0.7 && module load cudatoolkit/12.4
+source ~/envs/sweagent/bin/activate
 
-# Kripke np=4 debug (try different approaches)
-srun --exclusive --gpus=4 --ntasks=1 bash -lc '
-  module load python openmpi/5.0.7
-  cd /pscratch/sd/k/krydzy/SWE-agent
-  export KRIPKE_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Kripke
-  timeout 120 python3 tools/kripke_harness/bin/kripke_run --arch CUDA --np 4 --baseline-only
-'
+# LLNL apps
+export KRIPKE_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Kripke
+python3 tools/kripke_harness/bin/kripke_run --np 4 --baseline-only --timing-runs 1
+
+export LAGHOS_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Laghos
+python3 tools/laghos_harness/bin/laghos_run --np 4 --baseline-only --timing-runs 1
+
+export LULESH_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Lulesh/cuda
+python3 tools/lulesh_harness/bin/lulesh_run --np 8 --baseline-only --timing-runs 1
+
+export QUICKSILVER_ROOT=/pscratch/sd/k/krydzy/SWE-agent/Quicksilver
+python3 tools/quicksilver_harness/bin/qs_run --np 4 --baseline-only --timing-runs 1
+
+# GPA apps (use default CUDA 12.9, NOT cudatoolkit/12.4)
+cd /pscratch/sd/k/krydzy/GPA-Benchmark
+python3 -m gpa_bench_driver --app bfs --sm-version 80 --no-sanitize --no-progress -l INFO
 ```
-
-## Pending SLURM Jobs
-- Qwen LLNL: 49850096-99 (PENDING)
-- Qwen GPA: 49850130-35 (PENDING)

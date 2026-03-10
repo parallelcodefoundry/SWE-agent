@@ -1,105 +1,115 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-03-09 (session 42, continued)
+Last updated: 2026-03-09 (session 44)
 
-## Last Session (Session 42 continued)
+## Last Session (Session 44)
 
-### Multi-GPU Harness Migration
+Continued session 43's multi-GPU characterization work. Key accomplishments:
 
-Migrated all LLNL harnesses to multi-GPU defaults per user requirement ("we are optimizing all of parallel HPC code performance"). Validated on 4x A100 (job 49852912, nid001165).
+### Harness MPI Robustness (all 4 harnesses)
+- Added `_find_mpirun()` — resolves mpirun to absolute path with Perlmutter fallback
+- Added `_ensure_ld_library_path()` — ensures libfabric, CUDA, OpenMPI libs available for MPI-launched processes
+- Fixed kripke_run default `--arch` from OpenMP to CUDA
 
-| App | np | Baseline Time | Status | Notes |
-|-----|-----|--------------|--------|-------|
-| Laghos | 4 | 8.3s | PASSED | Per-rank GPU isolation added |
-| Lulesh | 8 | 82.0s | PASSED | 2 ranks/GPU, `$RANK*4/8` formula |
-| QS | 4 | ~35s (est) | PASSED | nSteps reduced 100→10 after 349s initial |
-| Kripke | 1 | 28.4s | N/A | np>1 hangs with OpenMPI 5.0.7, stays np=1 |
+### QS Recalibration
+- nSteps=67 in Coral2_P2_4.inp (was 8) → 59.7s at np=4 (validated)
+- Updated both `tools/quicksilver_harness/inputs/` and `Quicksilver/Examples/.../` copies
 
-**Key changes:**
-- `laghos_run`: DEFAULT_NP 1→4, per-rank GPU isolation
-- `lulesh_run`: DEFAULT_NP 1→8 (2³ cube), per-rank GPU isolation with `num_gpus=4` formula
-- `qs_run`: Weak-scaled Coral2_P2_4 input (nSteps=10), timeout 300→600s, HARNESS_INPUTS_DIR fallback, dynamic header
-- `kripke_run`: Confirmed np>1 hang, reverted to np=1 with warning in help text
-- `hpc_benchmark_runner.py`: Validation timeout 600→900 base, 120→180 per extra run
-- `tools/quicksilver_harness/inputs/Coral2_P2_4.inp`: New 4-rank weak-scaled input
+### GPA Benchmark Testing (via benchmark runner flow)
+- Fixed `_run_gpa_driver()` — GPA driver API changed to require `DriverConfig` object, not kwargs
+- Initialized GPA LULESH submodule (`git submodule update --init LULESH`)
+- Tested all 16 GPA apps through benchmark runner's `_run_gpa_driver()`:
 
-**History note:** Lulesh np=8 was originally in the codebase pre-session 29. Session 29 changed it to np=1 for single-GPU characterization. This session restores it.
+| App | Status | Notes |
+|-----|--------|-------|
+| exatensor | PASS | |
+| xsbench | PASS | |
+| bfs | PASS | |
+| gaussian | PASS | |
+| heartwall | PASS | |
+| hotspot | PASS | |
+| huffman | PASS | |
+| lud | PASS | |
+| nw | PASS | |
+| particlefilter | PASS | |
+| pathfinder | PASS | |
+| srad | PASS | |
+| streamcluster | PASS | |
+| b+tree | BUILD FAIL | gcc 14 strict: implicit declarations, incompatible pointer types |
+| backprop | BUILD FAIL | gcc 14 strict: K&R style C, implicit int/declarations |
+| lavaMD | CONFIG ERROR | GPA driver bug: `run_all()` compares `app["name"].lower()` with `config.app` (not lowered) |
 
-### Previous work this session (before context reset)
-- gptoss120b LLNL results analysis (0 meaningful speedups across 24 runs)
-- GPA agent launch bug fix committed
-- Workspace auto-cleanup added
-- GPA-Benchmark upstream merge
-- LULESH_ROOT path fix (cuda/ subdir)
-- Results analysis guide (agent_docs/results-analysis.md)
-- CLAUDE.md updated (bash vs sbatch)
-- Batch results cleaned (21GB → 181MB)
+**GPA requirements**: Default CUDA 12.9 (NOT cudatoolkit/12.4). Driver auto-detects via `nvcc` in PATH.
+
+### CLAUDE.md Updated
+- Added Multi-GPU MPI Requirements section with timing table
+- Fixed module name: `cuda/12.4` → `cudatoolkit/12.4`
+
+### Nsys Profiles Completed (all 4 LLNL apps)
+Profiles saved to `/tmp/nsys_{kripke,laghos,lulesh,qs}/` with summary.txt and cuda_kern_summary.txt.
+
+## Validated LLNL App Timings (4x A100)
+
+| App | np | Parameters | Time | Correctness |
+|-----|-----|-----------|------|-------------|
+| Kripke | 4 | zones=64³, groups=64, niter=60, quad=8 | 51-55s | PASSED |
+| Laghos | 4 | p1, dim=2, rs=4, tf=0.8, -pa -d cuda | 67s | PASSED |
+| Lulesh | 8 | s=150, i=5000 | 51-52s | PASSED |
+| QS | 4 | Coral2_P2_4.inp, nSteps=67 | 60s | PASSED |
 
 ## Active Experiments
 
-### Qwen LLNL (session 42, resubmitted correctly with `bash`)
-| Job ID | Framework | Model | Nodes | Status |
-|--------|-----------|-------|-------|--------|
-| 49850096 | sweagent | Qwen/Qwen3-Coder-Next-FP8 | 5 | PENDING |
-| 49850097 | codex | Qwen/Qwen3-Coder-Next-FP8 | 5 | PENDING |
-| 49850098 | opencode | Qwen/Qwen3-Coder-Next-FP8 | 5 | PENDING |
-| 49850099 | openhands | Qwen/Qwen3-Coder-Next-FP8 | 5 | PENDING |
+### Qwen LLNL (session 42, still pending)
+| Job ID | Framework | Status |
+|--------|-----------|--------|
+| 49850098 | opencode | PENDING |
+| 49850099 | openhands | PENDING |
 
-### Qwen GPA (session 42)
-| Job ID | Framework | Model | Nodes | Status |
-|--------|-----------|-------|-------|--------|
-| 49850130 | sweagent | Qwen/Qwen3-Coder-Next-FP8 | 2 | PENDING |
-| 49850133 | codex | Qwen/Qwen3-Coder-Next-FP8 | 2 | PENDING |
-| 49850134 | opencode | Qwen/Qwen3-Coder-Next-FP8 | 2 | PENDING |
-| 49850135 | openhands | Qwen/Qwen3-Coder-Next-FP8 | 2 | PENDING |
-
-### Previous Qwen (session 41) — FAILED
-Jobs 49653981-84 all failed: `sbatch` bypassed self-submit → 1 node instead of 5.
-
-### gptoss120b GPA (jobs 49641361-63) — NOT USEFUL
-Agent never launched (GPA bug). All patches 0/0. No signal.
+### Qwen GPA (session 42, still pending)
+| Job ID | Framework | Status |
+|--------|-----------|--------|
+| 49850130 | sweagent | PENDING |
+| 49850133 | codex | PENDING |
+| 49850134 | opencode | PENDING |
+| 49850135 | openhands | PENDING |
 
 ## Branch State
 
 - **Current branch**: `dev`
-- **Latest commit**: `4ac2767e` — Multi-GPU defaults for LLNL harnesses, validated on 4x A100
+- **Latest commit**: `0608c8d7` — WIP: Session 43-44 harness MPI robustness, GPA driver fix, QS recalibration
 
-## Infrastructure Bugs Found (session 42)
+## Infrastructure Bugs Found
 
-| Bug | Framework | Severity | Status |
-|-----|-----------|----------|--------|
-| vLLM harmony_utils Pydantic content mismatch | OpenHands | CRITICAL | Open — blocks all OpenHands+gptoss120b |
-| SWE-agent `_state_anthropic` 25s timeout | SWE-agent | HIGH | Open — kills QS runs |
-| Kripke np>1 MPI hang with OpenMPI 5.0.7 | Kripke | **CRITICAL** | Must debug — all apps must run multi-GPU |
-| gptoss120b weak at function calling | SWE-agent | MEDIUM | Model limitation |
-| Build artifacts in git patch (634K lines) | SWE-agent | MEDIUM | .gitignore not effective |
-| nsys_profile argument parsing fragile | OpenCode | LOW | Open |
-| .gitignore-only patch triggers false "success" | All | LOW | Open |
-
-## Persistent Issues
-- [ ] **Kripke MPI hang MUST BE FIXED** — np>1 hangs with OpenMPI 5.0.7 at transport sweep. All apps must run multi-GPU.
-- [ ] **Laghos np=4 very fast (8.3s)** — May be too short for agents to measure meaningful speedups; consider increasing rs
-- [ ] **Lulesh np=8 slow (82s)** — MPI overhead on small problem; acceptable but consider tuning
-- [ ] **QS np=4 nSteps=10 not yet validated** — Estimated ~35s, needs compute node confirmation
-- [ ] **Codex gpt-4.1-mini single-turn exit** — Model exits with needs_follow_up=false
-- [ ] **OpenHands+gptoss120b Pydantic crash** — vLLM harmony_utils content format bug
+| Bug | Severity | Status |
+|-----|----------|--------|
+| Kripke CHAI required for CUDA+MPI | CRITICAL | **FIXED** (session 43) |
+| OMP_PROC_BIND=spread in harnesses | HIGH | **FIXED** (session 43) |
+| GPA driver API: run_driver() takes DriverConfig | HIGH | **FIXED** (session 44) |
+| Harness mpirun path resolution | HIGH | **FIXED** (session 44) |
+| Harness LD_LIBRARY_PATH for MPI+CUDA | HIGH | **FIXED** (session 44) |
+| QS nSteps recalibration | HIGH | **FIXED** (session 44) — nSteps=67 |
+| GPA b+tree build fail (gcc14) | LOW | Open — upstream C code issue |
+| GPA backprop build fail (gcc14) | LOW | Open — upstream C code issue |
+| GPA lavaMD config error | LOW | Open — case sensitivity bug in GPA driver |
+| vLLM harmony_utils Pydantic crash | CRITICAL | Open — blocks OpenHands+gptoss120b |
+| SWE-agent `_state_anthropic` 25s timeout | HIGH | Open |
 
 ## Recent Decisions
 
-- 2026-03-09 (s42): Multi-GPU defaults: Laghos np=4, QS np=4, Lulesh np=8, Kripke np=1
-- 2026-03-09 (s42): Kripke np>1 MPI hang confirmed — MUST debug (not keep at np=1), all apps must run full node
-- 2026-03-09 (s42): QS Coral2_P2_4 nSteps reduced 100→10 (349s too slow)
-- 2026-03-09 (s42): Always use `bash batch/run_benchmark.sh`, never `sbatch` directly
-- 2026-03-09 (s42): Auto-cleanup workspaces after patch extraction
-- 2026-03-04 (s41): Switch SLURM account from m2404 to m5083
+- 2026-03-09 (s44): GPA driver `run_driver()` API changed — must use `DriverConfig` object
+- 2026-03-09 (s44): GPA LULESH submodule initialized — builds/runs/validates OK
+- 2026-03-09 (s44): GPA `no_sanitize=True` added — skip compute-sanitizer for faster runs
+- 2026-03-09 (s44): b+tree/backprop failures are upstream gcc14 issues, not our problem
+- 2026-03-09 (s44): lavaMD failure is GPA driver bug (case-insensitive compare), not our problem
+- 2026-03-09 (s43): Kripke requires ENABLE_CHAI=ON for CUDA+MPI
+- 2026-03-09 (s43): Remove OMP_PROC_BIND/PLACES from harnesses
+- 2026-03-09 (s43): Laghos rs=4, tf=0.8 gives ~67s at np=4
+- 2026-03-09 (s43): Kripke zones=64³, niter=60 gives ~55s at np=4
 
 ## Next Steps
 
-1. **DEBUG Kripke np>1 MPI hang** — All apps must run multi-GPU. Try cray-mpich, different decomposition, RAJA debug
-2. **Validate QS np=4 nSteps=10** — Confirm ~35s runtime on compute node
-3. **Scale Laghos problem** — 8.3s at np=4 too short for benchmarking; target ~60s (try rs=2 or dim=3)
-4. **Tune QS nSteps** — If 10 gives ~35s, try 15-20 to hit ~60s target
-5. **Check Qwen LLNL+GPA results** when 49850096-99, 49850130-35 complete
-6. **Fix OpenHands+gptoss120b Pydantic crash** — vLLM harmony_utils content format
-7. **Fix SWE-agent _state_anthropic timeout** for long-running apps
-8. **Submit Claude Code runs** (LLNL + GPA) — uses Anthropic API, no vLLM needed
+1. **Check Qwen job results** (still PENDING from session 42)
+2. **Submit Claude Code runs** (LLNL + GPA)
+3. **Update setup_apps.sh** to build Kripke with CHAI
+4. **Fix GPA broken apps** if needed — b+tree/backprop need gcc flags fix, lavaMD needs driver fix
+5. **Design: agent access to OMP/env settings** — Direct mode or wrapper script approach

@@ -57,17 +57,21 @@ python -m gpa_bench_driver --app gaussian -t /tmp/mydir       # custom temp dir 
 ## Programmatic API
 
 ```python
-from gpa_bench_driver import run_driver
+from gpa_bench_driver.gpa_bench_driver import run_driver
+from gpa_bench_driver.driver_src.driver_models import DriverConfig
 
-results, operations, long_results = run_driver(
+# run_driver() takes a DriverConfig object (NOT **kwargs — API changed 2026-03)
+config = DriverConfig(
     app="xsbench",
+    sm_version=80,
     nsys=True,
     num_samples=5,
     output_file="results.json",
+    no_sanitize=True,              # skip compute-sanitizer for faster runs
     timeout=300,                   # subprocess timeout (seconds, default 300)
     subprocess_output_char_limit=25000,  # truncate long output
-    swaps_override={"xsbench": {"target.cu": "optimized code string"}},
 )
+results, operations, long_results = run_driver(config)
 # results: Dict[str, AppResults] — per-app summary (baseline timing, swap timing, speedup)
 # operations: List[Operation] — what was done (BUILD, RUN, VALIDATE, SWAP_*, etc.)
 # long_results: Dict[str, List[DriverPassResult]] — detailed per-pass results with stdout/stderr
@@ -125,9 +129,14 @@ bash batch/run_benchmark.sh --gpa --base
 
 The runner handles `sys.path` setup, `os.chdir()` to GPA root, workspace creation for agent mode, and result collection via `run_driver()` API.
 
-## Validation Status (Perlmutter A100)
+## Validation Status (Perlmutter A100, session 44)
 
-16/16 active apps PASS in base mode. (lulesh excluded — empty `LULESH/` dir upstream.)
+13/16 active apps PASS via benchmark runner. 3 failures are upstream issues:
+- **b+tree**: gcc 14 strict mode rejects K&R C (implicit declarations, incompatible pointer types)
+- **backprop**: gcc 14 strict mode rejects implicit int/declarations
+- **lavaMD**: GPA driver bug — `run_all()` lowercases YAML name but not `config.app`, so `"lavamd" != "lavaMD"`
+
+LULESH submodule now initialized (`git submodule update --init LULESH`) but excluded from benchmark runner.
 
 ## Timing & Measurement
 
@@ -163,8 +172,8 @@ Successful optimization pattern: **shared memory caching** of point-x coordinate
 - **Missing rodinia data**: Run `bash get_data.sh`
 - **V100 speedups != A100**: README results are V100. Re-baseline on A100
 - **Force rebuild**: Driver uses `make -B` to always rebuild (prevents stale binaries)
-- **lavaMD case sensitivity**: Fixed upstream — `get_canonical_app_name()` handles aliases
-- **lulesh excluded**: Empty `LULESH/` directory in GPA-Benchmark repo — excluded from active apps
+- **lavaMD case sensitivity**: NOT fixed — `run_all()` lowercases YAML name but not config.app. Workaround: none from our side; upstream bug.
+- **lulesh excluded**: Submodule now initialized but excluded from benchmark runner (line 888 filter)
 - **CUDA 13 deprecation**: Fixed upstream (`eccb4a1`) — `cudaThreadSynchronize()` → `cudaDeviceSynchronize()`, missing `-arch sm_XX` added to all Rodinia Makefiles
 - **SubprocessRunner API change**: Internal driver functions now take `runner: SubprocessRunner` instead of `env: dict`. Our `run_driver()` call is unaffected.
 
