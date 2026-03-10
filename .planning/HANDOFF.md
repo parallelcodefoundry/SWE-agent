@@ -1,83 +1,121 @@
-# Handoff — Session 46
+# Handoff — Session 47
 
 Last updated: 2026-03-10
 
 ## What We Were Implementing and Why
 
-Session 46 focused on:
-1. Downloading and verifying tool calling for the remaining 2 Qwen models (3.5-27B, 3.5-122B)
-2. Profiling LLNL apps to confirm optimization potential (not initialization-dominated)
-3. Fixing `--build-mode direct` for SWE-agent and GPA prompts
-4. Submitting comprehensive benchmark runs across all models/frameworks
+Session 47 analyzed ALL 26 benchmark jobs submitted in session 46. The goal was to understand why nearly everything failed (only Claude Code got 3/20 successes) and fix what we could.
 
 ## Approach Chosen
 
-- Downloaded models via `huggingface_hub.snapshot_download()` to `/pscratch/sd/k/krydzy/hf-cache`
-- Tested tool calls via `podman-hpc run` vLLM containers with `--tool-call-parser qwen3_coder`
-- Profiled with `nsys_profile` tool (our wrapper around nsys)
-- Fixed prompt generation to properly support `build_mode="direct"`
-- Submitted all 26 jobs via `env -u SLURM_JOB_ID bash batch/run_benchmark.sh` pattern (unset SLURM vars so self-submit logic triggers from compute node)
+- Launched 4 parallel analysis agents to investigate different failure categories
+- Manually traced agent logs for SWE-agent, Codex, and OpenCode to identify exact failure points
+- GPA analysis agent both diagnosed AND fixed the CUDA 12.9 issue
+- Cancelled 10 pending jobs to save node-hours
 
 ## Goal Progress
 
-- [x] Goal 0: Load state, verify compute node
-- [x] Goal 1: Download Qwen3.5-27B-FP8 (31GB)
-- [x] Goal 2: Download Qwen3.5-122B-A10B-FP8 (127GB)
-- [x] Goal 3: Test Qwen3.5-27B-FP8 tool calling — PASS
-- [x] Goal 4: Test Qwen3.5-122B-A10B-FP8 tool calling — PASS (Marlin FP8 fallback on A100)
-- [x] Goal 5: Profile Lulesh — 10+ kernels, well-distributed, good for benchmark
-- [x] Goal 6: Profile Kripke — RAJA kernels dominate, memcpy overhead, good for benchmark
-- [x] Goal 7: Profile Laghos — 100K+ tiny MFEM kernels, sync overhead, good for benchmark
-- [x] Goal 8: Fix --build-mode direct for SWE-agent LLNL prompts (missing build_mode param)
-- [x] Goal 9: Fix --build-mode direct API for GPA prompts
-- [x] Goal 10: Verify prompt fixes (all tests passed)
-- [x] Goal 11: Submit Claude Code benchmark (job 49878379, 5 nodes)
-- [x] Goal 12: Submit Codex benchmark (job 49878383, 4 nodes)
-- [x] Goal 13: Submit Qwen3-Coder-Next-FP8 (8 jobs: 49878446,454-456,460-463)
-- [x] Goal 14: Submit Qwen3.5-27B-FP8 (8 jobs: 49878468-479)
-- [x] Goal 15: Submit Qwen3.5-122B-A10B-FP8 (8 jobs: 49878520-529)
-- [x] Goal 16: Commit and save state
-- [ ] Goal 17: Monitor and analyze benchmark results (NEXT SESSION)
+- [x] Goal 0: Load state, check job status
+- [x] Goal 1: Identify and categorize all failure modes across 17 completed jobs
+- [x] Goal 2: Analyze Claude Code results (3/4 LLNL success: Kripke 2.03x, Laghos 1.30x, QS 1.70x)
+- [x] Goal 3: Diagnose Codex+Qwen XML tool format mismatch (`<tool_call>` XML not parsed by Responses API)
+- [x] Goal 4: Diagnose OpenCode+Qwen (same XML + `gpt-5-nano` 404)
+- [x] Goal 5: Diagnose SWE-agent+Qwen analysis paralysis (196 steps, 182 views, 0 edits)
+- [x] Goal 6: Diagnose Codex+external missing `--model-name` → bogus `http://external:0/v1` URL
+- [x] Goal 7: Fix GPA CUDA 12.9 build failure (13/16 apps now work)
+- [x] Goal 8: Cancel pending 122B jobs (10 jobs, ~60 node-hours saved)
+- [x] Goal 9: Create `.planning/RESULTS-TRACKING-S46.md` tracking file
+- [x] Goal 10: Add `--model-name` and GPA separation rules to CLAUDE.md
+- [x] Goal 11: Commit and save state
+- [ ] Goal 12: Fix SWE-agent+Qwen parse mode (NEXT SESSION)
+- [ ] Goal 13: Fix Codex/OpenCode+Qwen tool format (NEXT SESSION)
+- [ ] Goal 14: Add MPI warning to prompts (NEXT SESSION)
+- [ ] Goal 15: Re-submit fixed runs (NEXT SESSION)
 
 ## Files Modified This Session
 
-- `batch/frameworks/prompt.py` — Added `build_mode` param to `build_sweagent_prompts()` (line 398) and `build_gpa_prompt()` (line 567). Updated SWE-agent prompts to use DIRECT_BUILD_INSTRUCTIONS when `build_mode="direct"`.
-- `batch/frameworks/sweagent.py` — Pass `self.build_mode` at line 77
-- `batch/frameworks/base.py` — Pass `self.build_mode` to `build_gpa_prompt()` at line 400
+- `batch/hpc_benchmark_runner.py:1057-1094` — GPA CUDA 12.9 fix: detect correct cuda_home, set CUDA_HOME env, prepend to PATH, pass to DriverConfig
+- `batch/run_benchmark.sh:837-846` — GPA module fix: explicit `module unload cudatoolkit; module load cudatoolkit/12.9` for GPA sruns
+- `CLAUDE.md:89-90` — Added rules #9 (`--model-name` with `--external-model`) and #10 (separate LLNL/GPA jobs)
+- `.planning/RESULTS-TRACKING-S46.md` — Created: full failure analysis with per-job root causes
 
 ## Files to Read First Next Session
 
-- `STATE.md` — Full project state with job table
-- `batch_results/` — Check for completed job outputs (look for dirs matching job IDs 49878*)
-- `squeue -u krydzy` — Check job status
+- `.planning/RESULTS-TRACKING-S46.md` — Complete failure analysis (read first to remember all 6 root causes)
+- `batch/frameworks/sweagent.py` — SWE-agent launcher, may need `parse_function` changes for Qwen
+- `batch/frameworks/codex.py:28-77` — `_build_config_flags()` with 3-branch model routing (first-party/external/local-vLLM)
+- `batch/frameworks/opencode.py` — OpenCode launcher, check if title gen model is configurable
+- `batch/frameworks/prompt.py:~200-400` — Prompt templates, need to add MPI warning for Lulesh
+- `config/hpc/llnl_base.yaml` — SWE-agent YAML template with `parse_function: type: function_calling`
 
 ## Gotchas and Decisions
 
-- **Submitting from inside salloc** — Must `env -u SLURM_JOB_ID -u SLURM_JOB_NUM_NODES -u SLURM_NODELIST bash batch/run_benchmark.sh ...` to trigger self-submit. Otherwise script sees SLURM_JOB_ID, thinks it's already in a job, and fails with "Need N nodes but only have 1".
-- **Flag is `--model-name` not `--model`** — `batch/run_benchmark.sh` uses `--model-name` for the vLLM model. `--model` is not a valid option.
-- **Laghos uses single-dash flags** — `-dim 2 -rs 4 -tf 0.8` NOT `--dim 2 --rs 4 --tf 0.8`. Double-dash causes help text and no CUDA kernels.
-- **QS nsys profiling timed out** — Didn't complete within reasonable time. Profiled 3/4 apps which was sufficient to validate optimization potential.
-- **122B MoE FP8 on A100** — Warning "GPU does not have native support for FP8 computation". Uses Marlin kernel (weight-only FP8 decompression). Works but slower inference. A100 is compute 8.0, native FP8 needs 8.9+.
-- **Qwen3.5-27B-FP8 and 3.5-122B-A10B-FP8 were NOT previously cached** — STATE.md had "Cached: Yes" but they weren't actually downloaded. Fixed in this session.
-- **GPA build_mode=direct doesn't change behavior** — GPA apps use `gpa_test` driver for build+run+validation in all modes. The driver IS the only way to validate correctness.
+- **SWE-agent `parse_function: function_calling` DOES work for Qwen** — tool calls (bash, str_replace_editor/view) all execute correctly. The problem is purely behavioral: the model never chooses to call `str_replace` (edit). The "does not support function calling" warning at startup is a false positive (SWE-agent checks model name against a hardcoded list).
+- **Codex uses `wire_api=responses` exclusively** — `wire_api=chat` is explicitly commented as "no longer supported" in codex.py. This means vLLM's `qwen3_coder` parser (which works on `/v1/chat/completions`) may not apply to the Responses API endpoint.
+- **OpenCode tries `gpt-5-nano` for title gen** — Hardcoded small model call. When vLLM only serves Qwen, this 404s and kills the session after 1 step.
+- **Qwen outputs `<tool_call><function=name>` XML in Codex/OpenCode** — This is the raw Qwen tool call format. In SWE-agent (via `/v1/chat/completions` + `qwen3_coder` parser), vLLM intercepts this and returns proper `tool_calls` JSON. In Codex/OpenCode (via `/v1/responses`), it passes through as plain text.
+- **Claude Code Lulesh: agent set `USE_MPI ?= 0`** — Makefile already has `# MPI enabled by default for multi-GPU execution (8 ranks = 2x2x2 on 4 GPUs)` comment, but agent ignored it. Prompt needs explicit "DO NOT disable MPI".
+- **GPA CUDA fix tested on login node only** — Login nodes have different CUDA/gcc than compute nodes. Need to validate on compute node with `salloc`.
 
-## Job Monitoring Commands
+## Specific Next-Session Investigation Tasks
 
+### Task A: SWE-agent + Qwen Parse Mode (use subagent)
+**Goal**: Determine if changing `parse_function` helps Qwen produce edits.
+**Files**: `config/hpc/llnl_base.yaml`, SWE-agent docs at `docs/usage/cl_tutorial.md`
+**Approach**:
+1. Check SWE-agent source for available `parse_function` types — is `thought_action` an option?
+2. Try a quick interactive test: run SWE-agent on a single app (e.g., lulesh) with `thought_action` parse mode
+3. If that doesn't help, try adding explicit "YOU MUST USE str_replace_editor command=str_replace TO EDIT FILES" to system prompt
+4. Consider if the issue is that Qwen's `<tool_call>` XML is being parsed correctly but the model genuinely can't/won't edit HPC code
+
+### Task B: Codex/OpenCode + Qwen Responses API (use subagent)
+**Goal**: Determine if Codex/OpenCode can work with Qwen at all.
+**Files**: `batch/frameworks/codex.py`, `batch/frameworks/opencode.py`
+**Approach**:
+1. Check if vLLM supports tool call parsing on `/v1/responses` endpoint (read vLLM docs/source)
+2. If not, Codex+Qwen is fundamentally broken and should be dropped
+3. For OpenCode: check if the title gen model is configurable (env var? config option?)
+4. Check if OpenCode can use `/v1/chat/completions` instead of `/v1/responses`
+
+### Task C: Add MPI Warning to Prompts
+**Goal**: Prevent agents from disabling MPI.
+**Files**: `batch/frameworks/prompt.py`
+**Approach**: Add to all LLNL prompt templates:
+```
+CRITICAL: Do NOT disable MPI. The validation harness runs with mpirun -np N.
+Disabling MPI (e.g., USE_MPI=0) will cause segfaults during validation.
+```
+
+### Task D: Validate GPA Fix on Compute Node
+**Goal**: Confirm GPA CUDA 12.9 fix works on actual compute nodes.
+**Approach**:
 ```bash
-# Check all benchmark jobs
-squeue -u krydzy --sort=i -o "%.10i %.10P %.35j %.2t %.8M %.6D %R" | grep -v "mcqa"
+salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 4 --account m5083
+# Then test:
+source ~/envs/sweagent/bin/activate
+module load python cmake openmpi/5.0.7
+module load cudatoolkit/12.9
+python3 batch/hpc_benchmark_runner.py --base --app gpa --framework claude --skip-vllm
+```
 
-# Check specific job
-sacct -j 49878379 --format=JobID,JobName,State,ExitCode,Elapsed
+### Task E: Re-submit Corrected Runs
+**Goal**: Get real benchmark data.
+**Submission plan** (separate LLNL and GPA):
+```bash
+# Claude Code LLNL (no profiling)
+bash batch/run_benchmark.sh --base --build-mode direct --framework claude --kripke --laghos --lulesh --quicksilver
 
-# Check results directory for completed job
-ls batch_results/*49878379*/
+# Claude Code LLNL (with profiling)
+bash batch/run_benchmark.sh --base --build-mode direct --framework claude --kripke --laghos --lulesh --quicksilver --profiling with_profiling
 
-# Quick results summary for all completed jobs
-for d in batch_results/*_4987*; do
-  echo "=== $(basename $d) ==="
-  cat "$d"/summary.json 2>/dev/null | python3 -m json.tool | head -20
-done
+# Claude Code GPA (separate)
+bash batch/run_benchmark.sh --base --build-mode direct --framework claude --gpa
+
+# Codex + gpt-5.3-codex (with correct --model-name)
+bash batch/run_benchmark.sh --base --build-mode direct --framework codex --external-model --model-name gpt-5.3-codex --kripke --laghos --lulesh --quicksilver
+
+# SWE-agent + Qwen (only if Task A shows parse mode fix works)
+bash batch/run_benchmark.sh --base --build-mode direct --framework sweagent --model-name Qwen/Qwen3-Coder-Next-FP8 --kripke --laghos --lulesh --quicksilver
 ```
 
 ## Interactive Validation Commands
@@ -85,23 +123,23 @@ done
 ```bash
 salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m5083
 
-source /opt/cray/pe/lmod/lmod/init/bash && module load python cmake && module swap cray-mpich openmpi/5.0.7 && module load cudatoolkit/12.4
+# Module setup
+source /opt/cray/pe/lmod/lmod/init/bash
+module load python cmake openmpi/5.0.7
 source ~/envs/sweagent/bin/activate
 
-# Quick vLLM tool call test for any model
-export HF_HOME=/pscratch/sd/k/krydzy/hf-cache
-podman-hpc run --rm --gpu --net host --ipc=host \
-  -e HF_HOME -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
-  -v "${HF_HOME}:${HF_HOME}" \
-  docker.io/vllm/vllm-openai:nightly \
-  --model "Qwen/Qwen3.5-27B-FP8" \
-  --host 0.0.0.0 --port 8008 \
-  --tensor-parallel-size 4 --gpu-memory-utilization 0.60 \
-  --download-dir "${HF_HOME}" \
-  --tool-call-parser qwen3_coder --enable-auto-tool-choice --enforce-eager
+# Quick GPA validation (compute node)
+module load cudatoolkit/12.9
+python3 -c "
+from pathlib import Path
+import sys; sys.path.insert(0, '/pscratch/sd/k/krydzy/GPA-Benchmark')
+from gpa_bench_driver.gpa_bench_driver import run_driver
+from gpa_bench_driver.driver_src.driver_models import DriverConfig
+config = DriverConfig(app='hotspot', sm_version=80, cuda_home=Path('/opt/nvidia/hpc_sdk/Linux_x86_64/25.5/cuda/12.9'), no_sanitize=True)
+result = run_driver(config)
+print(f'Result: {result}')
+"
 
-# Then test:
-curl -s http://localhost:8008/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"Qwen/Qwen3.5-27B-FP8","messages":[{"role":"user","content":"Run ls"}],"tools":[{"type":"function","function":{"name":"bash","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}}}],"max_tokens":256}' | python3 -m json.tool
+# Quick SWE-agent parse mode test
+# (after changing config/hpc/llnl_base.yaml parse_function type)
 ```
