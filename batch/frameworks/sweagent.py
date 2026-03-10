@@ -74,7 +74,7 @@ class SweAgentLauncher(FrameworkLauncher):
         from batch.frameworks.prompt import build_sweagent_prompts, APP_TOOLS
 
         # Generate prompts from shared prompt builder
-        prompts = build_sweagent_prompts(repo_name, str(workspace), self.profiling)
+        prompts = build_sweagent_prompts(repo_name, str(workspace), self.profiling, self.build_mode)
 
         # Read base YAML template
         base_config_path = self.sweagent_root / "config/hpc/llnl_base.yaml"

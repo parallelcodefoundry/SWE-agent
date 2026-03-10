@@ -405,6 +405,7 @@ class FrameworkLauncher(ABC):
                 kernel_name=metadata["kernel_name"],
                 kernel_source=kernel_source,
                 profiling=self.profiling,
+                build_mode=self.build_mode,
             )
 
         from batch.frameworks.prompt import build_prompt

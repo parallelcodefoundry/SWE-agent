@@ -399,6 +399,7 @@ def build_sweagent_prompts(
     repo_name: str,
     workspace: str,
     profiling: str = "no_profiling",
+    build_mode: str = "harness",
 ) -> dict:
     """Build SWE-agent system_template and instance_template from shared constants.
 
@@ -406,6 +407,7 @@ def build_sweagent_prompts(
         repo_name: "kripke", "laghos", "lulesh", or "quicksilver"
         workspace: Absolute path (will use {{working_dir}} Jinja2 variable)
         profiling: "no_profiling" or "with_profiling"
+        build_mode: "harness" (tools handle build) or "direct" (agent builds manually)
 
     Returns:
         Dict with "system_template" and "instance_template" strings.
@@ -434,8 +436,15 @@ CRITICAL ARCHITECTURE REQUIREMENT:
 CRITICAL BUILD REQUIREMENT:
 - The application is PRE-BUILT with CUDA for A100 GPUs. Run {run_cmd} --baseline-only first to get a baseline measurement before making any changes."""
 
-    # Build requirement section (common to all)
-    build_req = f"""
+    # Build requirement section (depends on build mode)
+    if build_mode == "direct":
+        build_req = f"""
+- You MUST rebuild after EVERY source code edit before testing
+- Source changes have NO effect until you rebuild
+- Do NOT skip rebuilding - your changes will not be applied otherwise
+- See BUILD INSTRUCTIONS below for how to compile"""
+    else:
+        build_req = f"""
 - You MUST run {build_cmd} after EVERY source code edit before testing
 - Source changes have NO effect until you rebuild
 - Do NOT skip rebuilding - your changes will not be applied otherwise
@@ -475,7 +484,10 @@ Reasoning: high"""
     # Workflow steps
     workflow_lines = []
     step = 1
-    workflow_lines.append(f"{step}. {run_cmd} --baseline-only - Get baseline timing BEFORE making any changes")
+    if build_mode == "direct":
+        workflow_lines.append(f"{step}. Build the application (see BUILD INSTRUCTIONS below) and run {run_cmd} --baseline-only for baseline")
+    else:
+        workflow_lines.append(f"{step}. {run_cmd} --baseline-only - Get baseline timing BEFORE making any changes")
     step += 1
     if profiling == "with_profiling":
         workflow_lines.append(f"{step}. nsys_profile / ncu_profile / hpc_profile - Profile to identify hotspots")
@@ -487,7 +499,10 @@ Reasoning: high"""
     step += 1
     workflow_lines.append(f"{step}. Edit source files to optimize")
     step += 1
-    workflow_lines.append(f"{step}. {build_cmd} - REBUILD (required after every edit!)")
+    if build_mode == "direct":
+        workflow_lines.append(f"{step}. Rebuild (changes have NO effect until rebuilt)")
+    else:
+        workflow_lines.append(f"{step}. {build_cmd} - REBUILD (required after every edit!)")
     step += 1
     workflow_lines.append(f"{step}. {run_cmd} - Measure improvement AND verify correctness")
     step += 1
@@ -524,14 +539,30 @@ FILES TO EDIT: {APP_KEY_FILES[repo_name]}"""
 
     # Kripke-specific critical note
     if repo_name == "kripke":
-        critical = """
+        if build_mode == "direct":
+            critical = """
+CRITICAL:
+- Always use --arch CUDA (not OpenMP!) for runs
+- Always rebuild after editing source files!
+- If a build fails, carefully analyze the error before making changes
+- Do NOT add flags like -fno-exceptions or -fno-rtti (breaks RAJA/CAMP)"""
+        else:
+            critical = """
 CRITICAL:
 - Always use --arch CUDA (not OpenMP!) for builds and runs
 - Always rebuild with kripke_build --arch CUDA after editing source files!
 - If a build fails, carefully analyze the error before making changes
 - Do NOT add flags like -fno-exceptions or -fno-rtti (breaks RAJA/CAMP)"""
     else:
-        critical = f"\nCRITICAL: Always rebuild with {build_cmd} after editing source files!"
+        if build_mode == "direct":
+            critical = "\nCRITICAL: Always rebuild after editing source files!"
+        else:
+            critical = f"\nCRITICAL: Always rebuild with {build_cmd} after editing source files!"
+
+    # Build instructions section for direct mode
+    build_instructions = ""
+    if build_mode == "direct" and repo_name in DIRECT_BUILD_INSTRUCTIONS:
+        build_instructions = f"\n\n{DIRECT_BUILD_INSTRUCTIONS[repo_name]}"
 
     instance_template = f"""\
 <uploaded_files>
@@ -550,7 +581,7 @@ WORKFLOW:
 
 {"".join(notes)}
 {scope}
-{critical}
+{critical}{build_instructions}
 
 Thinking should be thorough."""
 
@@ -572,6 +603,7 @@ def build_gpa_prompt(
     kernel_name: str,
     kernel_source: str,
     profiling: str = "no_profiling",
+    build_mode: str = "harness",
 ) -> str:
     """Build prompt for GPA benchmark CUDA kernel optimization.
 
@@ -583,6 +615,7 @@ def build_gpa_prompt(
         kernel_name: Name of the target kernel function (e.g., "Fan2")
         kernel_source: The actual kernel source code
         profiling: "no_profiling" or "with_profiling"
+        build_mode: "harness" or "direct" (GPA always uses gpa_test for build+validation)
 
     Returns:
         Complete prompt string.
