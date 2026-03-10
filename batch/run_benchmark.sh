@@ -69,12 +69,12 @@ GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.60}"
 #       For all other models, use empty string (auto) — auto already selects the model's native dtype.
 declare -A MODEL_REGISTRY=(
     ["openai/gpt-oss-120b"]="openai|openai_gptoss|||default"
-    ["Qwen/Qwen3.5-27B"]="qwen3_coder|qwen3||0.60|nightly"
-    ["Qwen/Qwen3.5-27B-FP8"]="qwen3_coder|qwen3||0.60|nightly"
-    ["Qwen/Qwen3.5-122B-A10B"]="qwen3_coder|qwen3||0.92|nightly"
-    ["Qwen/Qwen3.5-122B-A10B-FP8"]="qwen3_coder|qwen3||0.92|nightly"
-    ["Qwen/Qwen3-Coder-Next"]="qwen3_coder|qwen3||0.70|nightly"
-    ["Qwen/Qwen3-Coder-Next-FP8"]="qwen3_coder|qwen3||0.70|nightly"
+    ["Qwen/Qwen3.5-27B"]="qwen3_coder|||0.60|nightly"
+    ["Qwen/Qwen3.5-27B-FP8"]="qwen3_coder|||0.60|nightly"
+    ["Qwen/Qwen3.5-122B-A10B"]="qwen3_coder|||0.92|nightly"
+    ["Qwen/Qwen3.5-122B-A10B-FP8"]="qwen3_coder|||0.92|nightly"
+    ["Qwen/Qwen3-Coder-Next"]="qwen3_coder|||0.70|nightly"
+    ["Qwen/Qwen3-Coder-Next-FP8"]="qwen3_coder|||0.70|nightly"
 )
 
 _lookup_model_settings() {
@@ -666,7 +666,8 @@ else
         --download-dir "${HF_HOME}" \
         --tool-call-parser "${TOOL_CALL_PARSER}" \
         --enable-auto-tool-choice \
-        --reasoning-parser "${REASONING_PARSER}" \
+        ${REASONING_PARSER:+--reasoning-parser "${REASONING_PARSER}"} \
+        ${REASONING_PARSER:+--enable-reasoning} \
         --enforce-eager \
         ${KV_CACHE_DTYPE:+--kv-cache-dtype "${KV_CACHE_DTYPE}"} \
         > "${OUTPUT_DIR}/vllm.log" 2>&1 &

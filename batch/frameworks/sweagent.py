@@ -265,10 +265,9 @@ timeout {SESSION_TIMEOUT} sweagent run --config {config_path} \\
                 'name: openai/openai/gpt-oss-120b',
                 f'name: openai/{self.model_name}'
             )
-            config_content = config_content.replace(
-                'per_instance_cost_limit: 0',
-                'per_instance_cost_limit: 1.0'
-            )
+            # Keep per_instance_cost_limit: 0 for self-hosted models (LiteLLM
+            # can't calculate cost for unknown models and crashes).
+            # Only raise cost limit for models in LiteLLM's pricing database.
             # Remove api_base and api_key so LiteLLM uses env vars
             config_content = re.sub(
                 r'^\s*api_base:.*$\n?', '', config_content, flags=re.MULTILINE
