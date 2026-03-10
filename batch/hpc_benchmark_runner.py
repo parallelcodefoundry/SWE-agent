@@ -1057,9 +1057,28 @@ class HPCBenchmarkRunner:
         saved_cwd = os.getcwd()
         try:
             os.chdir(str(GPA_BENCHMARK_ROOT))
-            os.environ.setdefault(
-                "CUDA_HOME", os.environ.get("CUDATOOLKIT_HOME", "")
+
+            # Determine correct CUDA home for GPA apps (need 12.9, not 12.4).
+            # Priority: CUDA_HOME env > CUDATOOLKIT_HOME env > detect from
+            # cudatoolkit/12.9 default path > detect from nvcc on PATH.
+            cuda_home = (
+                os.environ.get("CUDA_HOME")
+                or os.environ.get("CUDATOOLKIT_HOME")
+                or ""
             )
+            cuda_12_9_path = "/opt/nvidia/hpc_sdk/Linux_x86_64/25.5/cuda/12.9"
+            if not cuda_home or "12.4" in cuda_home:
+                # Empty or pointing at 12.4 — override with 12.9 if available
+                if Path(cuda_12_9_path).exists():
+                    cuda_home = cuda_12_9_path
+            # Ensure CUDA_HOME is set in os.environ so the GPA driver's
+            # detect_cuda_home() fallback cannot pick up 12.4 from PATH.
+            os.environ["CUDA_HOME"] = cuda_home
+            # Prepend CUDA bin dir to PATH so bare 'nvcc' resolves to the
+            # correct version (ExaTENSOR/XSBench Makefiles use bare nvcc).
+            cuda_bin = str(Path(cuda_home) / "bin")
+            if cuda_bin not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = cuda_bin + ":" + os.environ.get("PATH", "")
 
             from gpa_bench_driver.gpa_bench_driver import run_driver
             from gpa_bench_driver.driver_src.driver_models import DriverConfig
@@ -1067,6 +1086,7 @@ class HPCBenchmarkRunner:
             config_kwargs = dict(
                 app=gpa_app,
                 sm_version=80,
+                cuda_home=Path(cuda_home),
                 log_level="INFO",
                 no_progress=True,
                 num_samples=5,

@@ -837,7 +837,11 @@ for run_num in $(seq 1 $NUM_RUNS); do
                     # Setup environment
                     module load openmpi/5.0.7 2>/dev/null || true
                     # GPA apps need default CUDA (12.9); LLNL proxy apps need 12.4
-                    if [[ '${app}' != 'gpa' ]]; then
+                    if [[ '${app}' == 'gpa' ]]; then
+                        # Ensure 12.9 is loaded (unload any inherited 12.4 first)
+                        module unload cudatoolkit 2>/dev/null || true
+                        module load cudatoolkit/12.9 2>/dev/null || true
+                    else
                         module load cudatoolkit/12.4 2>/dev/null || true
                     fi
                     module load python 2>/dev/null || true

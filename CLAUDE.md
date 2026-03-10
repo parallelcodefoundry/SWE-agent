@@ -87,3 +87,5 @@ Lulesh uses a different GPU mapping for np=8: `CUDA_VISIBLE_DEVICES=$(($OMPI_COM
 6. **Always reset `_test` repos** between experiment runs to ensure clean state.
 7. **If a command fails with stale Python/tools** — likely an outdated module; load a newer version.
 8. **NERSC account**: `m5083` for all SLURM jobs.
+9. **`--model-name` required with `--external-model`** — Without it, `codex.py` falls into local-vLLM path with bogus `http://external:0/v1` URL. Always pass both flags together: `--external-model --model-name <model>`.
+10. **Run LLNL and GPA as separate jobs** — Co-scheduling wastes a node. Use `--kripke --laghos --lulesh --quicksilver` for LLNL jobs, `--gpa` for GPA jobs.
