@@ -1,40 +1,49 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-03-10 (session 45)
+Last updated: 2026-03-10 (session 46)
 
-## Last Session (Session 45)
+## Last Session (Session 46)
 
-### Qwen Job Analysis — Root Cause Found & Fixed
-All 6 completed Qwen jobs (4 frameworks × LLNL + 2 × GPA) produced 0 code changes. Two bugs:
+### All 3 Qwen Models Verified — Tool Calls Working
+Downloaded and tested all 3 Qwen models via vLLM on compute node:
+- **Qwen3-Coder-Next-FP8** (80GB, verified session 45)
+- **Qwen3.5-27B-FP8** (31GB, downloaded + verified this session)
+- **Qwen3.5-122B-A10B-FP8** (127GB, downloaded + verified this session)
 
-1. **vLLM reasoning parser conflict** — `--reasoning-parser qwen3` intercepts `<tool_call>` XML as reasoning content, leaving `tool_calls: []` empty. Removed reasoning parser from MODEL_REGISTRY for all Qwen models. Made `--reasoning-parser` flag conditional (only added when non-empty).
+All produce proper `tool_calls` JSON with `qwen3_coder` parser, no reasoning parser.
 
-2. **SWE-agent cost limit crash** — `sweagent.py:_apply_model_overrides()` overwrote `per_instance_cost_limit: 0` to `1.0`. LiteLLM can't price self-hosted models → `ModelConfigurationError` crash. Removed the override.
+Note: 122B MoE on A100 (compute 8.0) uses Marlin kernel fallback for FP8 (native FP8 needs compute 8.9+). Functional but slower inference. KV cache only 4.73 GiB at 0.92 utilization.
 
-### Verified via live vLLM testing
-- Started vLLM with `Qwen/Qwen3-Coder-Next-FP8` on compute node
-- With reasoning parser: `tool_calls: []`, tool call XML in reasoning field (BROKEN)
-- Without reasoning parser: proper `tool_calls` array with correct function/args (WORKING)
-- Multi-tool calls work (read_file + bash in single response)
+### --build-mode direct Fixed for All Frameworks
+Found and fixed 3 issues blocking `--build-mode direct`:
+1. `build_sweagent_prompts()` missing `build_mode` parameter — SWE-agent ignored direct mode for LLNL apps
+2. `build_gpa_prompt()` missing `build_mode` parameter — API consistency
+3. Passed `self.build_mode` from `sweagent.py:77` and `base.py:400`
 
-### Manual Validation (all on compute node, 4x A100)
-**LLNL Apps** — all 4 pass (build + run + correctness):
-- Kripke np=4: 86.7s (GPU contention), Laghos np=4: 65.4s, Lulesh np=8: 74.5s (contention), QS np=4: 67.6s
+All frameworks now properly generate direct-mode prompts (BUILD INSTRUCTIONS instead of harness tool refs). GPA correctly keeps `gpa_test` in both modes.
 
-**Profiling Tools** — all 4 tested:
-| Tool | Status | Notes |
-|------|--------|-------|
-| nsys_profile | PASS | Full pipeline: profile, kernel/API summary, expert analysis |
-| hpc_profile | PASS | hpcrun → hpcstruct → hpcprof complete |
-| hatchet_analyze | PASS (partial) | Profile, hot path, top functions, source locations work; call tree has pandas bug |
-| ncu_profile | PASS (verified) | 84 kernel captures confirmed working; 500-capture default too slow for testing |
+### Profiling Analysis — All LLNL Apps Have Real Optimization Potential
+Profiled Lulesh, Kripke, and Laghos via nsys_profile:
 
-**GPA Apps** — all 13 working apps validated directly via `gpa_bench_driver`:
-exatensor, xsbench, bfs, gaussian, heartwall, hotspot, huffman, lud, nw, particlefilter, pathfinder, srad, streamcluster
+| App | Total GPU Time | Top Kernel | Key Bottleneck | Verdict |
+|-----|---------------|------------|----------------|---------|
+| Lulesh | ~8.8ms (100 iter) | ApplyMaterialProperties 22.9% | 10+ kernels, well-distributed | Good for benchmark |
+| Kripke | ~97.8ms (5 iter) | RAJA sweep 41.5% | cudaMemcpyAsync 40%, sync 18.5% | Good for benchmark |
+| Laghos | ~260ms | MFEM reduction 29.2% | 100K+ tiny kernels, many syncs | Good for benchmark |
 
-### Cancelled Jobs
-- 49850134 (opencode Qwen GPA) — cancelled, would have failed same way
-- 49850135 (openhands Qwen GPA) — cancelled, would have failed same way
+None are initialization-dominated. All have meaningful GPU compute work with clear optimization opportunities (kernel fusion, memory coalescing, reduced sync, shared memory).
+
+### 26 Benchmark Jobs Submitted
+All with `--build-mode direct`, LLNL + GPA apps:
+
+| Job IDs | Model | Frameworks | Profiling |
+|---------|-------|-----------|-----------|
+| 49878379 | Claude Code | claude | no |
+| 49878383 | gpt-5.3-codex | codex (LLNL only) | no |
+| 49878446,454-456 | Qwen3-Coder-Next-FP8 | all 4 | no |
+| 49878460-463 | Qwen3-Coder-Next-FP8 | all 4 | yes |
+| 49878468-479 | Qwen3.5-27B-FP8 | all 4 | no + yes |
+| 49878520-529 | Qwen3.5-122B-A10B-FP8 | all 4 | no + yes |
 
 ## Validated LLNL App Timings (4x A100)
 
@@ -47,7 +56,37 @@ exatensor, xsbench, bfs, gaussian, heartwall, hotspot, huffman, lud, nw, particl
 
 ## Active Experiments
 
-### Qwen Session 42 Jobs (ALL FAILED — bugs fixed in session 45)
+### Session 46 Benchmark Jobs (26 jobs, all pending)
+| Job ID | Framework | Model | Apps | Profiling | Status |
+|--------|-----------|-------|------|-----------|--------|
+| 49878379 | claude | Claude Code | LLNL+GPA | no | PD |
+| 49878383 | codex | gpt-5.3-codex | LLNL | no | PD |
+| 49878446 | sweagent | Qwen3-Coder-Next-FP8 | LLNL+GPA | no | PD |
+| 49878454 | codex | Qwen3-Coder-Next-FP8 | LLNL+GPA | no | PD |
+| 49878455 | opencode | Qwen3-Coder-Next-FP8 | LLNL+GPA | no | PD |
+| 49878456 | openhands | Qwen3-Coder-Next-FP8 | LLNL+GPA | no | PD |
+| 49878460 | sweagent | Qwen3-Coder-Next-FP8 | LLNL+GPA | yes | PD |
+| 49878461 | codex | Qwen3-Coder-Next-FP8 | LLNL+GPA | yes | PD |
+| 49878462 | opencode | Qwen3-Coder-Next-FP8 | LLNL+GPA | yes | PD |
+| 49878463 | openhands | Qwen3-Coder-Next-FP8 | LLNL+GPA | yes | PD |
+| 49878468 | sweagent | Qwen3.5-27B-FP8 | LLNL+GPA | no | PD |
+| 49878469 | sweagent | Qwen3.5-27B-FP8 | LLNL+GPA | yes | PD |
+| 49878471 | codex | Qwen3.5-27B-FP8 | LLNL+GPA | no | PD |
+| 49878473 | codex | Qwen3.5-27B-FP8 | LLNL+GPA | yes | PD |
+| 49878475 | opencode | Qwen3.5-27B-FP8 | LLNL+GPA | no | PD |
+| 49878476 | opencode | Qwen3.5-27B-FP8 | LLNL+GPA | yes | PD |
+| 49878477 | openhands | Qwen3.5-27B-FP8 | LLNL+GPA | no | PD |
+| 49878479 | openhands | Qwen3.5-27B-FP8 | LLNL+GPA | yes | PD |
+| 49878520 | sweagent | Qwen3.5-122B-A10B-FP8 | LLNL+GPA | no | PD |
+| 49878521 | sweagent | Qwen3.5-122B-A10B-FP8 | LLNL+GPA | yes | PD |
+| 49878523 | codex | Qwen3.5-122B-A10B-FP8 | LLNL+GPA | no | PD |
+| 49878524 | codex | Qwen3.5-122B-A10B-FP8 | LLNL+GPA | yes | PD |
+| 49878525 | opencode | Qwen3.5-122B-A10B-FP8 | LLNL+GPA | no | PD |
+| 49878526 | opencode | Qwen3.5-122B-A10B-FP8 | LLNL+GPA | yes | PD |
+| 49878528 | openhands | Qwen3.5-122B-A10B-FP8 | LLNL+GPA | no | PD |
+| 49878529 | openhands | Qwen3.5-122B-A10B-FP8 | LLNL+GPA | yes | PD |
+
+### Previous Session 42 Jobs (ALL FAILED — bugs fixed)
 | Job ID | Framework | Apps | Status | Root Cause |
 |--------|-----------|------|--------|------------|
 | 49850096 | sweagent | LLNL | COMPLETED — 0/4 | LiteLLM cost crash |
@@ -56,26 +95,26 @@ exatensor, xsbench, bfs, gaussian, heartwall, hotspot, huffman, lud, nw, particl
 | 49850099 | openhands | LLNL | COMPLETED — 0/4 | Tool calls in reasoning + cost |
 | 49850130 | sweagent | GPA | COMPLETED — 0/16 | LiteLLM cost crash |
 | 49850133 | codex | GPA | COMPLETED — 0/16 | Tool calls in reasoning |
-| 49850134 | opencode | GPA | CANCELLED | Would have failed same way |
-| 49850135 | openhands | GPA | CANCELLED | Would have failed same way |
 
 ## Available Models
 
-| Model | Cached | TP | GPU Mem | Parser | Status |
-|-------|--------|-----|---------|--------|--------|
-| Qwen/Qwen3-Coder-Next-FP8 | Yes | 4 | 0.70 | qwen3_coder | Tool calls verified working (no reasoning parser) |
-| Qwen/Qwen3.5-27B-FP8 | Yes | 4 | 0.60 | qwen3_coder | Not yet tested |
-| Qwen/Qwen3.5-122B-A10B-FP8 | Yes | 4 | 0.92 | qwen3_coder | Not yet tested |
+| Model | Cached | Size | TP | GPU Mem | Parser | Status |
+|-------|--------|------|-----|---------|--------|--------|
+| Qwen/Qwen3-Coder-Next-FP8 | Yes | 80GB | 4 | 0.70 | qwen3_coder | VERIFIED ✓ |
+| Qwen/Qwen3.5-27B-FP8 | Yes | 31GB | 4 | 0.60 | qwen3_coder | VERIFIED ✓ |
+| Qwen/Qwen3.5-122B-A10B-FP8 | Yes | 127GB | 4 | 0.92 | qwen3_coder | VERIFIED ✓ (Marlin FP8 fallback) |
 
 ## Branch State
 
 - **Current branch**: `dev`
-- **Latest commit**: `219e1405` — Fix Qwen tool calling: remove reasoning parser, fix SWE-agent cost limit
+- **Latest commit**: `2083b15c` — Fix --build-mode direct for SWE-agent and GPA prompts
 
 ## Infrastructure Bugs Found
 
 | Bug | Severity | Status |
 |-----|----------|--------|
+| --build-mode direct ignored by SWE-agent | HIGH | **FIXED** (session 46) |
+| --build-mode direct not passed to GPA prompts | HIGH | **FIXED** (session 46) |
 | Qwen reasoning parser breaks tool calls | CRITICAL | **FIXED** (session 45) |
 | SWE-agent cost limit crash on self-hosted models | CRITICAL | **FIXED** (session 45) |
 | Kripke CHAI required for CUDA+MPI | CRITICAL | **FIXED** (session 43) |
@@ -84,6 +123,7 @@ exatensor, xsbench, bfs, gaussian, heartwall, hotspot, huffman, lud, nw, particl
 | Harness mpirun path resolution | HIGH | **FIXED** (session 44) |
 | Harness LD_LIBRARY_PATH for MPI+CUDA | HIGH | **FIXED** (session 44) |
 | QS nSteps recalibration | HIGH | **FIXED** (session 44) — nSteps=67 |
+| 122B MoE FP8 on A100 uses Marlin fallback | LOW | Known — slower inference, functional |
 | Hatchet call tree pandas compat | LOW | Open — `'slice' object has no attribute '_hatchet_nid'` |
 | GPA b+tree build fail (gcc14) | LOW | Open — upstream C code issue |
 | GPA backprop build fail (gcc14) | LOW | Open — upstream C code issue |
@@ -93,43 +133,32 @@ exatensor, xsbench, bfs, gaussian, heartwall, hotspot, huffman, lud, nw, particl
 
 ## Recent Decisions
 
-- 2026-03-10 (s45): Remove reasoning parser from all Qwen MODEL_REGISTRY entries — tool calls don't work with it
+- 2026-03-10 (s46): Fix --build-mode direct for SWE-agent LLNL apps and GPA prompt API consistency
+- 2026-03-10 (s46): GPA apps don't change behavior in direct mode (gpa_test driver handles everything)
+- 2026-03-10 (s46): Submit all 26 benchmark jobs simultaneously — queue will schedule them
+- 2026-03-10 (s46): 122B MoE on A100 is viable despite Marlin FP8 fallback — functional, just slower
+- 2026-03-10 (s45): Remove reasoning parser from all Qwen MODEL_REGISTRY entries
 - 2026-03-10 (s45): Make `--reasoning-parser` and `--enable-reasoning` conditional on non-empty REASONING_PARSER
-- 2026-03-10 (s45): Keep `per_instance_cost_limit: 0` for self-hosted models (don't override)
+- 2026-03-10 (s45): Keep `per_instance_cost_limit: 0` for self-hosted models
 - 2026-03-09 (s44): GPA driver `run_driver()` API changed — must use `DriverConfig` object
 - 2026-03-09 (s43): Kripke requires ENABLE_CHAI=ON for CUDA+MPI
 - 2026-03-09 (s43): Remove OMP_PROC_BIND/PLACES from harnesses
 
 ## Next Steps
 
-### Priority 1: Verify fixes with remaining Qwen models
-1. Test `Qwen3.5-27B-FP8` and `Qwen3.5-122B-A10B-FP8` tool calling via vLLM
-2. Run quick validation that each model produces proper tool_calls
+### Priority 1: Monitor benchmark jobs
+1. Check job status with `squeue -u krydzy` and `sacct`
+2. As jobs complete, check `batch_results/` for output
+3. Analyze results: speedup achieved, correctness, which frameworks/models perform best
 
-### Priority 2: Analyze profiling data for optimization potential
-1. Review nsys/ncu profiles for each LLNL app
-2. Determine if meaningful optimization opportunities exist (vs init-dominated)
-3. Validate that benchmark tasks are reasonable for LLM agents
+### Priority 2: Analyze results
+1. Compare across models: Qwen3-Coder-Next vs 3.5-27B vs 3.5-122B
+2. Compare across frameworks: sweagent vs codex vs opencode vs openhands
+3. Compare profiling vs no-profiling: does profiling info help?
+4. Compare Claude Code vs open-source models
+5. Check if any apps consistently fail across all agents
 
-### Priority 3: Launch comprehensive benchmark runs
-All with `--build-mode direct`:
-
-**Claude Code** (Anthropic API, no vLLM):
-- LLNL apps (kripke, laghos, lulesh, quicksilver)
-- GPA apps
-- `bash batch/run_benchmark.sh --base --build-mode direct --framework claude --kripke --laghos --lulesh --quicksilver --gpa`
-
-**Codex** (gpt-5.3-codex model, LLNL only):
-- `bash batch/run_benchmark.sh --base --build-mode direct --framework codex --kripke --laghos --lulesh --quicksilver`
-
-**Qwen models** (3 models × all apps × with/without profiling):
-- For each of: Qwen3-Coder-Next-FP8, Qwen3.5-27B-FP8, Qwen3.5-122B-A10B-FP8
-- All 4 frameworks: sweagent, codex, opencode, openhands
-- All apps: LLNL + GPA
-- Two configs: no_profiling and with_profiling
-- `bash batch/run_benchmark.sh --base --build-mode direct --framework sweagent --kripke --laghos --lulesh --quicksilver --gpa --model Qwen/Qwen3-Coder-Next-FP8`
-
-### Priority 4: Infrastructure improvements
+### Priority 3: Infrastructure improvements
 1. Update `setup_apps.sh` to build Kripke with CHAI
-2. Verify `--build-mode direct` + `--base` + `--gpa` works end-to-end
-3. Fix hatchet call tree pandas compatibility
+2. Fix hatchet call tree pandas compatibility
+3. Consider reducing 122B model's max_seq_len to increase KV cache capacity
