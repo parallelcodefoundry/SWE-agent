@@ -1062,19 +1062,22 @@ class HPCBenchmarkRunner:
             )
 
             from gpa_bench_driver.gpa_bench_driver import run_driver
+            from gpa_bench_driver.driver_src.driver_models import DriverConfig
 
-            run_kwargs = dict(
+            config_kwargs = dict(
                 app=gpa_app,
                 sm_version=80,
                 log_level="INFO",
                 no_progress=True,
                 num_samples=5,
+                no_sanitize=True,
             )
             if swaps_override:
-                run_kwargs["swaps_override"] = swaps_override
-                run_kwargs["nsys"] = True
+                config_kwargs["swaps_override"] = swaps_override
+                config_kwargs["nsys"] = True
 
-            results, operations, long_results = run_driver(**run_kwargs)
+            driver_config = DriverConfig(**config_kwargs)
+            results, operations, long_results = run_driver(driver_config)
 
             app_result = results.get(gpa_app)
             passes = long_results.get(gpa_app, [])

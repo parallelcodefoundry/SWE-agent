@@ -12,6 +12,47 @@ import json
 import time
 import re
 import statistics
+import shutil
+
+
+def _find_mpirun():
+    """Resolve mpirun to an absolute path for subprocess robustness."""
+    path = shutil.which('mpirun')
+    if path:
+        return path
+    fallback = '/global/common/software/nersc/pe/gpu/gnu/openmpi/5.0.7/bin/mpirun'
+    if os.path.isfile(fallback):
+        return fallback
+    return 'mpirun'
+
+MPIRUN = _find_mpirun()
+
+# Critical library directories for MPI+CUDA on Perlmutter.
+_CRITICAL_LIB_DIRS = [
+    '/global/common/software/nersc/pe/gpu/gnu/openmpi/5.0.7/lib',
+    '/opt/cray/libfabric/1.22.0/lib64',
+    '/opt/cray/pe/lib64',
+]
+_CUDA_LIB_CANDIDATES = [
+    '/opt/nvidia/hpc_sdk/Linux_x86_64/24.5/cuda/12.4/lib64',
+    '/opt/nvidia/hpc_sdk/Linux_x86_64/25.5/cuda/12.9/lib64',
+]
+
+def _ensure_ld_library_path(env):
+    """Add critical library dirs to LD_LIBRARY_PATH if missing."""
+    ld_path = env.get('LD_LIBRARY_PATH', '')
+    dirs = ld_path.split(':') if ld_path else []
+    for d in _CRITICAL_LIB_DIRS:
+        if os.path.isdir(d) and d not in dirs:
+            dirs.append(d)
+    has_cuda = any('cuda' in d.lower() for d in dirs)
+    if not has_cuda:
+        for d in _CUDA_LIB_CANDIDATES:
+            if os.path.isdir(d):
+                dirs.append(d)
+                break
+    env['LD_LIBRARY_PATH'] = ':'.join(dirs)
+    return env
 
 # Pristine Kripke source (unmodified)
 def _find_pristine_kripke():
@@ -153,7 +194,7 @@ def run_baseline(args, env, timeout=600):
     # CUDA illegal memory access from all ranks competing for the same GPU.
     if args.np > 1:
         # Wrapper sets CUDA_VISIBLE_DEVICES per rank so each rank gets one GPU
-        cmd = ['mpirun', '-np', str(args.np), '--bind-to', 'none', '--oversubscribe',
+        cmd = [MPIRUN, '-np', str(args.np), '--bind-to', 'none', '--oversubscribe',
                'bash', '-c', 'export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK; exec "$@"',
                '--'] + kripke_cmd
     else:
@@ -427,7 +468,7 @@ def format_speedup_summary(speedup, correctness, args):
 
 def main():
     parser = argparse.ArgumentParser(description='Run Kripke')
-    parser.add_argument('--arch', default='OpenMP', help='Backend: Sequential, OpenMP, CUDA, HIP')
+    parser.add_argument('--arch', default='CUDA', help='Backend: Sequential, OpenMP, CUDA, HIP')
     parser.add_argument('--layout', default='DGZ', help='Data layout: DGZ, DZG, GDZ, GZD, ZDG, ZGD')
     parser.add_argument('--zones', default='64,64,64', help='Zone dimensions as x,y,z')
     parser.add_argument('--groups', type=int, default=64, help='Number of energy groups')
@@ -499,6 +540,7 @@ def main():
     # unset so agents can discover optimal OMP settings as an optimization.
     env = os.environ.copy()
     env['OMP_NUM_THREADS'] = str(args.omp_threads)
+    _ensure_ld_library_path(env)
 
     num_runs = args.timing_runs
 
@@ -566,7 +608,7 @@ def main():
 
     # Always use mpirun for MPI execution (avoids nested srun hangs in batch mode).
     if args.np > 1:
-        cmd = ['mpirun', '-np', str(args.np), '--bind-to', 'none', '--oversubscribe',
+        cmd = [MPIRUN, '-np', str(args.np), '--bind-to', 'none', '--oversubscribe',
                'bash', '-c', 'export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK; exec "$@"',
                '--'] + kripke_cmd
     else:

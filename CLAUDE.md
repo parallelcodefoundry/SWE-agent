@@ -32,7 +32,7 @@ IMPORTANT: Follow this workflow for EVERY session.
 salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m5083
 
 # Modules (always load before build/run)
-module load python cmake openmpi/5.0.7 cuda/12.4
+module load python cmake openmpi/5.0.7 cudatoolkit/12.4
 
 # Build all proxy apps (run on compute node)
 ./scripts/setup_apps.sh
@@ -56,6 +56,26 @@ source ~/envs/sweagent/bin/activate
 
 - **`harness` (default)**: Harness tools (`*_build`, `*_run`) handle compilation. Agent edits source and optionally build config; harness ensures essential flags are preserved.
 - **`direct`**: Agent runs cmake/make/nvcc directly. Only `*_run` is available for validation and timing. Build instructions are provided in the prompt.
+
+## Multi-GPU MPI Requirements
+
+All LLNL proxy apps run on GPU **and** in parallel across 4 GPUs using MPI. Each app has calibrated problem sizes targeting ~60s runtime (excluding warmup). Per-rank GPU isolation uses `CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK`.
+
+| App | np | Problem Size | ~Time | Notes |
+|-----|-----|-------------|-------|-------|
+| Kripke | 4 | zones=64³, groups=64, niter=60, quad=8 | 55s | Requires CHAI (`-DENABLE_CHAI=ON`) for CUDA+MPI |
+| Laghos | 4 | p1, dim=2, rs=4, tf=0.8, -pa -d cuda | 67s | Uses MFEM/hypre/metis |
+| Lulesh | 8 | s=150, i=5000 | 51s | 2³ cube decomposition, 2 ranks/GPU |
+| QS | 4 | Coral2_P2_4.inp, nSteps=67 | 60s | Weak-scaled 4-rank input |
+
+MPI launch pattern (used by all harnesses):
+```bash
+mpirun -np $NP --bind-to none --oversubscribe \
+  bash -c 'export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK; exec "$@"' -- \
+  <executable> <args>
+```
+
+Lulesh uses a different GPU mapping for np=8: `CUDA_VISIBLE_DEVICES=$(($OMPI_COMM_WORLD_LOCAL_RANK * 4 / 8))` (2 ranks share each GPU).
 
 ## Critical Rules
 

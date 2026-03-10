@@ -20,6 +20,47 @@ import json
 import re
 import statistics
 import time
+import shutil
+
+
+def _find_mpirun():
+    """Resolve mpirun to an absolute path for subprocess robustness."""
+    path = shutil.which('mpirun')
+    if path:
+        return path
+    fallback = '/global/common/software/nersc/pe/gpu/gnu/openmpi/5.0.7/bin/mpirun'
+    if os.path.isfile(fallback):
+        return fallback
+    return 'mpirun'
+
+MPIRUN = _find_mpirun()
+
+# Critical library directories for MPI+CUDA on Perlmutter.
+_CRITICAL_LIB_DIRS = [
+    '/global/common/software/nersc/pe/gpu/gnu/openmpi/5.0.7/lib',
+    '/opt/cray/libfabric/1.22.0/lib64',
+    '/opt/cray/pe/lib64',
+]
+_CUDA_LIB_CANDIDATES = [
+    '/opt/nvidia/hpc_sdk/Linux_x86_64/24.5/cuda/12.4/lib64',
+    '/opt/nvidia/hpc_sdk/Linux_x86_64/25.5/cuda/12.9/lib64',
+]
+
+def _ensure_ld_library_path(env):
+    """Add critical library dirs to LD_LIBRARY_PATH if missing."""
+    ld_path = env.get('LD_LIBRARY_PATH', '')
+    dirs = ld_path.split(':') if ld_path else []
+    for d in _CRITICAL_LIB_DIRS:
+        if os.path.isdir(d) and d not in dirs:
+            dirs.append(d)
+    has_cuda = any('cuda' in d.lower() for d in dirs)
+    if not has_cuda:
+        for d in _CUDA_LIB_CANDIDATES:
+            if os.path.isdir(d):
+                dirs.append(d)
+                break
+    env['LD_LIBRARY_PATH'] = ':'.join(dirs)
+    return env
 
 # Default MPI configuration — 1 rank = single GPU (minimizes MPI overhead)
 DEFAULT_NP = 4
@@ -159,6 +200,7 @@ def run_laghos(exe_path, problem, dim, rs, tf, device, use_pa=True, np_ranks=DEF
     """
     env = os.environ.copy()
     env['OMP_NUM_THREADS'] = '1'
+    _ensure_ld_library_path(env)
 
     laghos_cmd = [
         exe_path,
@@ -181,11 +223,11 @@ def run_laghos(exe_path, problem, dim, rs, tf, device, use_pa=True, np_ranks=DEF
     # --bind-to none: let CUDA_VISIBLE_DEVICES handle GPU assignment.
     # Per-rank GPU isolation via OMPI_COMM_WORLD_LOCAL_RANK (same as kripke_run).
     if np_ranks > 1:
-        cmd = ['mpirun', '-np', str(np_ranks), '--bind-to', 'none', '--oversubscribe',
+        cmd = [MPIRUN, '-np', str(np_ranks), '--bind-to', 'none', '--oversubscribe',
                'bash', '-c', 'export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK; exec "$@"',
                '--'] + laghos_cmd
     else:
-        cmd = ['mpirun', '-np', '1', '--bind-to', 'none', '--oversubscribe'] + laghos_cmd
+        cmd = [MPIRUN, '-np', '1', '--bind-to', 'none', '--oversubscribe'] + laghos_cmd
 
     try:
         if label:
