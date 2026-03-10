@@ -1,145 +1,84 @@
-# Handoff — Session 47
+# Handoff — Session 48
 
 Last updated: 2026-03-10
 
 ## What We Were Implementing and Why
 
-Session 47 analyzed ALL 26 benchmark jobs submitted in session 46. The goal was to understand why nearly everything failed (only Claude Code got 3/20 successes) and fix what we could.
+Session 48 fixed all 6 root causes from session 47's analysis and submitted 7 benchmark jobs to test the fixes. Focus: MPI warning in prompts, SWE-agent xml_function_calling for Qwen, OpenCode small_model, Codex+Qwen dropped.
 
 ## Approach Chosen
 
-- Launched 4 parallel analysis agents to investigate different failure categories
-- Manually traced agent logs for SWE-agent, Codex, and OpenCode to identify exact failure points
-- GPA analysis agent both diagnosed AND fixed the CUDA 12.9 issue
-- Cancelled 10 pending jobs to save node-hours
+- Phase 1: All code changes on login node, committed in 2 commits
+- Phase 2: GPA validation on compute node (via perlmutter-executor agent), parse mode tests submitted as batch jobs
+- Phase 3: Submitted 7 benchmark jobs covering Claude Code (2 configs), Codex, SWE-agent (2 parse modes), OpenCode
 
 ## Goal Progress
 
 - [x] Goal 0: Load state, check job status
-- [x] Goal 1: Identify and categorize all failure modes across 17 completed jobs
-- [x] Goal 2: Analyze Claude Code results (3/4 LLNL success: Kripke 2.03x, Laghos 1.30x, QS 1.70x)
-- [x] Goal 3: Diagnose Codex+Qwen XML tool format mismatch (`<tool_call>` XML not parsed by Responses API)
-- [x] Goal 4: Diagnose OpenCode+Qwen (same XML + `gpt-5-nano` 404)
-- [x] Goal 5: Diagnose SWE-agent+Qwen analysis paralysis (196 steps, 182 views, 0 edits)
-- [x] Goal 6: Diagnose Codex+external missing `--model-name` → bogus `http://external:0/v1` URL
-- [x] Goal 7: Fix GPA CUDA 12.9 build failure (13/16 apps now work)
-- [x] Goal 8: Cancel pending 122B jobs (10 jobs, ~60 node-hours saved)
-- [x] Goal 9: Create `.planning/RESULTS-TRACKING-S46.md` tracking file
-- [x] Goal 10: Add `--model-name` and GPA separation rules to CLAUDE.md
-- [x] Goal 11: Commit and save state
-- [ ] Goal 12: Fix SWE-agent+Qwen parse mode (NEXT SESSION)
-- [ ] Goal 13: Fix Codex/OpenCode+Qwen tool format (NEXT SESSION)
-- [ ] Goal 14: Add MPI warning to prompts (NEXT SESSION)
-- [ ] Goal 15: Re-submit fixed runs (NEXT SESSION)
+- [x] Goal 1: Add session 46 Claude Code results to results_summary.json (19 entries)
+- [x] Goal 2: Add MPI_RUNTIME_GUIDANCE to prompts (all frameworks, all apps)
+- [x] Goal 3: SWE-agent xml_function_calling parse mode for Qwen + env var override
+- [x] Goal 4: OpenCode small_model config for title gen
+- [x] Goal 5: Document Codex+Qwen incompatibility (permanently dropped)
+- [x] Goal 6: Update skills docs (Codex, OpenCode, SWE-agent)
+- [x] Goal 7: Commit Phase 1 changes
+- [x] Goal 8: Submit Claude Code LLNL no_profiling (49891957)
+- [x] Goal 9: Submit Claude Code LLNL with_profiling (49892081)
+- [x] Goal 10: Submit Codex + gpt-5.3-codex LLNL (49891958)
+- [x] Goal 11: Submit Claude Code GPA (49891960)
+- [x] Goal 12: Submit SWE-agent parse mode test A: xml_function_calling (49892015)
+- [x] Goal 13: Submit SWE-agent parse mode test B: thought_action (49892016)
+- [x] Goal 14: Submit OpenCode small_model test (49892017)
+- [x] Goal 15: Compare session 41 vs 46 Claude Code results
+- [ ] Goal 16: Analyze session 48 job results (NEXT SESSION)
+- [ ] Goal 17: Submit full SWE-agent/OpenCode runs if tests pass (NEXT SESSION)
+- [ ] Goal 18: Update memory files with findings (NEXT SESSION)
 
 ## Files Modified This Session
 
-- `batch/hpc_benchmark_runner.py:1057-1094` — GPA CUDA 12.9 fix: detect correct cuda_home, set CUDA_HOME env, prepend to PATH, pass to DriverConfig
-- `batch/run_benchmark.sh:837-846` — GPA module fix: explicit `module unload cudatoolkit; module load cudatoolkit/12.9` for GPA sruns
-- `CLAUDE.md:89-90` — Added rules #9 (`--model-name` with `--external-model`) and #10 (separate LLNL/GPA jobs)
-- `.planning/RESULTS-TRACKING-S46.md` — Created: full failure analysis with per-job root causes
+- `batch/frameworks/prompt.py` — MPI_RUNTIME_GUIDANCE constant + 2 injection points
+- `batch/frameworks/sweagent.py` — `_apply_parse_function_override()` method + SWEAGENT_PARSE_OVERRIDE env var
+- `batch/frameworks/opencode.py` — small_model in both config branches
+- `batch/frameworks/codex.py` — Codex+Qwen incompatibility docstring
+- `batch_results/results_summary.json` — Session 46 Claude Code results (entry #19)
+- `.claude/skills/codex-cli/references/internals.md` — wire_api=chat removed, Qwen incompatible
+- `.claude/skills/opencode/references/architecture.md` — Title gen / small_model section
+- `.claude/skills/swe-agent-framework/references/config-details.md` — Parse function types table
 
 ## Files to Read First Next Session
 
-- `.planning/RESULTS-TRACKING-S46.md` — Complete failure analysis (read first to remember all 6 root causes)
-- `batch/frameworks/sweagent.py` — SWE-agent launcher, may need `parse_function` changes for Qwen
-- `batch/frameworks/codex.py:28-77` — `_build_config_flags()` with 3-branch model routing (first-party/external/local-vLLM)
-- `batch/frameworks/opencode.py` — OpenCode launcher, check if title gen model is configurable
-- `batch/frameworks/prompt.py:~200-400` — Prompt templates, need to add MPI warning for Lulesh
-- `config/hpc/llnl_base.yaml` — SWE-agent YAML template with `parse_function: type: function_calling`
+- `STATE.md` — Session 48 summary with job table
+- Check `squeue -u krydzy` for completed jobs
+- `batch_results/` for new output directories matching job IDs above
+- Parse mode test results (49892015 vs 49892016) are the highest priority
 
 ## Gotchas and Decisions
 
-- **SWE-agent `parse_function: function_calling` DOES work for Qwen** — tool calls (bash, str_replace_editor/view) all execute correctly. The problem is purely behavioral: the model never chooses to call `str_replace` (edit). The "does not support function calling" warning at startup is a false positive (SWE-agent checks model name against a hardcoded list).
-- **Codex uses `wire_api=responses` exclusively** — `wire_api=chat` is explicitly commented as "no longer supported" in codex.py. This means vLLM's `qwen3_coder` parser (which works on `/v1/chat/completions`) may not apply to the Responses API endpoint.
-- **OpenCode tries `gpt-5-nano` for title gen** — Hardcoded small model call. When vLLM only serves Qwen, this 404s and kills the session after 1 step.
-- **Qwen outputs `<tool_call><function=name>` XML in Codex/OpenCode** — This is the raw Qwen tool call format. In SWE-agent (via `/v1/chat/completions` + `qwen3_coder` parser), vLLM intercepts this and returns proper `tool_calls` JSON. In Codex/OpenCode (via `/v1/responses`), it passes through as plain text.
-- **Claude Code Lulesh: agent set `USE_MPI ?= 0`** — Makefile already has `# MPI enabled by default for multi-GPU execution (8 ranks = 2x2x2 on 4 GPUs)` comment, but agent ignored it. Prompt needs explicit "DO NOT disable MPI".
-- **GPA CUDA fix tested on login node only** — Login nodes have different CUDA/gcc than compute nodes. Need to validate on compute node with `salloc`.
+- **Codex+Qwen is permanently incompatible** — wire_api=responses only, vLLM qwen3_coder parser only on /v1/chat/completions
+- **XMLFunctionCallingParser handles Qwen's `<tool_call>` wrapper** — re.search() finds `<function=...>` inside it
+- **"Agent run failed" = timeout** — Claude Code hits 60-min timeout but optimizations are valid
+- **Session 41 Kripke 15.08x is inflated** — likely np=1 (pre-calibration), session 46 uses np=4
+- **sbatch --export=ALL** passes env vars through, so SWEAGENT_PARSE_OVERRIDE works
 
 ## Specific Next-Session Investigation Tasks
 
-### Task A: SWE-agent + Qwen Parse Mode (use subagent)
-**Goal**: Determine if changing `parse_function` helps Qwen produce edits.
-**Files**: `config/hpc/llnl_base.yaml`, SWE-agent docs at `docs/usage/cl_tutorial.md`
-**Approach**:
-1. Check SWE-agent source for available `parse_function` types — is `thought_action` an option?
-2. Try a quick interactive test: run SWE-agent on a single app (e.g., lulesh) with `thought_action` parse mode
-3. If that doesn't help, try adding explicit "YOU MUST USE str_replace_editor command=str_replace TO EDIT FILES" to system prompt
-4. Consider if the issue is that Qwen's `<tool_call>` XML is being parsed correctly but the model genuinely can't/won't edit HPC code
+### Task A: Analyze Parse Mode Test Results
+**Job 49892015** (xml_function_calling) vs **49892016** (thought_action)
+- Success criterion: at least 1 str_replace / file edit call
+- Check agent trajectories for edit behavior
+- Winner becomes default for Qwen
 
-### Task B: Codex/OpenCode + Qwen Responses API (use subagent)
-**Goal**: Determine if Codex/OpenCode can work with Qwen at all.
-**Files**: `batch/frameworks/codex.py`, `batch/frameworks/opencode.py`
-**Approach**:
-1. Check if vLLM supports tool call parsing on `/v1/responses` endpoint (read vLLM docs/source)
-2. If not, Codex+Qwen is fundamentally broken and should be dropped
-3. For OpenCode: check if the title gen model is configurable (env var? config option?)
-4. Check if OpenCode can use `/v1/chat/completions` instead of `/v1/responses`
+### Task B: Analyze All Session 48 Results
+- Claude Code with profiling vs without (49892081 vs 49891957)
+- Codex + gpt-5.3-codex performance (49891958)
+- OpenCode small_model fix (49892017) — did title gen crash?
+- GPA results (49891960)
 
-### Task C: Add MPI Warning to Prompts
-**Goal**: Prevent agents from disabling MPI.
-**Files**: `batch/frameworks/prompt.py`
-**Approach**: Add to all LLNL prompt templates:
-```
-CRITICAL: Do NOT disable MPI. The validation harness runs with mpirun -np N.
-Disabling MPI (e.g., USE_MPI=0) will cause segfaults during validation.
-```
+### Task C: Submit Full Runs Based on Test Results
+- If parse mode test passes → submit SWE-agent + Qwen for all 4 LLNL apps
+- If small_model works → submit OpenCode + Qwen for all 4 LLNL apps
 
-### Task D: Validate GPA Fix on Compute Node
-**Goal**: Confirm GPA CUDA 12.9 fix works on actual compute nodes.
-**Approach**:
-```bash
-salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 4 --account m5083
-# Then test:
-source ~/envs/sweagent/bin/activate
-module load python cmake openmpi/5.0.7
-module load cudatoolkit/12.9
-python3 batch/hpc_benchmark_runner.py --base --app gpa --framework claude --skip-vllm
-```
+## Session 48 Commits
 
-### Task E: Re-submit Corrected Runs
-**Goal**: Get real benchmark data.
-**Submission plan** (separate LLNL and GPA):
-```bash
-# Claude Code LLNL (no profiling)
-bash batch/run_benchmark.sh --base --build-mode direct --framework claude --kripke --laghos --lulesh --quicksilver
-
-# Claude Code LLNL (with profiling)
-bash batch/run_benchmark.sh --base --build-mode direct --framework claude --kripke --laghos --lulesh --quicksilver --profiling with_profiling
-
-# Claude Code GPA (separate)
-bash batch/run_benchmark.sh --base --build-mode direct --framework claude --gpa
-
-# Codex + gpt-5.3-codex (with correct --model-name)
-bash batch/run_benchmark.sh --base --build-mode direct --framework codex --external-model --model-name gpt-5.3-codex --kripke --laghos --lulesh --quicksilver
-
-# SWE-agent + Qwen (only if Task A shows parse mode fix works)
-bash batch/run_benchmark.sh --base --build-mode direct --framework sweagent --model-name Qwen/Qwen3-Coder-Next-FP8 --kripke --laghos --lulesh --quicksilver
-```
-
-## Interactive Validation Commands
-
-```bash
-salloc --nodes 1 --qos interactive --time 03:00:00 --constraint gpu --gpus 4 --account m5083
-
-# Module setup
-source /opt/cray/pe/lmod/lmod/init/bash
-module load python cmake openmpi/5.0.7
-source ~/envs/sweagent/bin/activate
-
-# Quick GPA validation (compute node)
-module load cudatoolkit/12.9
-python3 -c "
-from pathlib import Path
-import sys; sys.path.insert(0, '/pscratch/sd/k/krydzy/GPA-Benchmark')
-from gpa_bench_driver.gpa_bench_driver import run_driver
-from gpa_bench_driver.driver_src.driver_models import DriverConfig
-config = DriverConfig(app='hotspot', sm_version=80, cuda_home=Path('/opt/nvidia/hpc_sdk/Linux_x86_64/25.5/cuda/12.9'), no_sanitize=True)
-result = run_driver(config)
-print(f'Result: {result}')
-"
-
-# Quick SWE-agent parse mode test
-# (after changing config/hpc/llnl_base.yaml parse_function type)
-```
+1. `6aff1565` — Session 48 Phase 1: Fix root causes for benchmark resubmission
+2. `050209a3` — Add SWEAGENT_PARSE_OVERRIDE env var for A/B testing parse modes

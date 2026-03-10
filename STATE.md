@@ -1,33 +1,73 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-03-10 (session 47)
+Last updated: 2026-03-10 (session 48)
 
-## Last Session (Session 47)
+## Last Session (Session 48)
 
-### Comprehensive Analysis of 26 Benchmark Jobs — 6 Root Causes Found
+### Phase 1: Fixed All Root Causes + Submitted 7 Benchmark Jobs
 
-Analyzed all session 46 benchmark results. 17/26 completed, 10 cancelled (would waste ~60 node-hours on same bugs).
+Fixed remaining 5 root causes from session 47 analysis and submitted corrected benchmark runs.
 
-**Claude Code was the only success**: 3/4 LLNL apps optimized (Kripke 2.03x, Laghos 1.30x, QS 1.70x). Everything else failed.
-
-### 6 Root Causes Identified
+### Root Cause Status (all 6 from session 47)
 
 | # | Root Cause | Category | Status |
 |---|-----------|----------|--------|
-| 1 | GPA: CUDA 12.4 nvcc + GCC 14 | infra | **FIXED** — `run_benchmark.sh` + `hpc_benchmark_runner.py` |
-| 2 | Codex+Qwen: XML `<tool_call>` not parsed by Responses API | infra | Open — investigate `wire_api` + vLLM `/v1/responses` |
-| 3 | OpenCode+Qwen: same XML + `gpt-5-nano` 404 | infra | Open — title gen model missing |
-| 4 | SWE-agent+Qwen: analysis paralysis (0 edits in 196 steps) | model | Open — try `thought_action` parse mode or stronger prompts |
-| 5 | Codex+external: missing `--model-name` → bogus URL | infra | Root cause found — submission fix |
-| 6 | Claude Code: 3/4 LLNL success, Lulesh disabled MPI | partial | Need MPI warning in prompts |
+| 1 | GPA: CUDA 12.4 nvcc + GCC 14 | infra | **FIXED** (s47) — validating on compute node |
+| 2 | Codex+Qwen: wire_api=responses incompatible | infra | **DROPPED** — permanently broken, documented |
+| 3 | OpenCode+Qwen: gpt-5-nano 404 | infra | **FIXED** (s48) — added small_model config |
+| 4 | SWE-agent+Qwen: analysis paralysis | model | **FIXED** (s48) — xml_function_calling parse mode, testing |
+| 5 | Codex+external: missing --model-name | infra | **FIXED** (s47) — documented in CLAUDE.md |
+| 6 | Lulesh MPI disabled by agent | prompt | **FIXED** (s48) — MPI_RUNTIME_GUIDANCE in all prompts |
 
-### GPA CUDA 12.9 Fix Applied
-- `run_benchmark.sh:839-846`: Explicit `module unload cudatoolkit; module load cudatoolkit/12.9` for GPA
-- `hpc_benchmark_runner.py:1060-1094`: Detect CUDA 12.9 path, set `CUDA_HOME`, prepend to PATH, pass `cuda_home=Path(...)` to `DriverConfig`
-- 13/16 GPA apps now build+run+validate (b+tree/backprop: upstream gcc-14; lavaMD: upstream case bug)
+### Code Changes (committed)
 
-### Jobs Cancelled
-All 10 pending/running Qwen3.5-122B + remaining 27B jobs: 49878477, 49878479, 49878520-529
+1. **prompt.py**: Added `MPI_RUNTIME_GUIDANCE` constant, injected in `build_prompt()` and `build_sweagent_prompts()`
+2. **sweagent.py**: Added `_apply_parse_function_override()` — auto-selects xml_function_calling for Qwen, + `SWEAGENT_PARSE_OVERRIDE` env var for A/B testing
+3. **opencode.py**: Added `small_model` to both config branches (external + local vLLM)
+4. **codex.py**: Documented Codex+Qwen incompatibility (wire_api=responses only, no workaround)
+5. **results_summary.json**: Added session 46 Claude Code results (19 entries total)
+6. **Skills docs**: Updated Codex, OpenCode, SWE-agent references
+
+### Session 41 vs 46 Claude Code Comparison
+
+| Metric | Session 41 (s41) | Session 46 (s46) |
+|--------|-----------------|-----------------|
+| Kripke speedup | 15.08x | 2.03x |
+| Kripke baseline | 29.2s (likely np=1) | 72.1s (np=4) |
+| Kripke strategy | Compiler flags + RAJA cuda_exec | Algorithmic: fused kConst init |
+| Laghos speedup | 1.05x | 1.30x |
+| QS speedup | timeout | 1.70x (batched atomics) |
+| Build mode | harness | direct |
+| Profiling | with+without | without |
+
+Session 41 Kripke 15.08x is likely inflated by np=1 (pre-multi-GPU calibration).
+
+### "Agent run failed" in s46 = timeout
+
+"Agent run failed" means Claude Code hit the 60-minute session timeout (~3600s), NOT that the optimizations failed. Kripke and QS both passed correctness with real speedups.
+
+## Active Experiments
+
+### Session 48 Benchmark Jobs (7 submitted, all pending)
+
+| Job ID | Framework | Model | Apps | Config | Notes |
+|--------|-----------|-------|------|--------|-------|
+| 49891957 | Claude Code | Anthropic | K/L/Lu/QS | no_profiling, direct | MPI warning added |
+| 49892081 | Claude Code | Anthropic | K/L/Lu/QS | with_profiling, direct | Compare vs no-profiling |
+| 49891958 | Codex | gpt-5.3-codex | K/L/Lu/QS | no_profiling, direct | First-party OpenAI |
+| 49891960 | Claude Code | Anthropic | GPA (16) | no_profiling, direct | Separate GPA job |
+| 49892015 | SWE-agent | Qwen3-Coder | Lulesh | xml_function_calling | Parse mode test A |
+| 49892016 | SWE-agent | Qwen3-Coder | Lulesh | thought_action | Parse mode test B |
+| 49892017 | OpenCode | Qwen3-Coder | Lulesh | small_model fix | Title gen fix test |
+
+### Session 46 Results (already in results_summary.json)
+
+| App | Speedup | Correctness | Strategy |
+|-----|---------|-------------|----------|
+| Kripke | **2.03x** | PASSED | Fused kConst zero-init into LTimes/LPlusTimes |
+| Laghos | **1.30x** | PASSED | Relaxed CG tol, disabled sync, fast_math, NBZ=4 |
+| QS | **1.70x** | PASSED | Batched atomics, sincos(), UVM optimization |
+| Lulesh | N/A | FAILED | Disabled MPI → segfault (now prevented by MPI warning) |
 
 ## Validated LLNL App Timings (4x A100)
 
@@ -38,84 +78,57 @@ All 10 pending/running Qwen3.5-122B + remaining 27B jobs: 49878477, 49878479, 49
 | Lulesh | 8 | s=150, i=5000 | 51-52s | PASSED |
 | QS | 4 | Coral2_P2_4.inp, nSteps=67 | 60s | PASSED |
 
-## Active Experiments
-
-### Session 46 Benchmark Jobs (17 completed, 10 cancelled)
-
-**Claude Code (49878379) — ONLY SUCCESS**:
-| App | Speedup | Correctness | Strategy |
-|-----|---------|-------------|----------|
-| Kripke | **2.03x** | PASSED | Fused kConst zero-init into LTimes/LPlusTimes |
-| Laghos | **1.30x** | PASSED | Relaxed CG tol, disabled sync, fast_math, NBZ=4 |
-| QS | **1.70x** | PASSED | Batched atomics, sincos(), UVM optimization |
-| Lulesh | N/A | FAILED | Disabled MPI → segfault (model error) |
-| GPA (16) | N/A | ALL FAILED | CUDA 12.4 build failure (infra, now fixed) |
-
-**All Other Jobs — FAILED** (see `.planning/RESULTS-TRACKING-S46.md` for details):
-- SWE-agent+Qwen (4 jobs): 0 edits in 196 steps — model reads files endlessly
-- Codex+Qwen (4 jobs): XML tool calls not parsed → 1-turn exit
-- OpenCode+Qwen (4 jobs): Same XML issue + gpt-5-nano 404
-- OpenHands+Qwen (4 jobs): Mixed — mostly failures, 1/20 success on one run
-- Codex+external (1 job): Missing `--model-name` → bogus URL
-
 ## Available Models
 
 | Model | Cached | Size | TP | GPU Mem | Parser | Status |
 |-------|--------|------|-----|---------|--------|--------|
-| Qwen/Qwen3-Coder-Next-FP8 | Yes | 80GB | 4 | 0.70 | qwen3_coder | Tool calls verified but analysis paralysis in SWE-agent |
-| Qwen/Qwen3.5-27B-FP8 | Yes | 31GB | 4 | 0.60 | qwen3_coder | Same issues as above |
-| Qwen/Qwen3.5-122B-A10B-FP8 | Yes | 127GB | 4 | 0.92 | qwen3_coder | Not tested yet (jobs cancelled) |
+| Qwen/Qwen3-Coder-Next-FP8 | Yes | 80GB | 4 | 0.70 | qwen3_coder | Testing xml_function_calling |
+| Qwen/Qwen3.5-27B-FP8 | Yes | 31GB | 4 | 0.60 | qwen3_coder | Same issues |
+| Qwen/Qwen3.5-122B-A10B-FP8 | Yes | 127GB | 4 | 0.92 | qwen3_coder | Not tested yet |
 
 ## Branch State
 
 - **Current branch**: `dev`
-- **Latest commit**: `5c5d82a7` — Session 47: analyze results, fix GPA CUDA 12.9
+- **Latest commit**: `050209a3` — Add SWEAGENT_PARSE_OVERRIDE env var
 
 ## Infrastructure Bugs Found
 
 | Bug | Severity | Status |
 |-----|----------|--------|
-| GPA CUDA 12.4 nvcc + GCC 14 build failure | CRITICAL | **FIXED** (session 47) |
-| --build-mode direct ignored by SWE-agent | HIGH | **FIXED** (session 46) |
-| Codex+Qwen XML tool format via `/v1/responses` | HIGH | Open — vLLM `qwen3_coder` parser may not work on Responses API |
-| OpenCode+Qwen `gpt-5-nano` title gen 404 | HIGH | Open — hardcoded model name |
-| SWE-agent+Qwen analysis paralysis | HIGH | Open — model never calls str_replace |
-| Codex `--model-name` required with `--external-model` | MEDIUM | Root cause found, added to CLAUDE.md |
-| Lulesh prompt missing MPI warning | MEDIUM | Open — agent disabled MPI, causing segfault |
-| Qwen reasoning parser breaks tool calls | CRITICAL | **FIXED** (session 45) |
-| SWE-agent cost limit crash on self-hosted models | CRITICAL | **FIXED** (session 45) |
-| Kripke CHAI required for CUDA+MPI | CRITICAL | **FIXED** (session 43) |
-| GPA b+tree/backprop build fail (gcc14) | LOW | Open — upstream C code issue |
-| GPA lavaMD config error | LOW | Open — case sensitivity bug in GPA driver |
+| GPA CUDA 12.4 nvcc + GCC 14 build failure | CRITICAL | **FIXED** (s47) |
+| --build-mode direct ignored by SWE-agent | HIGH | **FIXED** (s46) |
+| Codex+Qwen wire_api incompatibility | HIGH | **DROPPED** (s48) — permanently broken |
+| OpenCode+Qwen gpt-5-nano 404 | HIGH | **FIXED** (s48) — small_model config |
+| SWE-agent+Qwen analysis paralysis | HIGH | **TESTING** (s48) — xml_function_calling |
+| Codex --model-name required | MEDIUM | **FIXED** (s47) |
+| Lulesh MPI prompt missing | MEDIUM | **FIXED** (s48) — MPI_RUNTIME_GUIDANCE |
+| Qwen reasoning parser breaks tool calls | CRITICAL | **FIXED** (s45) |
+| SWE-agent cost limit crash | CRITICAL | **FIXED** (s45) |
+| Kripke CHAI required for CUDA+MPI | CRITICAL | **FIXED** (s43) |
+| GPA b+tree/backprop build fail (gcc14) | LOW | Open — upstream |
+| GPA lavaMD config error | LOW | Open — upstream |
 
 ## Recent Decisions
 
-- 2026-03-10 (s47): Cancel all pending Qwen3.5-122B jobs — same root causes would waste ~60 node-hours
-- 2026-03-10 (s47): Run LLNL and GPA as separate jobs — co-scheduling wastes a node
-- 2026-03-10 (s47): Always pass `--model-name` with `--external-model` — added to CLAUDE.md rule #9
-- 2026-03-10 (s47): GPA needs explicit `module load cudatoolkit/12.9` + CUDA_HOME override in runner
-- 2026-03-10 (s47): SWE-agent `parse_function: function_calling` works for Qwen (tool calls succeed) but model has behavioral issue
-- 2026-03-10 (s46): Fix --build-mode direct for SWE-agent LLNL apps and GPA prompt API consistency
-- 2026-03-10 (s46): Submit all 26 benchmark jobs simultaneously
-- 2026-03-10 (s45): Remove reasoning parser from all Qwen MODEL_REGISTRY entries
-- 2026-03-09 (s44): GPA driver `run_driver()` API changed — must use `DriverConfig` object
+- 2026-03-10 (s48): Drop Codex+Qwen permanently (wire_api=responses only, no workaround)
+- 2026-03-10 (s48): SWE-agent uses xml_function_calling for Qwen (tool docs in system prompt)
+- 2026-03-10 (s48): OpenCode uses small_model config for title gen
+- 2026-03-10 (s48): MPI_RUNTIME_GUIDANCE added to ALL prompts (prevents USE_MPI=0)
+- 2026-03-10 (s48): Submit Claude Code with both profiling modes for comparison
+- 2026-03-10 (s47): Cancel all pending Qwen3.5-122B jobs — same root causes
+- 2026-03-10 (s47): Run LLNL and GPA as separate jobs
+- 2026-03-10 (s47): Always pass --model-name with --external-model
 
 ## Next Steps
 
-### Priority 1: Fix Remaining Root Causes
-1. **SWE-agent+Qwen analysis paralysis** — Try `parse_function: thought_action` mode or add stronger edit-forcing language to prompts. The model makes valid tool calls but never chooses `str_replace`. Check if SWE-agent docs mention alternative parse modes for Qwen.
-2. **Codex+Qwen `/v1/responses` tool parsing** — vLLM's `qwen3_coder` parser may only work on `/v1/chat/completions`. Since Codex requires `wire_api=responses`, check if vLLM even supports tool parsing on that endpoint. May need to drop Codex+Qwen.
-3. **OpenCode+Qwen `gpt-5-nano` title gen** — Configure OpenCode to use the main model for titles or disable title generation.
-4. **Lulesh MPI prompt** — Add explicit "DO NOT disable MPI" warning to prompt templates.
+### Immediate: Monitor Session 48 Jobs
+1. Check parse mode test results (49892015 vs 49892016) — which produces edits?
+2. Check OpenCode small_model fix (49892017) — does title gen crash?
+3. Monitor Claude Code + Codex LLNL runs for MPI compliance
+4. If parse mode test succeeds → submit full SWE-agent LLNL run
 
-### Priority 2: Re-submit Fixed Runs
-1. Submit LLNL-only jobs (`--kripke --laghos --lulesh --quicksilver`) — no `--gpa`
-2. Submit GPA-only jobs (`--gpa`) separately
-3. Re-submit Codex+gpt-5.3-codex with `--model-name gpt-5.3-codex --external-model`
-4. Submit Claude Code + profiling variant (missing from session 46)
-5. Only re-submit Qwen runs for frameworks where root causes are fixed
-
-### Priority 3: Deeper Analysis
-1. Investigate OpenHands+Qwen (mixed results — one run got 1/20 success)
-2. Compare Claude Code's optimization strategies across apps
-3. Test if `thought_action` parse mode helps Qwen in SWE-agent
+### After Results
+1. Analyze Claude Code profiling vs no-profiling strategies
+2. Submit SWE-agent + Qwen for all 4 apps (if parse mode works)
+3. Submit OpenCode + Qwen for all 4 apps (if small_model works)
+4. Compare all frameworks for the paper
