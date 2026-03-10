@@ -294,7 +294,10 @@ timeout {SESSION_TIMEOUT} sweagent run --config {config_path} \\
         Args:
             parse_type: Override parse function type. If None, auto-selects
                         based on model name (xml_function_calling for Qwen).
+                        Can also be set via SWEAGENT_PARSE_OVERRIDE env var.
         """
+        # Allow env var override for A/B testing parse modes
+        parse_type = parse_type or os.environ.get("SWEAGENT_PARSE_OVERRIDE")
         if parse_type:
             config_content = config_content.replace(
                 "type: function_calling",
