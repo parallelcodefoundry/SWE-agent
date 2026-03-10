@@ -123,8 +123,6 @@ def run_quicksilver(exe_path, input_file, np_ranks, omp_threads, label="", timeo
     """
     env = os.environ.copy()
     env['OMP_NUM_THREADS'] = str(omp_threads)
-    env['OMP_PROC_BIND'] = 'spread'
-    env['OMP_PLACES'] = 'threads'
 
     # Create modified input file with correct domain decomposition
     tmp_input, xDom, yDom, zDom = make_input_file_for_ranks(input_file, np_ranks)

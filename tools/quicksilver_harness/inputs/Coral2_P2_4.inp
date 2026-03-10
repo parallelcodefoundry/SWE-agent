@@ -9,7 +9,7 @@ Simulation:
    ly: 1
    lz: 1
    nParticles: 212960
-   nSteps: 10
+   nSteps: 8
    nx: 22
    ny: 22
    nz: 11

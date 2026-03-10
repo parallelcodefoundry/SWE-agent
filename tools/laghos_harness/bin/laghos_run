@@ -46,8 +46,8 @@ PRISTINE_LAGHOS_ROOT = _find_pristine_laghos()
 # Default benchmark parameters
 DEFAULT_PROBLEM = 1  # Sedov blast
 DEFAULT_DIM = 2
-DEFAULT_RS = 1  # Refinement — tuned for ~24s wall time on A100 with p1 dim2 np=1
-DEFAULT_TF = 0.4  # Final time
+DEFAULT_RS = 4  # Refinement — tuned for ~67s wall time on 4x A100 with p1 dim2 np=4
+DEFAULT_TF = 0.8  # Final time
 DEFAULT_DEVICE = 'cuda'  # GPU device
 
 # Default tolerance for correctness

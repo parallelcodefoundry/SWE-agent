@@ -79,6 +79,7 @@ def main():
             '-DCMAKE_BUILD_TYPE=Release',
             f'-DENABLE_{args.arch.upper()}=ON',
             '-DENABLE_MPI=ON',
+            '-DENABLE_CHAI=ON',
             '-DCMAKE_CXX_COMPILER=mpicxx',
             '-DCMAKE_C_COMPILER=mpicc'
         ]
