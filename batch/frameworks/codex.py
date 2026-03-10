@@ -3,6 +3,12 @@
 OpenAI Codex CLI uses `codex exec` for non-interactive mode.
 CRITICAL: wire_api=chat is no longer supported; use wire_api=responses always.
 Config via -c flags. Project context via AGENTS.md in workspace.
+
+NOTE: Codex+Qwen via vLLM is INCOMPATIBLE. Codex requires wire_api=responses
+(chat completions permanently removed). vLLM's qwen3_coder parser only works
+on /v1/chat/completions. Qwen XML tool calls pass through as plain text on
+/v1/responses → Codex sees no tools → exits after 1 turn. No workaround.
+Use first-party OpenAI models (gpt-5.3-codex, etc.) with Codex instead.
 """
 
 import os

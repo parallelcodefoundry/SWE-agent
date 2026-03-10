@@ -73,6 +73,19 @@ Each line is a JSON event. Event types: `tool_use`, `text`, `step_start`, `step_
 
 **Key implications:** No tool bundles needed (bash calls harness scripts in PATH). No template variables (all context goes in prompt). No submit mechanism (use `steps` limit, check `git diff`). Model format: `provider-id/model-id` not litellm's `openai/openai/model`.
 
+## Title Generation / Small Model
+
+OpenCode calls a "small model" for session title generation after the first agent step. By default this is `gpt-5-nano` (hardcoded). When serving a different model via vLLM, this 404s and crashes the session.
+
+**Fix:** Set `"small_model": "provider/model-id"` in the config JSON to redirect title gen to the same model being served. The benchmark launcher now adds this automatically.
+
+Source: `packages/opencode/src/provider/provider.ts:1150-1210` (`getSmallModel()`), `packages/opencode/src/session/summary.ts:134-166` (`summarizeMessage()`).
+
+**Caveats:** GitHub issues #2640 and #8609 report `small_model` config doesn't always work reliably. If it fails, alternatives:
+1. Set up a model alias on vLLM that maps `gpt-5-nano` to the served model
+2. Patch OpenCode source to skip title gen
+3. Use `@ai-sdk/openai-compatible` provider
+
 ## Session Storage
 
 Session data stored in `~/.local/share/opencode/storage/`. Full tool call details (input, output, error) stored per-part as JSON files. Invaluable for debugging since the JSONL trajectory only captures model text.

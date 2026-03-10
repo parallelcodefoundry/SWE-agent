@@ -126,6 +126,14 @@ WHAT YOU MUST NOT CHANGE:
 - Do NOT delete entire source files or remove critical #include directives
 - Do NOT disable CUDA/GPU code paths"""
 
+MPI_RUNTIME_GUIDANCE = """\
+CRITICAL MPI CONSTRAINT:
+- All apps run on MULTIPLE GPUs via MPI (Kripke/Laghos/QS: 4 ranks, Lulesh: 8 ranks)
+- The validation harness uses mpirun — disabling MPI causes SEGFAULTS
+- DO NOT set USE_MPI=0, remove -DENABLE_MPI=ON, or disable MPI/CHAI in any way
+- DO NOT remove or modify MPI-related code paths, headers, or link flags
+- Keep all MPI collective operations (MPI_Allreduce, MPI_Barrier, etc.) intact"""
+
 # =============================================================================
 # Profiling tool descriptions
 # =============================================================================
@@ -251,10 +259,12 @@ def build_prompt(
     if framework in ("codex", "claude"):
         role_section += "\n\n" + NON_INTERACTIVE_DIRECTIVE
 
-    # --- 2. BUILD TARGET + ESSENTIAL FLAGS ---
+    # --- 2. BUILD TARGET + ESSENTIAL FLAGS + MPI CONSTRAINT ---
     build_section = f"""{BUILD_TARGET}
 
 {ESSENTIAL_FLAGS[repo_name]}
+
+{MPI_RUNTIME_GUIDANCE}
 
 {CHANGE_RULES}"""
 
@@ -472,6 +482,8 @@ OPTIMIZATION SCOPE:
     system_template = f"""\
 You are an autonomous agent that can interact with a computer to solve performance optimization tasks.
 {arch_section}{build_req}
+
+{MPI_RUNTIME_GUIDANCE}
 {editing}
 
 SUBMISSION:

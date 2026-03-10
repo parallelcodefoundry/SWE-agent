@@ -62,8 +62,14 @@ Build prerequisites (already set up in `~/.cargo/bin/`):
 ## API Format
 
 - **Default**: Responses API (OpenAI native)
-- **Chat Completions**: Set `wire_api = "chat"` for vLLM or other OpenAI-compatible servers
+- **Chat Completions**: `wire_api = "chat"` is **permanently removed** — `WireApi` enum only has `Responses` variant. Attempting `wire_api=chat` throws `CHAT_WIRE_API_REMOVED_ERROR` at deserialization.
 - Agent tools: `shell` (sandboxed bash), `apply_patch` (file editing), `web_search` (optional), MCP servers
+
+### Codex + Qwen/vLLM Incompatibility
+
+**Codex + Qwen via vLLM is permanently broken.** Codex requires `wire_api=responses` (only option). vLLM's `qwen3_coder` tool call parser only works on `/v1/chat/completions`, not `/v1/responses`. Qwen's XML tool calls (`<function=name>`) pass through as plain text on the Responses endpoint — Codex sees no tools and exits after 1 turn.
+
+**Use first-party OpenAI models only with Codex** (gpt-5.3-codex, gpt-5.2-codex, o3, o4-mini). These use the built-in `openai` provider with native Responses API support.
 
 ## Sandbox Modes
 
@@ -129,7 +135,7 @@ codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --js
 
 ## Full Known Issues
 
-1. **API 404/unsupported**: Forgot `wire_api = "chat"` for vLLM
+1. **wire_api=chat removed**: `chat` wire API is permanently gone. Only `responses` works. Use first-party OpenAI models, not vLLM
 2. **"Not inside a trusted directory"**: Add `--skip-git-repo-check`
 3. **Sandbox blocks GPU builds**: Use `--dangerously-bypass-approvals-and-sandbox` on Perlmutter
 4. **Agent never finishes**: No submit gate. Add completion instructions in prompt

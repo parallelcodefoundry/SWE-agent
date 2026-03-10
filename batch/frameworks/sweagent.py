@@ -124,6 +124,9 @@ class SweAgentLauncher(FrameworkLauncher):
         # Override model name and cost limit for external APIs
         config_content = self._apply_model_overrides(config_content)
 
+        # Override parse_function for models that need different parsing
+        config_content = self._apply_parse_function_override(config_content)
+
         # Write modified config
         instance_config = output_dir / f"{instance_id}_config.yaml"
         with open(instance_config, "w") as f:
@@ -251,6 +254,9 @@ timeout {SESSION_TIMEOUT} sweagent run --config {config_path} \\
         )
         config_content = self._apply_model_overrides(config_content)
 
+        # Override parse_function for models that need different parsing
+        config_content = self._apply_parse_function_override(config_content)
+
         # Write config
         instance_config = output_dir / f"{instance_id}_config.yaml"
         with open(instance_config, "w") as f:
@@ -274,6 +280,30 @@ timeout {SESSION_TIMEOUT} sweagent run --config {config_path} \\
             )
             config_content = re.sub(
                 r'^\s*api_key:.*$\n?', '', config_content, flags=re.MULTILINE
+            )
+        return config_content
+
+    def _apply_parse_function_override(self, config_content: str, parse_type: str = None) -> str:
+        """Override parse_function for Qwen models.
+
+        Qwen models emit <function=name> XML for tool calls. The default
+        function_calling parser sends tools via API, but Qwen ignores them
+        and never produces edits. xml_function_calling embeds tool docs in
+        the system prompt text so Qwen sees them natively.
+
+        Args:
+            parse_type: Override parse function type. If None, auto-selects
+                        based on model name (xml_function_calling for Qwen).
+        """
+        if parse_type:
+            config_content = config_content.replace(
+                "type: function_calling",
+                f"type: {parse_type}",
+            )
+        elif self.model_name and "qwen" in self.model_name.lower():
+            config_content = config_content.replace(
+                "type: function_calling",
+                "type: xml_function_calling",
             )
         return config_content
 

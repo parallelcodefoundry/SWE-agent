@@ -1,0 +1,931 @@
+[
+  {
+    "job_id": "49392491",
+    "session": 29,
+    "framework": "sweagent",
+    "model": "gpt-4o-mini",
+    "build_mode": "harness",
+    "timestamp": "2026-02-26T06:15:41",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 68.9,
+        "error": "agent crashed/timed out (68s), no source changes made"
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.2253,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 44.7,
+        "error": null
+      },
+      "lulesh": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9485,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 129,
+        "duration_seconds": 44.9,
+        "error": null
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9692,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 42.7,
+        "error": null
+      }
+    },
+    "profiling_mode": "no_profiling"
+  },
+  {
+    "job_id": "49392492",
+    "session": 29,
+    "framework": "codex",
+    "model": "gpt-4o-mini",
+    "build_mode": "harness",
+    "timestamp": "2026-02-26T06:15:41",
+    "apps": {
+      "kripke": {
+        "builds": false,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": true,
+        "insertions": 58,
+        "deletions": 2,
+        "duration_seconds": 1728.7,
+        "error": "build failed - agent modified CMakeLists.txt but build broke"
+      },
+      "laghos": {
+        "builds": false,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": true,
+        "insertions": 33,
+        "deletions": 7252,
+        "duration_seconds": 1967.2,
+        "error": "build failed - agent deleted most source files (amr/, serial/), broke build"
+      },
+      "lulesh": {
+        "builds": false,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": true,
+        "insertions": 99,
+        "deletions": 192,
+        "duration_seconds": 2195.7,
+        "error": "build failed - agent modified cuda source but introduced compile errors"
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.1098,
+        "meaningful_changes": true,
+        "insertions": 13,
+        "deletions": 4,
+        "duration_seconds": 603.8,
+        "error": null
+      }
+    },
+    "profiling_mode": "no_profiling"
+  },
+  {
+    "job_id": "49392493",
+    "session": 29,
+    "framework": "openhands",
+    "model": "gpt-4o-mini",
+    "build_mode": "harness",
+    "timestamp": "2026-02-26T06:38:15",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 3651.8,
+        "error": "agent timed out (3652s), no source changes made"
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0202,
+        "meaningful_changes": true,
+        "insertions": 10,
+        "deletions": 1,
+        "duration_seconds": 76.3,
+        "error": null
+      },
+      "lulesh": {
+        "builds": false,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": true,
+        "insertions": 4852,
+        "deletions": 4964,
+        "duration_seconds": 320.0,
+        "error": "build failed - agent extensively rewrote CUDA source but introduced compile errors"
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 3618.8,
+        "error": "agent timed out (3619s), no source changes made"
+      }
+    },
+    "profiling_mode": "no_profiling"
+  },
+  {
+    "job_id": "49392496",
+    "session": 29,
+    "framework": "opencode",
+    "model": "gpt-4o-mini",
+    "build_mode": "harness",
+    "timestamp": "2026-02-26T06:38:15",
+    "apps": {
+      "kripke": {
+        "builds": false,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": true,
+        "insertions": 35,
+        "deletions": 120,
+        "duration_seconds": 717.7,
+        "error": "build failed - agent modified kernel source but build broke"
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0412,
+        "meaningful_changes": true,
+        "insertions": 12,
+        "deletions": 71,
+        "duration_seconds": 167.1,
+        "error": null
+      },
+      "lulesh": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9513,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 129,
+        "duration_seconds": 788.0,
+        "error": null
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0436,
+        "meaningful_changes": true,
+        "insertions": 25,
+        "deletions": 14,
+        "duration_seconds": 764.8,
+        "error": null
+      }
+    },
+    "profiling_mode": "no_profiling"
+  },
+  {
+    "job_id": "49405192",
+    "session": 31,
+    "framework": "sweagent",
+    "model": "gpt-4o-mini",
+    "build_mode": "harness",
+    "timestamp": "2026-02-26T10:11:14",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9329,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 72.7,
+        "error": null
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.2295,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 46.6,
+        "error": null
+      },
+      "lulesh": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9496,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 129,
+        "duration_seconds": 44.3,
+        "error": null
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0487,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 46.5,
+        "error": null
+      }
+    },
+    "profiling_mode": "no_profiling"
+  },
+  {
+    "job_id": "49405194",
+    "session": 31,
+    "framework": "openhands",
+    "model": "gpt-4o-mini",
+    "build_mode": "harness",
+    "timestamp": "2026-02-26T10:25:47",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9876,
+        "meaningful_changes": true,
+        "insertions": 15,
+        "deletions": 0,
+        "duration_seconds": 559.9,
+        "error": null
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0027,
+        "meaningful_changes": true,
+        "insertions": 10,
+        "deletions": 1,
+        "duration_seconds": 165.3,
+        "error": null
+      },
+      "lulesh": {
+        "builds": false,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": true,
+        "insertions": 4851,
+        "deletions": 4966,
+        "duration_seconds": 457.1,
+        "error": "build failed - agent extensively rewrote CUDA source but introduced compile errors"
+      },
+      "quicksilver": {
+        "builds": null,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 0,
+        "duration_seconds": 3600,
+        "error": "job cancelled/timed out during validation - no results generated"
+      }
+    },
+    "profiling_mode": "no_profiling"
+  },
+  {
+    "job_id": "49405195",
+    "session": 32,
+    "framework": "opencode",
+    "model": "gpt-4o-mini",
+    "build_mode": "harness",
+    "timestamp": "2026-02-26T11:48:59",
+    "apps": {
+      "kripke": {
+        "builds": null,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 0,
+        "duration_seconds": null,
+        "error": "agent crashed - no results generated"
+      },
+      "laghos": {
+        "builds": false,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": true,
+        "insertions": 12,
+        "deletions": 3,
+        "duration_seconds": 400.3,
+        "error": "build failed - agent modified laghos_solver.cpp MFEM_FORALL macros but broke build"
+      },
+      "lulesh": {
+        "builds": true,
+        "correctness": "failed",
+        "speedup": 3.4126,
+        "meaningful_changes": true,
+        "insertions": 5,
+        "deletions": 134,
+        "duration_seconds": 619.9,
+        "error": "correctness failed - agent changed kernel block sizes and deleted legacy Makefiles"
+      },
+      "quicksilver": {
+        "builds": null,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 0,
+        "duration_seconds": null,
+        "error": "agent crashed - no results generated"
+      }
+    },
+    "profiling_mode": "no_profiling"
+  },
+  {
+    "job_id": "49405196",
+    "session": 32,
+    "framework": "claude",
+    "model": "claude-sonnet-4-20250514",
+    "build_mode": "harness",
+    "timestamp": "2026-02-26T12:33:38",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0172,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 61.8,
+        "error": null
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9809,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 25.4,
+        "error": null
+      },
+      "lulesh": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9435,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 129,
+        "duration_seconds": 25.3,
+        "error": null
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "timeout",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 24.9,
+        "error": "validation timed out"
+      }
+    },
+    "profiling_mode": "no_profiling"
+  },
+  {
+    "job_id": "49407271",
+    "session": 32,
+    "framework": "codex",
+    "model": "gpt-5.3-codex",
+    "build_mode": "harness",
+    "timestamp": "2026-02-26T13:04:39",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0141,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 68.6,
+        "error": null
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9926,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 30.3,
+        "error": null
+      },
+      "lulesh": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9353,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 129,
+        "duration_seconds": 31.3,
+        "error": null
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "timeout",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 31.7,
+        "error": "validation timed out"
+      }
+    },
+    "profiling_mode": "no_profiling"
+  },
+  {
+    "job_id": "49410718",
+    "session": 32,
+    "framework": "sweagent",
+    "model": "gpt-4o-mini",
+    "build_mode": "harness",
+    "timestamp": "2026-02-26T13:14:29",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0164,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 385.4,
+        "error": null
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.1042,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 152.6,
+        "error": null
+      },
+      "lulesh": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9388,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 129,
+        "duration_seconds": 151.2,
+        "error": null
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "timeout",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 148.1,
+        "error": "validation timed out"
+      }
+    },
+    "profiling_mode": "no_profiling"
+  },
+  {
+    "job_id": "49641358",
+    "session": 41,
+    "framework": "sweagent",
+    "model": "openai-gpt-oss-120b",
+    "build_mode": "harness",
+    "profiling_mode": "with_profiling",
+    "timestamp": "2026-03-04T05:57:00",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0397,
+        "meaningful_changes": true,
+        "insertions": 634262,
+        "deletions": 0,
+        "duration_seconds": 3663.000153541565,
+        "error": "Agent run failed"
+      },
+      "quicksilver": {
+        "builds": null,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 0,
+        "duration_seconds": 1311.5683753490448,
+        "error": "Agent made no code changes"
+      }
+    }
+  },
+  {
+    "job_id": "49641358",
+    "session": 41,
+    "framework": "sweagent",
+    "model": "openai-gpt-oss-120b",
+    "build_mode": "harness",
+    "profiling_mode": "no_profiling",
+    "timestamp": "2026-03-04T05:57:00",
+    "apps": {
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9972,
+        "meaningful_changes": true,
+        "insertions": 42,
+        "deletions": 9,
+        "duration_seconds": 2927.052136659622,
+        "error": null
+      },
+      "lulesh": {
+        "builds": false,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": true,
+        "insertions": 2,
+        "deletions": 2,
+        "duration_seconds": 3623.9769723415375,
+        "error": "Agent run failed"
+      },
+      "quicksilver": {
+        "builds": null,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 0,
+        "duration_seconds": 3598.266315460205,
+        "error": "Agent made no code changes"
+      }
+    }
+  },
+  {
+    "job_id": "49641359",
+    "session": 41,
+    "framework": "opencode",
+    "model": "openai-gpt-oss-120b",
+    "build_mode": "harness",
+    "profiling_mode": "with_profiling",
+    "timestamp": "2026-03-04T05:57:50",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0276,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 404.8130097389221,
+        "error": null
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0092,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 56.53388571739197,
+        "error": null
+      },
+      "lulesh": {
+        "builds": null,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 0,
+        "duration_seconds": 67.50246930122375,
+        "error": "Agent made no code changes"
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "timeout",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 657.3917100429535,
+        "error": null
+      }
+    }
+  },
+  {
+    "job_id": "49641359",
+    "session": 41,
+    "framework": "opencode",
+    "model": "openai-gpt-oss-120b",
+    "build_mode": "harness",
+    "profiling_mode": "no_profiling",
+    "timestamp": "2026-03-04T05:57:50",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0224,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 271.8652091026306,
+        "error": null
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0265,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 115.04308485984802,
+        "error": null
+      },
+      "lulesh": {
+        "builds": null,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 0,
+        "duration_seconds": 121.1070351600647,
+        "error": "Agent made no code changes"
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "timeout",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 44.329899311065674,
+        "error": null
+      }
+    }
+  },
+  {
+    "job_id": "49641360",
+    "session": 41,
+    "framework": "openhands",
+    "model": "openai-gpt-oss-120b",
+    "build_mode": "harness",
+    "profiling_mode": "with_profiling",
+    "timestamp": "2026-03-04T06:06:00",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0362,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 104.53463959693909,
+        "error": "Agent run failed"
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0014,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 82.02946877479553,
+        "error": "Agent run failed"
+      },
+      "lulesh": {
+        "builds": null,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 0,
+        "duration_seconds": 72.5296700000763,
+        "error": "Agent made no code changes"
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "timeout",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 76.46727752685547,
+        "error": "Agent run failed"
+      }
+    }
+  },
+  {
+    "job_id": "49641360",
+    "session": 41,
+    "framework": "openhands",
+    "model": "openai-gpt-oss-120b",
+    "build_mode": "harness",
+    "profiling_mode": "no_profiling",
+    "timestamp": "2026-03-04T06:06:00",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0436,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 108.1778039932251,
+        "error": "Agent run failed"
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9924,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 143.72603011131287,
+        "error": "Agent run failed"
+      },
+      "lulesh": {
+        "builds": null,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 0,
+        "deletions": 0,
+        "duration_seconds": 68.3595232963562,
+        "error": "Agent made no code changes"
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "timeout",
+        "speedup": null,
+        "meaningful_changes": false,
+        "insertions": 9,
+        "deletions": 0,
+        "duration_seconds": 103.03173732757568,
+        "error": "Agent run failed"
+      }
+    }
+  },
+  {
+    "job_id": "49641364",
+    "session": 41,
+    "framework": "claude",
+    "model": "openai-gpt-oss-120b",
+    "build_mode": "harness",
+    "profiling_mode": "with_profiling",
+    "timestamp": "2026-03-04T07:36:50",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 11.1797,
+        "meaningful_changes": true,
+        "insertions": 15,
+        "deletions": 4,
+        "duration_seconds": 1508.7821276187897,
+        "error": null
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0664,
+        "meaningful_changes": true,
+        "insertions": 23,
+        "deletions": 47,
+        "duration_seconds": 3045.216993331909,
+        "error": null
+      },
+      "lulesh": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 0.9454,
+        "meaningful_changes": true,
+        "insertions": 53,
+        "deletions": 33,
+        "duration_seconds": 3119.022568464279,
+        "error": null
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "unknown",
+        "speedup": null,
+        "meaningful_changes": true,
+        "insertions": 22,
+        "deletions": 6,
+        "duration_seconds": 3620.806318998337,
+        "error": "Agent run failed"
+      }
+    }
+  },
+  {
+    "job_id": "49641364",
+    "session": 41,
+    "framework": "claude",
+    "model": "openai-gpt-oss-120b",
+    "build_mode": "harness",
+    "profiling_mode": "no_profiling",
+    "timestamp": "2026-03-04T07:36:50",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 15.0768,
+        "meaningful_changes": true,
+        "insertions": 40,
+        "deletions": 5,
+        "duration_seconds": 1164.1954562664032,
+        "error": null
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.0467,
+        "meaningful_changes": true,
+        "insertions": 14,
+        "deletions": 41,
+        "duration_seconds": 1052.0909552574158,
+        "error": null
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "timeout",
+        "speedup": null,
+        "meaningful_changes": true,
+        "insertions": 29,
+        "deletions": 26,
+        "duration_seconds": 3538.91468834877,
+        "error": null
+      }
+    }
+  },
+  {
+    "job_id": "49878379",
+    "session": 46,
+    "framework": "claude",
+    "model": "openai-gpt-oss-120b",
+    "build_mode": "direct",
+    "profiling_mode": "no_profiling",
+    "timestamp": "2026-03-10T03:22:30",
+    "apps": {
+      "kripke": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 2.0255,
+        "meaningful_changes": true,
+        "insertions": 19,
+        "deletions": 9,
+        "duration_seconds": 3691.8,
+        "error": "Agent run failed"
+      },
+      "laghos": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.299,
+        "meaningful_changes": true,
+        "insertions": 17,
+        "deletions": 54,
+        "duration_seconds": 3037.1,
+        "error": null
+      },
+      "lulesh": {
+        "builds": true,
+        "correctness": "failed",
+        "speedup": null,
+        "meaningful_changes": true,
+        "insertions": 2,
+        "deletions": 2,
+        "duration_seconds": 3632.2,
+        "error": "Agent disabled MPI (USE_MPI=0) causing segfault"
+      },
+      "quicksilver": {
+        "builds": true,
+        "correctness": "passed",
+        "speedup": 1.6969,
+        "meaningful_changes": true,
+        "insertions": 123,
+        "deletions": 50,
+        "duration_seconds": 3629.7,
+        "error": "Agent run failed"
+      }
+    }
+  }
+]

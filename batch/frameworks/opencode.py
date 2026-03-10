@@ -53,6 +53,7 @@ class OpenCodeLauncher(FrameworkLauncher):
                     }
                 },
                 "model": f"{provider_id}/{model_id}",
+                "small_model": f"{provider_id}/{model_id}",
                 # CRITICAL: Use object form {"*": "allow"}, NOT string "allow".
                 # OpenCode's OPENCODE_CONFIG_CONTENT is merged via JSON.parse()
                 # without Zod schema validation, so the permissionTransform that
@@ -73,6 +74,7 @@ class OpenCodeLauncher(FrameworkLauncher):
                     }
                 },
                 "model": "local-vllm/openai/gpt-oss-120b",
+                "small_model": "local-vllm/openai/gpt-oss-120b",
                 # See comment above — must use object form, not string "allow"
                 "permission": {"*": "allow"},
             }

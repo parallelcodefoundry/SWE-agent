@@ -79,6 +79,24 @@ bash batch/run_benchmark.sh --base --external-model --model-name gpt-4o-mini
 ```
 `--model-name` overrides config model name, strips `api_base`/`api_key`, sets `per_instance_cost_limit: 1.0`.
 
+## Parse Function Types
+
+SWE-agent supports 11 parse modes in `sweagent/tools/parsing.py`. Key ones:
+
+| Type | How model sees tools | Tool call format | Best for |
+|------|---------------------|-----------------|----------|
+| `function_calling` | API function definitions (LiteLLM) | JSON tool_calls | OpenAI, most models |
+| `xml_function_calling` | Text in system prompt | `<function=name><parameter=key>value</parameter></function>` | **Qwen models** |
+| `thought_action` | Text in system prompt | Thought + triple-backtick code block | Models struggling with function calling |
+| `json` | API function definitions | JSON | Alternative to function_calling |
+| `xml_thought_action` | Text in system prompt | XML thought + `<command>` tags | Alternative XML format |
+
+**Critical architectural difference**: When `use_function_calling` is `True` (only `function_calling` and `json`), tools are sent via LiteLLM API tool definitions. When `False`, tool docs are embedded in system prompt text.
+
+**Qwen models**: Use `xml_function_calling`. Qwen natively emits `<function=name>` XML which this parser handles directly. The default `function_calling` mode sends tools via API but Qwen exhibits "analysis paralysis" — makes valid tool calls for reading but never produces edits.
+
+The benchmark launcher (`sweagent.py`) auto-selects `xml_function_calling` for Qwen models via `_apply_parse_function_override()`.
+
 ## Full Known Issues List
 
 1. **Double openai prefix**: vLLM models need `openai/openai/MODEL` (not `openai/MODEL`)
