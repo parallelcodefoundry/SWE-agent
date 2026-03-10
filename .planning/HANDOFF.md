@@ -30,9 +30,12 @@ Session 48 fixed all 6 root causes from session 47's analysis and submitted 7 be
 - [x] Goal 13: Submit SWE-agent parse mode test B: thought_action (49892016)
 - [x] Goal 14: Submit OpenCode small_model test (49892017)
 - [x] Goal 15: Compare session 41 vs 46 Claude Code results
-- [ ] Goal 16: Analyze session 48 job results (NEXT SESSION)
-- [ ] Goal 17: Submit full SWE-agent/OpenCode runs if tests pass (NEXT SESSION)
-- [ ] Goal 18: Update memory files with findings (NEXT SESSION)
+- [x] Goal 16: Analyze historical logs for intermediate speedups (s41 + s46 all frameworks)
+- [x] Goal 17: Design best-state tracking approach (harness-level snapshotting)
+- [x] Goal 18: Validate GPA CUDA 12.9 on compute node (hotspot + gaussian PASSED)
+- [ ] Goal 19: Check session 48 job results (NEXT SESSION)
+- [ ] Goal 20: Implement best-state tracking in harness scripts (NEXT SESSION)
+- [ ] Goal 21: Submit full SWE-agent/OpenCode runs if tests pass (NEXT SESSION)
 
 ## Files Modified This Session
 
@@ -60,19 +63,54 @@ Session 48 fixed all 6 root causes from session 47's analysis and submitted 7 be
 - **Session 41 Kripke 15.08x is inflated** — likely np=1 (pre-calibration), session 46 uses np=4
 - **sbatch --export=ALL** passes env vars through, so SWEAGENT_PARSE_OVERRIDE works
 
-## Specific Next-Session Investigation Tasks
+## Key Log Analysis Findings (Late Session 48)
 
-### Task A: Analyze Parse Mode Test Results
-**Job 49892015** (xml_function_calling) vs **49892016** (thought_action)
-- Success criterion: at least 1 str_replace / file edit call
-- Check agent trajectories for edit behavior
-- Winner becomes default for Qwen
+### Kripke 4 speedup values = per-kernel-phase, NOT per-rank
+The `kripke_run` harness reports 4 speedups: Solve (overall), SweepSolver, LTimes, LPlusTimes. See lines 434-464 of `tools/kripke_harness/bin/kripke_run`.
 
-### Task B: Analyze All Session 48 Results
-- Claude Code with profiling vs without (49892081 vs 49891957)
-- Codex + gpt-5.3-codex performance (49891958)
-- OpenCode small_model fix (49892017) — did title gen crash?
-- GPA results (49891960)
+### Session 46 Kripke: Agent achieved 20.93x then intentionally reverted
+- Agent fused initialization of ALL 3 kernels (LTimes, LPlusTimes, Scattering)
+- Removed 3 `kConst()` calls from `SteadyStateSolver.cpp` (these use `RAJA::seq_exec` → expensive CHAI GPU↔CPU transfers)
+- Got 10.71x/1.89x/20.93x/2.60x (per-kernel) with CORRECTNESS: PASSED
+- But agent detected wrong physics: particle count converged to 7.65e7 instead of 1.41e8
+- Root cause: Scattering.cpp was reverted to original (uses `+=`) but `kConst(phi_out, 0.0)` was still removed → stale accumulation
+- Agent restored `kConst(phi_out, 0.0)`, kept only LTimes + LPlusTimes fused init → safe 2.03x
+- **Critical finding**: Harness CORRECTNESS check (3 values) too weak — missed the physics error
+- Agent reasoning at **line 273** of `kripke__base_agent_realtime.log` (context compaction summary)
+
+### Session 46 Other Frameworks: Zero intermediate speedups
+- Codex/OpenCode/SWE-agent with Qwen: no edits attempted (known root causes now fixed)
+- OpenHands: QS 1.00x (baseline match), Lulesh crashed, rest incomplete
+
+### Session 41 Lost Speedups
+- Laghos: intermediate 1.10x > final 1.0664x (measurement noise from CG tuning)
+- QS: achieved 1.29x with device LTO but validation timed out → reported null
+
+### Best-State Tracking Design (NOT YET IMPLEMENTED)
+**Concept**: Harness saves best patch on each PASSED run, benchmark_runner recovers after timeout.
+**Hook points**:
+- `kripke_run` line ~727 (after `format_speedup_summary`) — save `git diff HEAD` + speedup
+- `hpc_benchmark_runner.py` line ~687 (after `run_agent`) — check `.best_patch.diff` vs current
+- All 4 harness scripts need same logic (kripke_run, laghos_run, lulesh_run, qs_run)
+**Also needed**:
+- Stronger Kripke correctness: particle count convergence (compare iter-by-iter convergence profile)
+- Turn/time budget in harness output (agent sees "Best: 1.4x | Run 3/N | ~40 min remaining")
+
+## Specific Next-Session Tasks
+
+### Task A: Check Session 48 Job Results (HIGHEST PRIORITY)
+Check `squeue -u krydzy` then `batch_results/` for completed jobs:
+- 49892015/49892016: SWE-agent parse mode tests (xml_function_calling vs thought_action)
+- 49892017: OpenCode small_model test
+- 49891957/49892081: Claude Code LLNL (no/with profiling)
+- 49891958: Codex + gpt-5.3-codex
+- 49891960: Claude Code GPA
+
+### Task B: Implement Best-State Tracking
+1. Add `.best_patch.diff` + `.best_speedup` saving to all 4 `*_run` harness scripts
+2. Add best-state recovery to `hpc_benchmark_runner.py:_validate_agent_changes()`
+3. Add status line to harness output: "Best speedup: X.XXx | Run N"
+4. Strengthen Kripke correctness check (particle count convergence)
 
 ### Task C: Submit Full Runs Based on Test Results
 - If parse mode test passes → submit SWE-agent + Qwen for all 4 LLNL apps
@@ -82,3 +120,4 @@ Session 48 fixed all 6 root causes from session 47's analysis and submitted 7 be
 
 1. `6aff1565` — Session 48 Phase 1: Fix root causes for benchmark resubmission
 2. `050209a3` — Add SWEAGENT_PARSE_OVERRIDE env var for A/B testing parse modes
+3. `ddc32744` — Save session 48 state — 7 benchmark jobs submitted
