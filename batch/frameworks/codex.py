@@ -42,17 +42,13 @@ class CodexLauncher(FrameworkLauncher):
             if model_id in self.FIRST_PARTY_MODELS:
                 # First-party OpenAI model — use built-in provider for native
                 # apply_patch and model-specific features.
-                flags = [
+                # Base URL is handled via OPENAI_BASE_URL env var (Codex reads
+                # this natively in create_openai_provider()). We export it in
+                # build_launch_command() from OPENAI_API_BASE.
+                return [
                     f"model={model_id}",
                     "web_search=disabled",
                 ]
-                # Override base URL if OPENAI_API_BASE is set (e.g. regional
-                # endpoint us.api.openai.com). Without this, the built-in
-                # "openai" provider hardcodes api.openai.com and gets 401.
-                api_base = os.environ.get("OPENAI_API_BASE", "")
-                if api_base:
-                    flags.append(f"model_providers.openai.base_url={api_base}")
-                return flags
             else:
                 # External model — use custom provider name to avoid collision
                 # with Codex built-in "openai" provider (or_insert semantics
@@ -166,6 +162,9 @@ fi
 {self.build_shell_preamble(repo_name, workspace)}
 export CODEX_API_KEY="${{OPENAI_API_KEY}}"
 export CODEX_DEFAULT_EXEC_TIMEOUT_MS=600000
+# Codex built-in openai provider reads OPENAI_BASE_URL (not OPENAI_API_BASE)
+# for regional endpoints (us.api.openai.com). Bridge the env var.
+export OPENAI_BASE_URL="${{OPENAI_API_BASE:-${{OPENAI_BASE_URL:-}}}}"
 
 # Enable Codex internal logging (Rust tracing) — goes to stderr,
 # which subprocess.run merges into _agent_realtime.log via stderr=STDOUT.

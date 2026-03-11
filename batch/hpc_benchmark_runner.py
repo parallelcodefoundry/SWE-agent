@@ -483,7 +483,7 @@ class HPCBenchmarkRunner:
                     stdout=log_fh,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    timeout=3900  # slightly beyond SESSION_TIMEOUT to allow cleanup
+                    timeout=7500  # slightly beyond SESSION_TIMEOUT (7200) to allow cleanup
                 )
 
             success = proc.returncode == 0

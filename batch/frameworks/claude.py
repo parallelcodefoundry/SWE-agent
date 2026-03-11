@@ -134,7 +134,7 @@ timeout {SESSION_TIMEOUT} claude -p "$(cat '{prompt_file}')" \\
     --output-format stream-json \\
     --verbose \\
     --model {model} \\
-    --max-turns 200 \\
+    --max-turns 300 \\
     2>&1 | tee "{traj_file}"
 """
         return shell_script

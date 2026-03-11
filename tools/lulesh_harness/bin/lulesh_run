@@ -192,6 +192,15 @@ def get_pristine_executable():
         if cuda_path:
             build_env['CUDATOOLKIT_HOME'] = cuda_path
 
+        # Ensure MPICH_DIR is set — Makefile uses it for MPI paths but
+        # Perlmutter uses OpenMPI (sets OPENMPI_ROOT instead).
+        if not build_env.get('MPICH_DIR'):
+            openmpi_root = build_env.get('OPENMPI_ROOT', '')
+            fallback = '/global/common/software/nersc/pe/gpu/gnu/openmpi/5.0.7'
+            mpi_dir = openmpi_root or (fallback if os.path.isdir(fallback) else '')
+            if mpi_dir:
+                build_env['MPICH_DIR'] = mpi_dir
+
         build_result = subprocess.run(
             ['make', '-j8', 'USE_MPI=1'],
             cwd=PRISTINE_LULESH_ROOT,

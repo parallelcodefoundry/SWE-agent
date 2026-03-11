@@ -152,7 +152,7 @@ APP_EXECUTION_TIMEOUT = {
 }
 
 # Session timeout for all frameworks (seconds)
-SESSION_TIMEOUT = 3600
+SESSION_TIMEOUT = 7200
 
 
 class FrameworkLauncher(ABC):
