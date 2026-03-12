@@ -1,141 +1,126 @@
-# Handoff — Session 49
+# Handoff — Session 50
 
-Last updated: 2026-03-11
+Last updated: 2026-03-12
 
 ## What We Were Implementing and Why
 
-Session 49 analyzed all 7 session 48 benchmark jobs, identified 3 infrastructure bugs, fixed them, and increased timeouts/steps for all frameworks. Also discovered the Lulesh pristine binary has been missing MPI across ALL sessions.
+Session 50 focused on: rebuilding Lulesh with MPI, fixing GPA build failures, running pre-flight validation on all framework+model combos, and submitting a large batch of benchmark jobs (10 total).
 
 ## Approach Chosen
 
-- Deep analysis via parallel background agents (5 for job results, 4 for root causes)
-- Direct bug fixes (Codex config, GPA kwarg, Lulesh MPI)
-- Timeout increase across all frameworks (1hr→2hr, 200→300 steps)
-- No prompt changes (user decided against hotspot hints and time tracking)
+- Parallel background agents for pre-flight validation (4 frameworks), QS patch analysis, GPA investigation, Lulesh rebuild
+- Fix-then-submit: applied all fixes before submitting jobs
+- Scheduled Claude Code runs +3hr via nohup+sleep (atd not available on Perlmutter)
 
 ## Goal Progress
 
-- [x] Goal 0: Load state, check job status
-- [x] Goal 1: Analyze all 7 session 48 job results (deep dive)
-- [x] Goal 2: Fix Codex config crash (OPENAI_BASE_URL env var bridge)
-- [x] Goal 3: Fix GPA retain_nsys_profiles kwarg (committed in GPA-Benchmark)
-- [x] Goal 4: Fix Lulesh MPI build (MPICH_DIR from OPENMPI_ROOT)
-- [x] Goal 5: Increase SESSION_TIMEOUT to 7200s for all frameworks
-- [x] Goal 6: Increase max turns/calls to 300 for all frameworks
-- [x] Goal 7: Analyze Kripke s41 patches (kConst seq_exec→cuda_exec = legitimate opt)
-- [x] Goal 8: Analyze Lulesh MPI root cause (pristine binary genuinely lacks MPI)
-- [x] Goal 9: Analyze SWE-agent Qwen reasoning (pure filler, model limitation)
-- [x] Goal 10: Compare Claude Code diffs across sessions (QS missing tally batching)
-- [x] Goal 11: Check s48 with_profiling results (QS 1.65x vs 1.02x without)
-- [x] Goal 12: Commit all fixes
-- [ ] Goal 13: Rebuild pristine Lulesh on compute node (NEXT SESSION)
-- [ ] Goal 14: Resubmit Codex + gpt-5.3-codex LLNL (NEXT SESSION)
-- [ ] Goal 15: Resubmit Claude Code GPA (NEXT SESSION)
-- [ ] Goal 16: Resubmit full benchmark matrix with both profiling modes (NEXT SESSION)
-- [ ] Goal 17: Implement best-state tracking (NEXT SESSION)
-- [ ] Goal 18: Analyze 49892081 QS with_profiling patch vs no_profiling patch (NEXT SESSION)
+- [x] Goal 0: Load state from session 49
+- [x] Goal 1: Rebuild pristine Lulesh with MPI on compute node
+- [x] Goal 2: Recalibrate Lulesh timing (i=5000→i=2000 for ~63s with real MPI)
+- [x] Goal 3: Add OMPI_MCA_btl fix for MPI finalization segfault
+- [x] Goal 4: Analyze QS profiling vs no-profiling patches (vault batching = real bottleneck)
+- [x] Goal 5: Pre-flight Codex + gpt-5.3-codex (PASS)
+- [x] Goal 6: Pre-flight SWE-agent + Qwen (PASS)
+- [x] Goal 7: Pre-flight OpenHands + Qwen (PASS, patched FORCE_STRING_SERIALIZER)
+- [x] Goal 8: Pre-flight Claude Code + GPA (PASS, lavaMD fix)
+- [x] Goal 9: Investigate GPA build failures (5 apps fixed)
+- [x] Goal 10: Fix SAFE_MODEL naming in run_benchmark.sh
+- [x] Goal 11: Expand profiling prompt (PROFILING_DESCRIPTION + GPA prompt)
+- [x] Goal 12: Submit all 10 benchmark jobs
+- [x] Goal 13: Commit all changes
+- [ ] Goal 14: Analyze session 50 job results (NEXT SESSION)
+- [ ] Goal 15: Diagnose gptoss120b failures — 3 jobs failed in ~4 min (NEXT SESSION)
+- [ ] Goal 16: Diagnose SWE-agent+Qwen LLNL early exit — 10 min (NEXT SESSION)
+- [ ] Goal 17: Implement best-state tracking on feature branch (NEXT SESSION)
+- [ ] Goal 18: Investigate OpenCode + Qwen tool calling issue (NEXT SESSION)
 
 ## Files Modified This Session
 
-- `batch/frameworks/base.py` — SESSION_TIMEOUT 3600→7200
-- `batch/frameworks/claude.py` — --max-turns 200→300
-- `batch/frameworks/codex.py` — Removed -c model_providers.openai.* flags, added OPENAI_BASE_URL bridge in shell preamble
-- `batch/frameworks/openhands.py` — max_iterations 200→300 (both config and CLI)
-- `batch/hpc_benchmark_runner.py` — Agent subprocess timeout 3900→7500
-- `config/hpc/*.yaml` (11 files) — per_instance_call_limit 200→300
-- `tools/lulesh_harness/bin/lulesh_build` — Set MPICH_DIR from OPENMPI_ROOT
-- `tools/lulesh_harness/bin/lulesh_run` — Set MPICH_DIR from OPENMPI_ROOT in get_pristine_executable()
-- GPA-Benchmark repo (`/pscratch/sd/k/krydzy/GPA-Benchmark`): commit `0a6aece` — removed retain_nsys_profiles kwarg
+### SWE-agent repo (committed as `da0d04e4`)
+- `CLAUDE.md` — Updated Lulesh timing: i=2000, ~63s
+- `batch/run_benchmark.sh` — SAFE_MODEL uses MODEL_NAME when available
+- `batch/hpc_benchmark_runner.py` — lavaMD `.lower()` fix in `_run_gpa_driver()`
+- `batch/frameworks/prompt.py` — Added microbench_code/check_profiling_ready/system_summary to PROFILING_DESCRIPTION; expanded GPA profiling prompt; updated SWE-agent instance hint
+- `tools/gpa_harness/bin/gpa_test` — lavaMD `.lower()` fix in DriverConfig
+- `tools/lulesh_harness/bin/lulesh_run` — DEFAULT_ITERATIONS 5000→2000, OMPI_MCA_btl=^smcuda
+
+### GPA-Benchmark repo (committed as `dd38308`)
+- `gpa_bench_driver/driver_src/driver_config.py` — Prepend cuda_home/bin to PATH
+- `rodinia/b+tree/Makefile` — K&R C warning suppression flags + `-allow-unsupported-compiler`
+- `rodinia/backprop/Makefile` — K&R C warning suppression flags
+- `rodinia/srad/srad_v1/Makefile` — Use `$(CC)` instead of bare `nvcc`
+
+### OpenHands SDK (installed package, NOT in git)
+- `/global/homes/k/krydzy/envs/sweagent/lib/python3.13/site-packages/openhands/sdk/llm/utils/model_features.py`
+  - Added "qwen" and "gpt-oss" to FORCE_STRING_SERIALIZER_PATTERNS (lines 101-102)
+  - Prevents structured content crash when vLLM-hosted models receive tool results
 
 ## Files to Read First Next Session
 
-- `STATE.md` — Full session 49 summary
-- `.planning/HANDOFF.md` — This file, goal checklist
-- `batch/frameworks/codex.py` lines 42-55 — Codex first-party model config (verify fix)
-- `tools/lulesh_harness/bin/lulesh_build` lines 198-210 — MPICH_DIR bridging (verify)
-- `tools/lulesh_harness/bin/lulesh_run` lines 190-202 — Same MPICH_DIR fix
-- `batch_results/claude_openai-gpt-oss-120b_20260311_005846_49892081/` — with_profiling results (QS 1.65x patch to analyze)
+- `STATE.md` — Full session 50 summary
+- `.planning/HANDOFF.md` — This file
+- `batch_results/` — Check for new result directories from jobs 49936642-49936649, 49940919-49940920
+- For gptoss120b failures: `batch_results/*gpt-oss*49936647/` (or similar) — check agent.log for crash reason
+- For SWE-agent early exit: `batch_results/*Qwen*49936643/` — check why it finished in 10 min
+
+## Job Results to Analyze (Session 50 Submissions)
+
+| Job ID | Framework | Model | Apps | Status | Duration | Notes |
+|--------|-----------|-------|------|--------|----------|-------|
+| 49936642 | Codex | gpt-5.3-codex | LLNL | COMPLETED | 01:28:56 | First successful Codex run! |
+| 49936643 | SWE-agent | Qwen3-Coder-Next | LLNL | COMPLETED | 00:10:34 | Suspiciously fast — crashed? |
+| 49936644 | SWE-agent | Qwen3-Coder-Next | GPA | TIMEOUT | 04:00:23 | Ran full walltime |
+| 49936645 | OpenHands | Qwen3-Coder-Next | LLNL | COMPLETED | 02:16:26 | First OpenHands+Qwen test |
+| 49936646 | OpenHands | Qwen3-Coder-Next | GPA | TIMEOUT | 04:00:24 | Ran full walltime |
+| 49936647 | OpenHands | gptoss120b | GPA | FAILED | 00:04:09 | Crashed fast — vLLM? |
+| 49936648 | SWE-agent | gptoss120b | GPA | FAILED | 00:04:27 | Crashed fast — vLLM? |
+| 49936649 | OpenCode | gptoss120b | GPA | FAILED | 00:03:25 | Crashed fast — vLLM? |
+| 49940919 | Claude Code | Anthropic | LLNL | COMPLETED | 01:06:15 | Scheduled +3hr |
+| 49940920 | Claude Code | Anthropic | GPA | TIMEOUT | 04:00:00 | Scheduled +3hr |
 
 ## Gotchas and Decisions
 
-### Critical: Lulesh Pristine Binary Has No MPI
-- ALL previous Lulesh results across ALL sessions were affected
-- Pristine binary at `/pscratch/sd/k/krydzy/SWE-agent/Lulesh/cuda/lulesh` links NO libmpi
-- Root cause: Makefile uses `MPICH_DIR` for MPI paths, but Perlmutter OpenMPI sets `OPENMPI_ROOT` instead
-- Fix applied to `lulesh_build` and `lulesh_run` but **pristine binary needs rebuild on compute node**
-- Verify after rebuild: `readelf -d Lulesh/cuda/lulesh | grep mpi` should show `libmpi.so.40`
+### Lulesh Timing Was Always Wrong
+- Previous "51-52s" measurements used a non-MPI binary where ranks ran independently
+- With real MPI communication, i=5000 takes ~131s → recalibrated to i=2000 (~63s)
+- ALL previous Lulesh benchmark results are invalid (agents were optimizing a single-GPU program)
 
-### Profiling Is The Key Differentiator
-- QS: 1.65x WITH profiling vs 1.02x WITHOUT (same model, same session)
-- No-profiling agent finds micro-opts (sincos, rsqrt) but misses atomic contention
-- With-profiling agent (presumably) identified atomic bottleneck via profiling data
-- **Must analyze 49892081 QS patch** to confirm what profiling-guided optimizations were applied
+### QS Profiling Analysis (Amdahl's Law in Action)
+- GPU kernel = only 2% of runtime (1.06s / 59.5s)
+- No-profiling agent: optimized wrong 2% (GPU micro-opts), got 1.02x
+- With-profiling agent: saw 195 GPU launches vs 77,419 timer calls → 99.7% empty vaults
+- Fix: consolidate particles into single batch (2-line change) → 1.65x
 - This validates the entire benchmark design premise
 
-### Kripke kConst/kCopy Is Legitimate Optimization
-- Upstream Kripke uses `RAJA::seq_exec` for utility functions (kConst, kCopy) intentionally
-- Agent changing to `RAJA::cuda_exec<256>` eliminates CPU↔GPU roundtrips via CHAI
-- This is a real optimization, not a setup error
-- Main compute kernels (LTimes, LPlusTimes, etc.) already use CUDA exec policies correctly
-- Kripke pristine build is correct: CHAI=ON, CUDA=ON, MPI=ON, Release mode
+### OpenHands FORCE_STRING_SERIALIZER Is an Installed Package Patch
+- `/global/homes/k/krydzy/envs/sweagent/lib/python3.13/site-packages/openhands/sdk/llm/utils/model_features.py`
+- NOT in git — will be lost if OpenHands is reinstalled
+- Added "qwen" and "gpt-oss" patterns
+- Any future vLLM-hosted model needs an entry here too
 
-### SWE-agent + Qwen Is A Model Limitation
-- Both xml_function_calling and thought_action modes: 200+ steps, 0 edits
-- Model generates 92.5% filler thoughts ("let me look at...")
-- Views same 4 functions 30-40 times without analysis
-- Increasing call limit to 300 unlikely to help — agent just loops longer
-- May need fundamentally different approach (forced edit after N views?)
+### gptoss120b Model Needs Investigation
+- All 3 gptoss120b jobs (49936647-49936649) failed in ~4 min
+- Likely vLLM server startup failure — model is 120GB, may need TP>4 or larger GPU allocation
+- Or the model name `openai/gpt-oss-120b` isn't in MODEL_REGISTRY (uses default settings)
+- Check logs to determine root cause before resubmitting
 
-### Session 48 Job Results Were From Both Profiling Modes
-- s41 had `run_1_with_profiling/` and `run_1_no_profiling/` subdirs
-- s46 used `run_1/` (single mode, no_profiling)
-- s48 submitted separate jobs per mode (49891957=no_prof, 49892081=with_prof)
-- Result dirs at `/global/homes/k/krydzy/SWE-agent/batch_results/` (s41) and `/pscratch/sd/k/krydzy/SWE-agent/batch_results/` (s46+)
+### OpenCode + Qwen Still Broken
+- OpenCode expects tool calls via API `tool_calls` field
+- Qwen emits `<tool_call>` XML in text content → OpenCode treats as plain text → exits after 1 step
+- This is NOT the same issue as the OpenHands structured content fix
+- Needs investigation: is vLLM `qwen3_coder` parser not extracting XML into tool_calls?
 
-### OpenCode + Qwen: Separate Issue from small_model
-- small_model fix worked (no gpt-5-nano 404)
-- But agent exits after 1 step — Qwen emits `<tool_call>` XML in text content
-- OpenCode treats it as plain text, not a real tool call → immediate stop
-- Needs investigation: is this an OpenCode bug or a vLLM parser issue?
+### GPA Build Fixes Are Local, Not Upstream
+- Upstream GPA-Benchmark has 13 unmerged commits (none fix our issues)
+- Our fixes (PATH, K&R flags, srad, lavaMD) are local commits
+- If we pull upstream, may need to rebase/merge
 
-## Resubmission Plan (Next Session)
+### nohup+sleep for Scheduling
+- `atd` not running on Perlmutter login nodes
+- Used `nohup bash -c 'sleep 10800 && ...' &` (PID 2080497)
+- Claude Code jobs successfully submitted as 49940919 + 49940920
 
-### Step 1: Rebuild Lulesh (compute node required)
-```bash
-salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --gpus 4 --account m5083
-module load python cmake openmpi/5.0.7 cudatoolkit/12.4
-cd /pscratch/sd/k/krydzy/SWE-agent
-rm Lulesh/cuda/lulesh Lulesh/cuda/src/*.o  # clean old build
-source ~/envs/sweagent/bin/activate
-./scripts/setup_apps.sh --lulesh
-readelf -d Lulesh/cuda/lulesh | grep mpi  # verify libmpi.so.40
-./scripts/reset_test_repos.sh --lulesh
-```
+## Session 50 Commits
 
-### Step 2: Submit Fixed Jobs
-```bash
-# From login node:
-source ~/.openai_env
-
-# Codex + gpt-5.3-codex (both modes, config fix applied)
-bash batch/run_benchmark.sh --base --kripke --laghos --lulesh --quicksilver --framework codex --external-model --model-name gpt-5.3-codex
-
-# Claude Code GPA (retain_nsys fix in GPA-Benchmark)
-bash batch/run_benchmark.sh --base --gpa --framework claude --skip-vllm
-
-# Claude Code LLNL (both modes, Lulesh MPI fix, 2hr timeout)
-bash batch/run_benchmark.sh --base --kripke --laghos --lulesh --quicksilver --framework claude --skip-vllm
-
-# SWE-agent + Qwen (both modes, 300 calls, xml_function_calling)
-bash batch/run_benchmark.sh --base --kripke --laghos --lulesh --quicksilver --framework sweagent --external-model --model-name Qwen/Qwen3-Coder-Next-FP8
-```
-
-### Step 3: Analyze with_profiling QS Patch
-Compare patches:
-- No profiling: `/pscratch/sd/k/krydzy/SWE-agent/batch_results/claude_openai-gpt-oss-120b_20260310_115433_49891957/run_1/quicksilver/quicksilver__base_agent.patch`
-- With profiling: `/pscratch/sd/k/krydzy/SWE-agent/batch_results/claude_openai-gpt-oss-120b_20260311_005846_49892081/run_1/quicksilver/quicksilver__base_agent.patch`
-
-## Session 49 Commits
-
-1. `b99bae0f` — WIP: Session 49 — fix infra bugs, increase timeouts, analyze s48 results
-2. GPA-Benchmark `0a6aece` — Fix postprocess_nsys_app() retain_nsys_profiles kwarg mismatch
+1. SWE-agent repo: `da0d04e4` — WIP: Session 50
+2. GPA-Benchmark repo: `dd38308` — Fix 5 GPA app build failures on Perlmutter

@@ -35,6 +35,13 @@ The Makefile (`cuda/Makefile`) is committed to the repo with correct Perlmutter 
 
 ## Run
 
+### Benchmark Parameters
+- **np=8** (2³ cube decomposition, 2 ranks/GPU on 4x A100)
+- **s=150** (mesh size per edge)
+- **i=2000** (iterations) — calibrated for ~63s wall time with real MPI
+- GPU mapping: `CUDA_VISIBLE_DEVICES=$(($OMPI_COMM_WORLD_LOCAL_RANK * 4 / 8))`
+- `OMPI_MCA_btl=^smcuda` required to prevent MPI finalization segfault
+
 ### Via Harness (recommended)
 ```bash
 python3 tools/lulesh_harness/bin/lulesh_run               # benchmark + correctness
@@ -55,6 +62,8 @@ The harness extracts `Final Origin Energy` from both pristine and modified runs.
 - **CUDA sources missing after checkout** -- Older commits predate the CUDA port; skip them.
 - **"Num processors must be a cube"** -- MPI builds need cube-number ranks (1, 8, 27, 64).
 - **Volume/Q errors** -- Optimization broke the physics; revert. Error codes: VolumeError=-1, QStopError=-2.
+- **MPI finalization segfault** -- OpenMPI 5.0.7 + CUDA causes SIGSEGV in `cuEventDestroy` during `MPI_Finalize`. Fix: `OMPI_MCA_btl=^smcuda` (already in harness since s50).
+- **MPICH_DIR must be set for MPI build** -- Perlmutter uses OpenMPI (`OPENMPI_ROOT`), but Lulesh Makefile expects `MPICH_DIR`. Harness bridges: `MPICH_DIR=${OPENMPI_ROOT}`. Pristine binary rebuilt with MPI in session 50.
 
 ## SWE-agent Configuration
 
