@@ -65,7 +65,7 @@ All LLNL proxy apps run on GPU **and** in parallel across 4 GPUs using MPI. Each
 |-----|-----|-------------|-------|-------|
 | Kripke | 4 | zones=64³, groups=64, niter=60, quad=8 | 55s | Requires CHAI (`-DENABLE_CHAI=ON`) for CUDA+MPI |
 | Laghos | 4 | p1, dim=2, rs=4, tf=0.8, -pa -d cuda | 67s | Uses MFEM/hypre/metis |
-| Lulesh | 8 | s=150, i=5000 | 51s | 2³ cube decomposition, 2 ranks/GPU |
+| Lulesh | 8 | s=150, i=2000 | 63s | 2³ cube decomposition, 2 ranks/GPU |
 | QS | 4 | Coral2_P2_4.inp, nSteps=67 | 60s | Weak-scaled 4-rank input |
 
 MPI launch pattern (used by all harnesses):

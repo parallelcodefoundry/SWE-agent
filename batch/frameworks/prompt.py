@@ -150,6 +150,11 @@ PROFILING TOOLS AVAILABLE (run as bash commands):
 - hatchet_analyze: Analyze HPCToolkit profiles using Hatchet (call tree, hot paths)
   Use hpc_profile + hatchet_analyze for hierarchical call-tree analysis — especially useful when nsys/ncu flat summaries don't reveal the bottleneck.
 - compiler_analysis: Static analysis of compiler optimization opportunities
+- microbench_code: Compile and time a standalone .cu/.cpp snippet in isolation
+  Usage: microbench_code <code_file> [<compiler>] [<flags>] [<repeat>]
+  Use this to test kernel changes in isolation before integrating into the full app.
+- check_profiling_ready: Pre-flight check that profiling tools are available and DCGM is paused
+- system_summary: Show all system info (GPU, CPU, memory, modules) in a single call
 - gpu_info: Show GPU hardware information (A100 specs, memory, compute capability)
 - cpu_info: Show CPU hardware information
 
@@ -526,7 +531,7 @@ Reasoning: high"""
         f"NOTE: {run_cmd.split()[0]} automatically checks BOTH timing AND correctness - no separate correctness check needed!",
     ]
     if profiling == "with_profiling":
-        profiling_tools = "nsys_profile, ncu_profile, hpc_profile, hatchet_analyze, compiler_analysis, gpu_info, cpu_info"
+        profiling_tools = "nsys_profile, ncu_profile, hpc_profile, hatchet_analyze, compiler_analysis, microbench_code, check_profiling_ready, system_summary, gpu_info, cpu_info"
         notes.append(f"\nPROFILING TOOLS AVAILABLE: {profiling_tools}")
     else:
         notes.append(f"\n{NO_PROFILING_NOTE}")
@@ -647,18 +652,31 @@ def build_gpa_prompt(
 TOOLS AVAILABLE (run as bash commands):
 - gpa_test: Build, run, validate, and time your optimization. Reports speedup vs baseline.
   Usage: gpa_test (auto-detects app from metadata)
-- ncu_profile: Per-kernel GPU profiling with Nsight Compute (SM%, DRAM%, occupancy, registers)
-  Usage: ncu_profile <executable> <output_dir> [<kernel_filter>]
-- nsys_profile: System-wide GPU timeline profiling with Nsight Systems
+- nsys_profile: System-wide GPU timeline profiling with Nsight Systems (identifies hotspot kernels, memory transfers)
   Usage: nsys_profile <executable> <output_dir> [<app_args>...]
+  Use this FIRST to find which kernels take the most time.
+- ncu_profile: Per-kernel GPU profiling with Nsight Compute (SM%, DRAM%, occupancy, registers)
+  Usage: ncu_profile <executable> <output_dir> [<kernel_filter>] [<app_args>...]
+  Use this AFTER nsys_profile to deep-dive into the top hotspot kernel(s).
+- hpc_profile: Run HPCToolkit profiling to collect GPU/CPU performance data
+- hatchet_analyze: Analyze HPCToolkit profiles using Hatchet (call tree, hot paths)
+  Use hpc_profile + hatchet_analyze for hierarchical call-tree analysis.
 - compiler_analysis: Analyze register usage, shared memory, occupancy of your .cu file.
   Usage: compiler_analysis {kernel_basename}
 - microbench_code: Compile and time a standalone .cu file in isolation.
+- gpu_info: Show GPU hardware information (A100 specs, memory, compute capability)
+
+NOTE ON PROFILING GPA APPS: The gpa_test tool builds the executable internally. To profile
+with nsys_profile or ncu_profile, you can either:
+  a) Run: nsys profile --stats=true -o /tmp/profile gpa_test  (profiles the full gpa_test run)
+  b) Use compiler_analysis on the .cu kernel file directly (no binary needed)
+  c) Use ncu --set full --target-processes all gpa_test (profiles child GPU processes)
+Option (b) is simplest for static analysis; (a) or (c) for runtime profiling.
 
 WORKFLOW:
 1. Read the kernel code and understand it
 2. Run compiler_analysis on the kernel to check register count and occupancy
-3. Optionally use ncu_profile on the built executable to see SM/DRAM utilization and bottleneck type
+3. Optionally use nsys/ncu profiling to identify runtime bottlenecks
 4. Identify performance bottlenecks
 5. Edit the kernel file to optimize it
 6. Run gpa_test to verify correctness and measure speedup

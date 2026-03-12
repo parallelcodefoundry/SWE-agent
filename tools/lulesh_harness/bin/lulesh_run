@@ -82,9 +82,9 @@ def _find_pristine_lulesh():
 
 PRISTINE_LULESH_ROOT = _find_pristine_lulesh()
 
-# Default test parameters — tuned for ~24s wall time on A100 (s=150, i=5000, np=1)
+# Default test parameters — tuned for ~53s internal / ~65s wall on 4x A100 (s=150, i=2000, np=8)
 DEFAULT_SIZE = 150  # Problem size (elements per side)
-DEFAULT_ITERATIONS = 5000  # Number of iterations
+DEFAULT_ITERATIONS = 2000  # Number of iterations
 
 # Default tolerance for correctness checking
 DEFAULT_TOLERANCE = 1e-8
@@ -243,6 +243,9 @@ def run_lulesh(exe_path, size, iterations, np_ranks=DEFAULT_NP, label="", timeou
     if TARGET_GPU is not None:
         env['CUDA_VISIBLE_DEVICES'] = TARGET_GPU
     env['OMP_NUM_THREADS'] = '1'
+    # Disable CUDA-aware BTL to prevent segfault during MPI_Finalize
+    # (OpenMPI 5.0.7 + CUDA 12.4 race condition in cuEventDestroy at teardown).
+    env['OMPI_MCA_btl'] = '^smcuda'
 
     lulesh_cmd = [exe_path, '-s', str(size), '-i', str(iterations)]
 

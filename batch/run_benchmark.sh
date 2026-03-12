@@ -413,7 +413,8 @@ fi
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 JOB_ID="${SLURM_JOB_ID:-interactive}"
 # Include framework and model in directory name for easier identification
-SAFE_MODEL=$(echo "${VLLM_MODEL:-gptoss120b}" | tr '/' '-')
+# Prefer MODEL_NAME (explicit CLI flag) over VLLM_MODEL (may be default)
+SAFE_MODEL=$(echo "${MODEL_NAME:-${VLLM_MODEL:-gptoss120b}}" | tr '/' '-')
 OUTPUT_DIR="${SWEAGENT_ROOT}/batch_results/${FRAMEWORK}_${SAFE_MODEL}_${TIMESTAMP}_${JOB_ID}"
 TRAJ_DIR="${SWEAGENT_ROOT}/trajectories/${FRAMEWORK}_${SAFE_MODEL}_${TIMESTAMP}_${JOB_ID}"
 

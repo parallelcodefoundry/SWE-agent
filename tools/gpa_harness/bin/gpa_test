@@ -100,6 +100,7 @@ def main():
 
     try:
         from gpa_bench_driver.gpa_bench_driver import run_driver
+        from gpa_bench_driver.driver_src.driver_models import DriverConfig
 
         # Build the swaps_override dict
         # The driver expects the first line to be a comment with the target filename,
@@ -111,13 +112,16 @@ def main():
         enable_nsys = True  # Always use nsys for timing
         enable_ncu = args.profile == "ncu"
 
-        results, operations, long_results = run_driver(
-            app=app_name,
+        config = DriverConfig(
+            app=app_name.lower(),
             sm_version=80,  # A100
+            cuda_home="/opt/nvidia/hpc_sdk/Linux_x86_64/24.5/cuda/12.4",
             nsys=enable_nsys,
             ncu=enable_ncu,
             swaps_override=swaps_override,
+            no_sanitize=True,
         )
+        results, operations, long_results = run_driver(config)
     except Exception as e:
         print(f"ERROR: GPA driver failed: {e}")
         import traceback

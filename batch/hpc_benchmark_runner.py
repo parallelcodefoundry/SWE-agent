@@ -1084,7 +1084,7 @@ class HPCBenchmarkRunner:
             from gpa_bench_driver.driver_src.driver_models import DriverConfig
 
             config_kwargs = dict(
-                app=gpa_app,
+                app=gpa_app.lower(),
                 sm_version=80,
                 cuda_home=Path(cuda_home),
                 log_level="INFO",
