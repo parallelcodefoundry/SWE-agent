@@ -1511,8 +1511,8 @@ class HPCBenchmarkRunner:
             if "swefficiency" in requested_apps:
                 instances.extend(self._generate_swefficiency_instances())
 
-        # Filter by instance_ids if specified (not applicable in base mode)
-        if instance_ids and not self.base_mode:
+        # Filter by instance_ids if specified
+        if instance_ids:
             instances = [i for i in instances if
                          i["instance_id"] in instance_ids or
                          i.get("gpa_app_name") in instance_ids or

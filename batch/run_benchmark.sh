@@ -668,7 +668,6 @@ else
         --tool-call-parser "${TOOL_CALL_PARSER}" \
         --enable-auto-tool-choice \
         ${REASONING_PARSER:+--reasoning-parser "${REASONING_PARSER}"} \
-        ${REASONING_PARSER:+--enable-reasoning} \
         --enforce-eager \
         ${KV_CACHE_DTYPE:+--kv-cache-dtype "${KV_CACHE_DTYPE}"} \
         > "${OUTPUT_DIR}/vllm.log" 2>&1 &

@@ -78,6 +78,7 @@ def main():
             'cmake', '..',
             '-DCMAKE_BUILD_TYPE=Release',
             f'-DENABLE_{args.arch.upper()}=ON',
+            '-DENABLE_OPENMP=ON',
             '-DENABLE_MPI=ON',
             '-DENABLE_CHAI=ON',
             '-DCMAKE_CXX_COMPILER=mpicxx',
@@ -86,22 +87,23 @@ def main():
 
         # Add CUDA-specific flags
         if args.arch == 'CUDA':
-            # Always ensure host compiler is compatible (essential safety)
-            host_cxx = shutil.which('g++-12') or shutil.which('g++-11') or 'g++'
+            # Use g++-12 as CUDA host compiler for compatibility with nvcc
+            # The MPI include path is provided by the CXX compiler (mpicxx)
+            cuda_host_cxx = shutil.which('g++-12') or shutil.which('g++-11') or 'g++'
 
             if agent_modified_cmake:
                 # Agent modified CMakeLists — only add essential flags that
                 # the agent may not have set (host compiler for nvcc compat).
                 # Don't override CUDA flags since agent may have customized them.
-                cmake_args.append(f'-DCMAKE_CUDA_HOST_COMPILER={host_cxx}')
+                cmake_args.append(f'-DCMAKE_CUDA_HOST_COMPILER={cuda_host_cxx}')
                 # Ensure architecture is still A100
                 cmake_args.append('-DCMAKE_CUDA_ARCHITECTURES=80')
-                print(f"  Preserving agent's CUDA flags, ensuring host compiler={host_cxx}", file=sys.stderr)
+                print(f"  Preserving agent's CUDA flags, ensuring host compiler={cuda_host_cxx}", file=sys.stderr)
             else:
                 # Default: full harness control
                 cmake_args.append('-DCMAKE_CUDA_ARCHITECTURES=80')
                 cmake_args.append('-DCMAKE_CUDA_FLAGS=--extended-lambda --expt-relaxed-constexpr')
-                cmake_args.append(f'-DCMAKE_CUDA_HOST_COMPILER={host_cxx}')
+                cmake_args.append(f'-DCMAKE_CUDA_HOST_COMPILER={cuda_host_cxx}')
 
         config_proc = subprocess.run(
             cmake_args,
