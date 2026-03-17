@@ -1,38 +1,36 @@
-# Handoff — Session 50
+# Handoff — Session 51 (APPEB Restructure)
 
-Last updated: 2026-03-12
+Last updated: 2026-03-17
 
-## What We Were Implementing and Why
+## What We Did
 
-Session 50 focused on: rebuilding Lulesh with MPI, fixing GPA build failures, running pre-flight validation on all framework+model combos, and submitting a large batch of benchmark jobs (10 total).
+Session 51 restructured the benchmark from this SWE-agent fork into standalone APPEB repo (`parallelcodefoundry/APPEB`). All future development happens there. This repo is preserved with tag `pre-restructure`.
 
-## Approach Chosen
+## Goal Progress (Session 51)
 
-- Parallel background agents for pre-flight validation (4 frameworks), QS patch analysis, GPA investigation, Lulesh rebuild
-- Fix-then-submit: applied all fixes before submitting jobs
-- Scheduled Claude Code runs +3hr via nohup+sleep (atd not available on Perlmutter)
+- [x] Goal 0: Audit entire repo (restructure-audit.md, restructure-checklist.md)
+- [x] Goal 1: Safety nets (commit, push 53 commits, tag, tarball, memory backup)
+- [x] Goal 2: Create APPEB repo + SWE-agent submodule
+- [x] Goal 3: Copy all benchmark code
+- [x] Goal 4: Rename SWEAGENT_ROOT → APPEB_ROOT (~15 files)
+- [x] Goal 5: Fix ~130+ hardcoded paths
+- [x] Goal 6: Create .gitignore, README.md, VERSIONS.md, setup_frameworks.sh, rewrite all docs
+- [x] Goal 7: Migrate Claude Code memory
+- [x] Goal 8: Integration test on compute node (Kripke build + harness — PASSED)
+- [x] Goal 9: Code review fixes (stale comments, dead branches, setup robustness)
 
-## Goal Progress
+## Carried Forward (from Session 50 — address in APPEB repo)
 
-- [x] Goal 0: Load state from session 49
-- [x] Goal 1: Rebuild pristine Lulesh with MPI on compute node
-- [x] Goal 2: Recalibrate Lulesh timing (i=5000→i=2000 for ~63s with real MPI)
-- [x] Goal 3: Add OMPI_MCA_btl fix for MPI finalization segfault
-- [x] Goal 4: Analyze QS profiling vs no-profiling patches (vault batching = real bottleneck)
-- [x] Goal 5: Pre-flight Codex + gpt-5.3-codex (PASS)
-- [x] Goal 6: Pre-flight SWE-agent + Qwen (PASS)
-- [x] Goal 7: Pre-flight OpenHands + Qwen (PASS, patched FORCE_STRING_SERIALIZER)
-- [x] Goal 8: Pre-flight Claude Code + GPA (PASS, lavaMD fix)
-- [x] Goal 9: Investigate GPA build failures (5 apps fixed)
-- [x] Goal 10: Fix SAFE_MODEL naming in run_benchmark.sh
-- [x] Goal 11: Expand profiling prompt (PROFILING_DESCRIPTION + GPA prompt)
-- [x] Goal 12: Submit all 10 benchmark jobs
-- [x] Goal 13: Commit all changes
-- [ ] Goal 14: Analyze session 50 job results (NEXT SESSION)
-- [ ] Goal 15: Diagnose gptoss120b failures — 3 jobs failed in ~4 min (NEXT SESSION)
-- [ ] Goal 16: Diagnose SWE-agent+Qwen LLNL early exit — 10 min (NEXT SESSION)
-- [ ] Goal 17: Implement best-state tracking on feature branch (NEXT SESSION)
-- [ ] Goal 18: Investigate OpenCode + Qwen tool calling issue (NEXT SESSION)
+- [ ] Goal 14: Analyze session 50 job results
+- [ ] Goal 15: Diagnose gptoss120b failures — 3 jobs failed in ~4 min
+- [ ] Goal 16: Diagnose SWE-agent+Qwen LLNL early exit — 10 min
+- [ ] Goal 17: Implement best-state tracking on feature branch
+- [ ] Goal 18: Investigate OpenCode + Qwen tool calling issue
+
+## Where To Continue
+
+Work in `/pscratch/sd/k/krydzy/APPEB` (symlinked at `~/APPEB`).
+Session 50 job results are at `batch_results/logs/` in the APPEB repo (rsync'd from here).
 
 ## Files Modified This Session
 

@@ -1,8 +1,38 @@
 # STATE.md — Current Project State
 
-Last updated: 2026-03-12 (session 50)
+Last updated: 2026-03-17 (session 51 — APPEB restructure)
 
-## Last Session (Session 50)
+## Last Session (Session 51 — APPEB Restructure)
+
+Restructured the entire benchmark suite from this SWE-agent fork monorepo into a standalone repo: `parallelcodefoundry/APPEB` at `/pscratch/sd/k/krydzy/APPEB`.
+
+### What Was Done
+- Created `parallelcodefoundry/APPEB` on GitHub (private)
+- Added SWE-agent fork as git submodule at `frameworks/swe-agent/` (pinned to `dev` branch)
+- Copied all benchmark code (batch/, tools/, config/, scripts/, dataset/, analysis/, agent_docs/, .claude/)
+- Renamed `SWEAGENT_ROOT` → `APPEB_ROOT` across ~15 code files
+- Fixed ~130+ hardcoded `/pscratch/.../SWE-agent` paths → `/pscratch/.../APPEB`
+- Rewrote CLAUDE.md, STATE.md, HANDOFF.md, README.md, agent_docs/ for new structure
+- Created `frameworks/VERSIONS.md` (version pinning), `scripts/setup_frameworks.sh` (OpenHands patch)
+- Migrated Claude Code memory to new project path
+- Integration test PASSED: Kripke build + harness run on compute node (SLURM job 50188322)
+- Code review (3 agents): fixed stale comments, dead branching, setup script robustness
+
+### Safety Nets
+- This repo tagged `pre-restructure` at commit `39c4416f`
+- Tarball backup: `/pscratch/sd/k/krydzy/SWE-agent-backup-20260316.tar.gz` (140MB)
+- Memory backup: `/global/homes/k/krydzy/claude-memory-backup-20260316/`
+
+### Where To Work Now
+- **New repo**: `/pscratch/sd/k/krydzy/APPEB` (symlinked at `~/APPEB`)
+- **This repo**: preserved as-is, do not modify further. All future development happens in APPEB.
+
+### Open Items Carried Forward to APPEB
+All open bugs and next steps from session 50 still apply — they are benchmark issues, not restructure issues. See "Next Steps" below.
+
+---
+
+## Previous Session (Session 50)
 
 ### Phase 1: Lulesh MPI Rebuild + Recalibration
 
