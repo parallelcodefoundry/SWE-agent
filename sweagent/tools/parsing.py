@@ -221,6 +221,11 @@ class XMLThoughtActionParser(AbstractParseFunction, BaseModel):
 FN_REGEX_PATTERN = r"<function=([^>]+)>\n(.*?)</function>"
 FN_PARAM_REGEX_PATTERN = r"<parameter=([^>]+)>(.*?)</parameter>"
 
+# Qwen3-Coder native XML format: <tool_call>\n<function_NAME>\n<PARAM>value</PARAM>\n</function_NAME>
+# The model ignores SWE-agent's <function=name> prompt format and uses its own trained format.
+QWEN_FN_REGEX_PATTERN = r"<tool_call>\s*<function_(\w+)>(.*?)</function_\1>"
+QWEN_FN_PARAM_REGEX_PATTERN = r"<(\w+)>\s*(.*?)\s*</\1>"
+
 
 class XMLFunctionCallingParser(AbstractParseFunction, BaseModel):
     """
@@ -254,20 +259,33 @@ class XMLFunctionCallingParser(AbstractParseFunction, BaseModel):
     type: Literal["xml_function_calling"] = "xml_function_calling"
 
     def __call__(self, model_response: dict, commands: list[Command], strict=False) -> tuple[str, str]:
-        fn_match = re.search(FN_REGEX_PATTERN, model_response["message"], re.DOTALL)
+        message = model_response["message"]
+        fn_match = re.search(FN_REGEX_PATTERN, message, re.DOTALL)
+        use_qwen_params = False
+
+        if not fn_match:
+            # Fallback: Qwen3-Coder native XML format
+            # <tool_call><function_NAME><PARAM>value</PARAM></function_NAME>
+            fn_match = re.search(QWEN_FN_REGEX_PATTERN, message, re.DOTALL)
+            if fn_match:
+                use_qwen_params = True
+
         if not fn_match:
             msg = "No function found in model response."
             raise FormatError(msg)
         fn_name = fn_match.group(1).strip()
 
-        # Handle different names in SWE-agent vs. SWE-gym
-        if fn_name == "execute_bash":
-            fn_name = "bash"
-        if fn_name == "finish":
-            fn_name = "submit"
+        # Handle different names across model families
+        _name_map = {
+            "execute_bash": "bash",
+            "shell": "bash",          # Qwen uses "shell" for bash
+            "finish": "submit",
+            "str_replace": "str_replace_editor",
+        }
+        fn_name = _name_map.get(fn_name, fn_name)
 
         fn_body = fn_match.group(2)
-        thought = model_response["message"][: fn_match.start()] + model_response["message"][fn_match.end() :]
+        thought = message[: fn_match.start()] + message[fn_match.end() :]
         thought = thought.strip()
 
         commands_dict = {c.name: c for c in commands}
@@ -276,9 +294,10 @@ class XMLFunctionCallingParser(AbstractParseFunction, BaseModel):
             msg = f"Command '{fn_name}' not found in list of available commands."
             raise FormatError(msg)
 
+        param_pattern = QWEN_FN_PARAM_REGEX_PATTERN if use_qwen_params else FN_PARAM_REGEX_PATTERN
         params_dict = {
             param[0]: re.sub(r"^\n|\n$", "", param[1])
-            for param in re.findall(FN_PARAM_REGEX_PATTERN, fn_body, re.DOTALL)
+            for param in re.findall(param_pattern, fn_body, re.DOTALL)
         }
 
         if "view_range" in params_dict:
