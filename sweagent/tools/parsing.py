@@ -286,7 +286,8 @@ class XMLFunctionCallingParser(AbstractParseFunction, BaseModel):
 
         fn_body = fn_match.group(2)
         thought = message[: fn_match.start()] + message[fn_match.end() :]
-        thought = thought.strip()
+        # Clean up Qwen's trailing </tool_call> tag if present
+        thought = re.sub(r"\s*</tool_call>\s*", "", thought).strip()
 
         commands_dict = {c.name: c for c in commands}
         command = commands_dict.get(fn_name)
