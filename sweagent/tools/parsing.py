@@ -483,55 +483,51 @@ class FunctionCallingParser(AbstractParseFunction, BaseModel):
         }
 
         if tool_calls is None or len(tool_calls) != 1:
-         if message and isinstance(message, str):
-            try:
-                parsed = json.loads(message.strip())
-                if isinstance(parsed, dict):
-                    command_name = None
-                    arguments = {}
+            # Fallback: try parsing message as JSON tool call (gptoss-120b
+            # sometimes puts tool calls in message text instead of tool_calls)
+            if message and isinstance(message, str):
+                try:
+                    parsed = json.loads(message.strip())
+                    if isinstance(parsed, dict):
+                        command_name = None
+                        arguments = {}
 
-                    # Format 1: {"command": "name", ...} - model used this for str_replace
-                    if "command" in parsed:
-                        command_name = parsed["command"]
-                        # Extract other keys as arguments (path, old_str, new_str, etc.)
-                        arguments = {k: v for k, v in parsed.items() if k != "command"}
+                        # Format 1: {"command": "name", ...}
+                        if "command" in parsed:
+                            command_name = parsed["command"]
+                            arguments = {k: v for k, v in parsed.items() if k != "command"}
 
-                    # Format 2: {"action": "name", "arguments": {...}} - model used this for submit
-                    elif "action" in parsed:
-                        command_name = parsed["action"]
-                        arguments = parsed.get("arguments", {})
+                        # Format 2: {"action": "name", "arguments": {...}}
+                        elif "action" in parsed:
+                            command_name = parsed["action"]
+                            arguments = parsed.get("arguments", {})
 
-                    # Format 3: {"submit": {...}} or {"bash": {...}} - command name as key
-                    else:
-                        for key in parsed.keys():
-                            # Check if key is a valid command or alias
-                            if key in command_names or key in command_aliases:
-                                command_name = key
-                                arguments = parsed[key] if isinstance(parsed[key], dict) else {}
-                                break
-
-                    if command_name:
-                        # Apply aliases
-                        command_name = command_aliases.get(command_name, command_name)
-
-                        # Create fake tool call matching litellm format
-                        fake_tool_call = {
-                            "type": "function",
-                            "id": "fallback-tool-call",
-                            "function": {
-                                "name": command_name,
-                                "arguments": json.dumps(arguments) if arguments else "{}"
-                            }
-                        }
-                        tool_calls = [fake_tool_call]
-                        # Use reasoning_content as thought since message was the JSON
-                        if "reasoning_content" in model_response:
-                            message = model_response["reasoning_content"]
+                        # Format 3: {"submit": {...}} or {"bash": {...}}
                         else:
-                            message = ""
-            except (json.JSONDecodeError, KeyError, TypeError):
-                pass  # Not JSON or wrong format, continue to error
-        
+                            for key in parsed.keys():
+                                if key in command_names or key in command_aliases:
+                                    command_name = key
+                                    arguments = parsed[key] if isinstance(parsed[key], dict) else {}
+                                    break
+
+                        if command_name:
+                            command_name = command_aliases.get(command_name, command_name)
+                            fake_tool_call = {
+                                "type": "function",
+                                "id": "fallback-tool-call",
+                                "function": {
+                                    "name": command_name,
+                                    "arguments": json.dumps(arguments) if arguments else "{}"
+                                }
+                            }
+                            tool_calls = [fake_tool_call]
+                            if "reasoning_content" in model_response:
+                                message = model_response["reasoning_content"]
+                            else:
+                                message = ""
+                except (json.JSONDecodeError, KeyError, TypeError):
+                    pass  # Not JSON or wrong format, continue to error
+
         if tool_calls is None or len(tool_calls) == 0:
             fake_tool_call = {
                 "type": "function",
