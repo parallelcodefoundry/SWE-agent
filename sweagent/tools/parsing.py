@@ -530,19 +530,16 @@ class FunctionCallingParser(AbstractParseFunction, BaseModel):
                     pass  # Not JSON or wrong format, continue to error
 
         if tool_calls is None or len(tool_calls) == 0:
-            fake_tool_call = {
-                "type": "function",
-                "id": "auto-submit",
-                "function": {
-                    "name": "submit",
-                    "arguments": "{}"
-                }
-            }
-            tool_calls = [fake_tool_call]
-            if "reasoning_content" in model_response and model_response["reasoning_content"]:
-                message = model_response["reasoning_content"]
-            elif not message:
-                message = "Auto-submitting (model indicated task completion)"
+            # Model returned text without any tool calls.  Rather than silently
+            # auto-submitting (which terminates the trajectory prematurely),
+            # raise a format error so the agent loop retries the request.
+            text_preview = (message or "")[:200]
+            raise FunctionCallingFormatError(
+                f"Model returned text without tool calls: {text_preview!r}. "
+                "Expected exactly one tool call. Please respond with a tool call.",
+                "missing",
+                num_tools=0,
+            )
                 
         if tool_calls is None or len(tool_calls) != 1:
             num_tools = len(tool_calls) if tool_calls else 0

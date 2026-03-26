@@ -707,6 +707,16 @@ class LiteLLMModel(AbstractModel):
             extra_args["api_base"] = self.config.api_base
         if self.tools.use_function_calling:
             extra_args["tools"] = self.tools.tools
+            # gpt-5.3-codex intermittently returns text-only responses without tool calls
+            # (known issue). Force tool_choice="required" so the API always returns a
+            # tool call.  The agent can still submit via the explicit "submit" tool.
+            model_lower = self.config.name.lower()
+            if "gpt-5" in model_lower or "codex" in model_lower:
+                extra_args["tool_choice"] = "required"
+        # NOTE: gpt-5.3-codex also benefits from preserving the `phase` field on
+        # assistant messages (Responses API feature).  Chat Completions + litellm
+        # does not surface this field, so a future migration to the Responses API
+        # would further improve multi-turn reliability.
         # We need to always set max_tokens for anthropic models
         completion_kwargs = copy.deepcopy(self.config.completion_kwargs)
         if self.lm_provider == "anthropic":
