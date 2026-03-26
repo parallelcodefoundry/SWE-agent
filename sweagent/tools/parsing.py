@@ -279,6 +279,7 @@ class XMLFunctionCallingParser(AbstractParseFunction, BaseModel):
         _name_map = {
             "execute_bash": "bash",
             "shell": "bash",          # Qwen uses "shell" for bash
+            "shell_command": "bash",  # Qwen3-Coder-Next uses "shell_command"
             "finish": "submit",
             "str_replace": "str_replace_editor",
         }
