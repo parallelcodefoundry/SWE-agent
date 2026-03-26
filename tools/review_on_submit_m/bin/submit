@@ -37,6 +37,19 @@ def main() -> None:
     submit_review_messages = registry.get("SUBMIT_REVIEW_MESSAGES", [])
     n_stages = len(submit_review_messages)
     current_stage = registry.get("SUBMIT_STAGE", 0)
+
+    # Block empty submissions: if no code changes, tell the agent to keep working.
+    # Reset the submit stage so the review guard re-engages on the next attempt.
+    if not args.force and not patch.strip():
+        registry["SUBMIT_STAGE"] = 0
+        print("No code changes detected (empty diff). "
+              "You have not modified any source files yet.\n\n"
+              "Go back and make optimization edits to the source code, "
+              "then rebuild, verify with a run, and try submitting again.\n\n"
+              "If you genuinely cannot find any optimization opportunities, "
+              "call exit_forfeit instead of submit.")
+        sys.exit(0)
+
     if not args.force and current_stage != n_stages:
         message = submit_review_messages[current_stage]
         message = message.replace("{{diff}}", patch)
