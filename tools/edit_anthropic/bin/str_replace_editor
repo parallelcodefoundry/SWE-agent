@@ -7,6 +7,7 @@ However, we made it python 3.6 compatible and stateless (all state is saved in a
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -16,6 +17,55 @@ from typing import List, Optional, Tuple
 import io
 
 from registry import registry as REGISTRY
+
+
+# Workspace-scope guard. Off by default: when SWEAGENT_WORKSPACE_ROOT is
+# unset (e.g., upstream use), behavior is identical to pre-guard
+# str_replace_editor. When set by the launcher (APPEB's SweAgentLauncher
+# injects it into the SWE-agent YAML env_variables), non-view commands
+# on paths outside the workspace are rejected with a clear error.
+# /tmp, /dev/shm, and $TMPDIR remain writable because harness tools
+# (lulesh_run mkdtemp, qs_run mkstemp, Python TemporaryDirectory, etc.)
+# create scratch files there during normal operation.
+def _workspace_scope_check(command: str, path: Path) -> None:
+    ws_root_str = os.environ.get("SWEAGENT_WORKSPACE_ROOT", "").strip()
+    if not ws_root_str or command == "view" or not path.is_absolute():
+        return
+    try:
+        resolved = path.resolve()
+        ws_root = Path(ws_root_str).resolve()
+    except Exception as e:
+        print(
+            f"WORKSPACE_SCOPE_CHECK_ERROR: could not resolve path: {e}",
+            file=sys.stderr,
+        )
+        return
+
+    try:
+        resolved.relative_to(ws_root)
+        return  # inside workspace — allowed
+    except ValueError:
+        pass
+
+    str_resolved = str(resolved)
+    allowed_prefixes = ["/tmp/", "/dev/shm/"]
+    tmpdir = os.environ.get("TMPDIR", "").rstrip("/")
+    if tmpdir and tmpdir not in ("/tmp", "/dev/shm"):
+        allowed_prefixes.append(tmpdir + "/")
+    if any(str_resolved.startswith(p) for p in allowed_prefixes):
+        return
+    if str_resolved in ("/tmp", "/dev/shm") or (tmpdir and str_resolved == tmpdir):
+        return
+
+    print(
+        f"WORKSPACE_SCOPE_ERROR: command '{command}' rejected — path "
+        f"'{resolved}' is outside the workspace root "
+        f"'{ws_root}'. Only the 'view' command is permitted outside the "
+        f"workspace. To edit a workspace file, use a path under "
+        f"'{ws_root}'.",
+        file=sys.stderr,
+    )
+    sys.exit(10)
 
 
 # There are some super strange "ascii can't decode x" errors,
@@ -432,6 +482,10 @@ class EditTool:
                 f"The path {path} is not an absolute path, it should start with `/`. Maybe you meant {suggested_path}?"
             )
             sys.exit(6)
+        # Workspace-scope guard (opt-in via SWEAGENT_WORKSPACE_ROOT env var).
+        # Enforced BEFORE existence checks so the error message points at the
+        # scope violation rather than the path-not-found symptom.
+        _workspace_scope_check(command, path)
         # Check if path exists
         if not path.exists() and command != "create":
             print(f"The path {path} does not exist. Please provide a valid path.")
