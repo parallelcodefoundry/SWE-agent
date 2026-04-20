@@ -417,7 +417,6 @@ class FunctionCallingParser(AbstractParseFunction, BaseModel):
 
     def _parse_tool_call(self, tool_call: dict, commands: list[Command]):
         name = tool_call["function"]["name"]
-        name = name.split('<|channel|>')[0] if '<|channel|>' in name else name
         command = {c.name: c for c in commands}.get(name)
         if not command:
             msg = f"Command '{name}' not found in list of available commands."
