@@ -551,6 +551,13 @@ class EditTool:
 
     def str_replace(self, path: Path, old_str: str, new_str: Optional[str]):
         """Implement the str_replace command, which replaces old_str with new_str in the file content"""
+        if "\n" in old_str:
+            print(
+                f"Multi-line replacements are disabled for this tool. "
+                f"`old_str` contains a newline. Please edit one line at a time "
+                f"or use the `insert` command."
+            )
+            sys.exit(22)
         # Read the file content - preserve original whitespace (tabs/spaces)
         # Note: expandtabs() is only used for display in _make_output, not for file modification
         # This preserves tabs in Makefiles and other tab-sensitive files
@@ -700,9 +707,51 @@ class EditTool:
             sys.exit(19)
         return text
 
+    @staticmethod
+    def _fix_makefile_tabs_and_duplicates(file: str) -> str:
+        lines = file.splitlines(True)
+
+        # 1) Remove exact duplicate lines (preserve order)
+        print("Removing duplicate lines in the Makefile...")
+        seen = set()
+        duplicates = []
+        for line in lines:
+            if line not in seen:
+                seen.add(line)
+                duplicates.append(line)
+        lines = duplicates
+
+        # 2) Enforce Makefile tab rules
+        print("Fixing Makefile tabs...")
+        i = 0
+        while i < len(lines) - 1:
+            curr = lines[i].lstrip()
+            nxt = lines[i + 1]
+            
+            # Ensures a rule has 1) a colon and 2) either an "=" DNE or the first "="
+            # is after the first ":"
+            is_rule = ":" in curr and (curr.find("=") == -1 or curr.find(":") < curr.find("="))
+            is_conditional = curr.startswith((
+                "ifeq",
+                "ifneq",
+                "ifdef",
+                "ifndef",
+                "else"
+            ))
+
+            if is_rule or is_conditional:
+                if nxt.strip() and not nxt.startswith("\t") and not nxt.lstrip().startswith("#"):
+                    lines[i + 1] = "\t" + nxt
+            i += 1
+
+        return "".join(lines)
+
+
     def write_file(self, path: Path, file: str):
         """Write the content of a file to a given path; raise a ToolError if an error occurs."""
         try:
+            if path.name == "Makefile":
+                file = self._fix_makefile_tabs_and_duplicates(file)
             path.write_text(file, encoding=self._encoding or "utf-8")
         except Exception as e:
             print(f"Ran into {e} while trying to write to {path}")
@@ -717,11 +766,29 @@ class EditTool:
     ):
         """Generate output for the CLI based on the content of a file."""
         file_content = maybe_truncate(file_content)
-        if expand_tabs:
-            file_content = file_content.expandtabs()
-        file_content = "\n".join([f"{i + init_line:6}\t{line}" for i, line in enumerate(file_content.split("\n"))])
-        return f"Here's the result of running `cat -n` on {file_descriptor}:\n" + file_content + "\n"
 
+        # Don't expand tabs for Makefiles or other tab-sensitive make files.
+        # This keeps literal TAB characters visible and prevents confusing
+        # the model into thinking they are spaces.
+        desc_lower = file_descriptor.lower()
+        is_makefile = (
+            "makefile" in desc_lower
+            or desc_lower.endswith(".mk")
+            or desc_lower.endswith(".make")
+        )
+
+        if expand_tabs and not is_makefile:
+            file_content = file_content.expandtabs()
+
+        file_content = "\n".join(
+            f"{i + init_line:6}\t{line}"
+            for i, line in enumerate(file_content.split("\n"))
+        )
+        return (
+            f"Here's the result of running `cat -n` on {file_descriptor}:\n"
+            + file_content
+            + "\n"
+        )
 
 def main():
     parser = argparse.ArgumentParser()

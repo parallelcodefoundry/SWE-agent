@@ -2,10 +2,10 @@ agent:
   model:
     api_base: "http://127.0.0.1:8008/v1"
     api_key: "dummy-key-ok"
-    max_input_tokens: 131072
-    max_output_tokens: 131072
+    max_input_tokens: 24576
+    max_output_tokens: 16384
     per_instance_cost_limit: 0
-    name: openai/openai/gpt-oss-120b
+    name: openai/google/gemma-4-31B-it
 
 env:
   deployment:
